@@ -12,7 +12,8 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "support": "node --import tsx src/cli.ts",
-    "support:auto": "node --import tsx src/cli.ts --auto-approve"
+    "support:auto": "node --import tsx src/cli.ts --auto-approve",
+    "pipeline": "node --import tsx src/pipeline/cli.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "latest",
