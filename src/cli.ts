@@ -46,7 +46,7 @@ async function main() {
     args.filter((a) => !a.startsWith("--")).join(" ").trim() ||
     "Hi, my desk lamp on order A-1001 arrived with a cracked base. I'd like a refund. My email is dana@example.com.";
 
-  console.log(`\nMainframe — ${supportAgentSpec.name}`);
+  console.log(`\nJantra AI — ${supportAgentSpec.name}`);
   console.log(`customer: ${message}\n`);
 
   const agent = new Agent({
@@ -65,13 +65,13 @@ async function main() {
       `tokens in/out: ${result.usage.inputTokens}/${result.usage.outputTokens} ` +
       `(cache read: ${result.usage.cacheReadTokens})`,
   );
-  console.log(`audit trail: .mainframe/audit/${result.runId}.jsonl`);
+  console.log(`audit trail: .jantra/audit/${result.runId}.jsonl`);
 
   process.exit(0);
 }
 
 main().catch((err) => {
-  console.error("\nMainframe run failed:");
+  console.error("\nJantra AI run failed:");
   console.error(err instanceof Error ? err.message : err);
   process.exit(1);
 });

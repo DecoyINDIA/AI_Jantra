@@ -11,11 +11,11 @@ import type { Artifact, Project } from "./types.js";
 
 /**
  * MVP persistence: one JSON file per project under
- * .mainframe/projects/<clientId>/, plus each artifact written as a readable
+ * .jantra/projects/<clientId>/, plus each artifact written as a readable
  * .md so a human can open it directly. A real database replaces this later
  * (runtime requirement R7); the interface here is what stays.
  */
-const ROOT = ".mainframe/projects";
+const ROOT = ".jantra/projects";
 
 function clientDir(clientId: string): string {
   return join(ROOT, clientId);

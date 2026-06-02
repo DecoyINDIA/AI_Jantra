@@ -1,20 +1,20 @@
-# Mainframe — Product Requirements Document
+# Jantra AI — Product Requirements Document
 
 | | |
 |---|---|
-| **Product** | Mainframe (working name, see Open Questions §18 on trademark) |
-| **One line** | Mainframe builds autonomous agents that run the back-office work no one wants to babysit. |
+| **Product** | Jantra AI ("machine AI", from *yantra/jantra* = machine) |
+| **One line** | Jantra AI builds autonomous agents that run the back-office work no one wants to babysit. |
 | **Status** | Draft for review and finalization |
 | **Version** | 0.1 |
 | **Date** | 2026-06-02 |
 | **Owner** | Founder (Xolver) |
-| **Repo** | `D:\XOLVER\Mainframe` (product). Marketing demo lives separately in `Xolver\...\templates\mainframe`. |
+| **Repo** | `D:\XOLVER\Mainframe` (product folder; GitHub `DecoyINDIA/AI_Jantra`). Marketing demo lives separately in `Xolver\...\templates\mainframe`. |
 
 ---
 
 ## 1. TL;DR
 
-Mainframe is an **agentic AI studio**: we design, build, and operate autonomous agents that take over repetitive back-office operations for SMB and mid-market companies. We start as a **done-for-you studio** (we build each agent by hand on a shared runtime), earn services revenue, and productize the runtime into self-serve over time.
+Jantra AI is an **agentic AI studio**: we design, build, and operate autonomous agents that take over repetitive back-office operations for SMB and mid-market companies. We start as a **done-for-you studio** (we build each agent by hand on a shared runtime), earn services revenue, and productize the runtime into self-serve over time.
 
 The **beachhead** is the **Operations agent**: it owns back-office tasks like reconciliation, data entry, and status updates, doing them the same careful way every time, with a person one step away. We sell it as a **setup fee plus monthly retainer**.
 
@@ -34,7 +34,7 @@ Existing options each fall short:
 - **Point SaaS tools** — solve one narrow task, do not adapt to how a specific team actually works.
 - **Raw LLM chatbots** — answer questions but do not *do* the work, and offer no guardrails or auditability.
 
-The opening: LLM agents are now good enough to do the work end to end, but most teams cannot build, trust, or operate them. Mainframe is the studio that does it for them, with the trust layer built in.
+The opening: LLM agents are now good enough to do the work end to end, but most teams cannot build, trust, or operate them. Jantra AI is the studio that does it for them, with the trust layer built in.
 
 ---
 
@@ -87,7 +87,7 @@ The first product we sell. It owns a slice of back-office operations end to end:
 
 ## 6. Positioning and differentiation
 
-**Positioning statement.** For SMB and mid-market operators drowning in repetitive back-office work, Mainframe is the studio that builds and runs autonomous agents to do it, with a guardrail and audit layer that makes the work trustworthy. Unlike RPA (brittle, no judgment) or chatbots (talk, do not act), Mainframe's agents finish the task and show their work.
+**Positioning statement.** For SMB and mid-market operators drowning in repetitive back-office work, Jantra AI is the studio that builds and runs autonomous agents to do it, with a guardrail and audit layer that makes the work trustworthy. Unlike RPA (brittle, no judgment) or chatbots (talk, do not act), Jantra AI's agents finish the task and show their work.
 
 **Three pillars (the trust story):**
 1. **It acts, it does not just chat.** The agent completes the task in real tools, not a conversation about it.
@@ -213,7 +213,7 @@ First-wave connectors needed for the Ops wedge. Build behind the existing tool/M
                           │
                           ▼
    ┌─────────────────────────────────────────────┐
-   │  Mainframe Runtime  (one engine, many agents)│
+   │  Jantra AI Runtime  (one engine, many agents)│
    │  agent loop · policy gate · audit · handoff  │
    └───────┬───────────────┬───────────────┬──────┘
            │               │               │
@@ -287,7 +287,7 @@ Target: discovery → live in **≤4 weeks** for the first agent, faster as the 
 Relative phases; calendar start TBD (§18). Each phase ends with a checkable outcome.
 
 - **Phase 0 — Core (done).** Runtime: loop, policy gate, audit, handoff, caching, Support reference agent. ✅
-- **Phase 1 — Onboarding pipeline, dogfooded on Xolver (MVP).** Design partner #1 is Xolver itself, and the chosen process is Xolver's own client-delivery pipeline: idea → research → planning → build, built on the runtime as a 4-stage pipeline with a human confirmation gate between stages. Full spec in `docs/PIPELINE.md`. Forces real runtime upgrades: multi-turn (R6), persistence (R7), and a confirmation-gate model. Built incrementally (Intake first, then Research, Planning, Build). **Exit: the pipeline turning a real idea into a researched, planned (and ultimately built) product at Xolver, fully audited, usable as the reference demo.**
+- **Phase 1 — Planning pipeline, dogfooded on Xolver (MVP).** Design partner #1 is Xolver itself, and the chosen process is Xolver's own client-delivery planning: idea → research → planning, built on the runtime as a 3-stage pipeline with a human confirmation gate between stages. **Stage 4 (Build) is deferred** (see scope note and `docs/PIPELINE.md`). Forces real runtime upgrades: multi-turn (R6), persistence (R7), and a confirmation-gate model. Built incrementally (Intake done, then Research, then Planning). **Exit: the pipeline turning a real idea into a researched, fully-planned product (PRD + TRD + build plan) at Xolver, fully audited, usable as the reference demo.**
 
   > Note: the sellable back-office **Operations agent** wedge (§5) remains the external go-to-market story for SMB/mid-market. The onboarding pipeline is the Xolver dogfood and a demonstration of the runtime's range; it may also become a productized Xolver offering. Wedge decision unchanged for now.
 - **Phase 2 — Repeatable studio.** Multi-tenancy (R9), credential vault (C2), internal console to define/monitor agents (C1, C3), customer-readable run history (V1, V3), 2–3 more clients, build playbook documented. **Exit: ≤4-week build, 3–5 paying clients.**
@@ -305,7 +305,7 @@ Relative phases; calendar start TBD (§18). Each phase ends with a checkable out
 | **Bespoke builds do not scale (services trap)** | Treat every build as productization input; templatize aggressively in Phase 2–3; track build hours as a falling metric. |
 | **Model cost erodes margin** | Usage allowance in retainer; effort tuning; prompt caching; monitor cost per task. |
 | **Integration brittleness** | Prefer API/MCP integrations over UI automation; generic HTTP/MCP connector for the long tail. |
-| **"Mainframe" name / trademark conflict** | Trademark + domain search before any public launch (§18). |
+| **"Jantra AI" name / trademark conflict** | Trademark + domain search before any public launch (§18). |
 | **Sales cycle longer than studio cash runway** | SMB-first for fast cycles; setup fee improves cash flow; keep delivery lean. |
 
 ---
@@ -321,11 +321,14 @@ Relative phases; calendar start TBD (§18). Each phase ends with a checkable out
 6. **First design partner:** **Xolver itself.** We dogfood the first agent on Xolver's own operations, then use it as the reference case for outside clients.
 7. **Orchestration:** **self-hosted runtime** (full control of the gating/audit layer). Re-evaluate Managed Agents at Phase 2.
 8. **Hosting / tenancy:** **single-tenant now** (Xolver only); data model `client_id`-scoped so multi-tenancy is a later feature, not a rewrite. Per-client isolation offered when a client's security requires it.
+9. **First Xolver process:** the client-delivery **planning pipeline** (Intake → Research → Planning). See `docs/PIPELINE.md`.
+10. **Pipeline scope:** three stages only — Intake → Research → Planning. **Stage 4 (Build) deferred** (most expensive + least reliable; revisit after the planning product is proven). Keeps cost per idea predictable — roughly $0.35–$2.50 depending on model choice, vs. $10–80+ once a real build is included.
+
+11. **Name (decided):** **Jantra AI** — from *jantra/yantra* (machine/instrument); reads as "machine AI". GitHub: `DecoyINDIA/AI_Jantra`. A trademark + domain check is still worth doing before public launch, but the name is set.
 
 **Remaining:**
-1. **Name** — "Mainframe" is very common and likely unavailable to trademark. Need a new name + domain + mark check before any public launch. "Mainframe" stays as the working name until then.
-2. **First Xolver operation** — which repetitive back-office process at Xolver the first agent automates. *(Deciding now.)*
-3. **Pricing numbers** — validate in the first external discovery calls.
+1. **Model routing / cost** — whether stages 1–3 run all-Claude, or hybrid (Gemini Flash for Research + Planning bulk, Claude for orchestration). Leaning toward starting single-provider, measuring, then optimizing. Default model is also still Opus; consider Sonnet/Haiku for cheaper runs.
+2. **Pricing numbers** — validate in the first external discovery calls.
 
 ---
 

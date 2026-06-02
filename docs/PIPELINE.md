@@ -1,17 +1,17 @@
 # Onboarding Pipeline — design
 
-The first thing we build on the Mainframe runtime, dogfooded on Xolver. It takes a client from a raw idea to a built product, through four stages with a human confirmation gate between each. It is, deliberately, the same workflow we run by hand: idea → research → plan → build.
+The first thing we build on the Jantra AI runtime, dogfooded on Xolver. It takes a client from a raw idea to a fully-planned product, through three stages with a human confirmation gate between each. It is, deliberately, the same workflow we run by hand: idea → research → plan.
 
-> **Target:** all four stages. **Reality:** built and shipped incrementally. Stages 1–3 are fast, reliable wins. Stage 4 (build) is agentic coding with a human in the loop, not autonomous shipping. Each increment lands usable on its own.
+> **Scope (decided 2026-06-03):** three stages — Intake → Research → Planning. The product is "bring an idea, get it back researched and fully planned." **Stage 4 (Build) is deferred** — it is the most expensive and least reliable part (agentic coding, human-in-the-loop), so it is out of scope until the planning product is proven. Built and shipped incrementally; each stage lands usable on its own.
 
 ## The pipeline
 
 ```
-  ┌────────┐   gate   ┌──────────┐   gate   ┌──────────┐   gate   ┌────────┐
-  │ Intake │ ───────► │ Research │ ───────► │ Planning │ ───────► │ Build  │
-  └────────┘          └──────────┘          └──────────┘          └────────┘
-   idea summary       market research       PRD + TRD +           working
-                      report (cited)        build plan            software
+  ┌────────┐   gate   ┌──────────┐   gate   ┌──────────┐      ┌─ deferred ──┐
+  │ Intake │ ───────► │ Research │ ───────► │ Planning │ ····►│    Build    │
+  └────────┘          └──────────┘          └──────────┘      └─────────────┘
+   idea summary       market research       PRD + TRD +        (out of scope
+                      report (cited)        build plan          for now)
 ```
 
 A **gate** = the artifact is produced, then a human (the client, or Xolver) reviews and confirms before the next stage runs. This reuses the runtime's approval/handoff model: nothing proceeds without sign-off. Fail closed.
@@ -23,7 +23,7 @@ A **gate** = the artifact is produced, then a human (the client, or Xolver) revi
 | **1. Intake** | Client's raw idea | `idea_summary` (md) | Conversational agent: asks focused clarifying questions, then submits a structured summary via a tool. Multi-turn. | 🟡 Building |
 | **2. Research** | Confirmed idea summary | `research_report` (md, cited) | Research agent: fan-out web search, fetch, synthesize. Competitors, market, validation, risks. | ⬜ Next |
 | **3. Planning** | Idea + research | `prd`, `trd`, `build_plan` (md) | Document-generation agents from the confirmed inputs. | ⬜ Next |
-| **4. Build** | PRD + TRD + build plan | working software (repo) | Hands to a coding agent with a human driver. Scaffolds and drafts; a person reviews, corrects, ships. | ⬜ Later (human-in-loop) |
+| ~~4. Build~~ | PRD + TRD + build plan | working software (repo) | **Deferred — out of scope.** Would hand to a coding agent with a human driver; revisit only after the planning product is proven. | ⏸️ Deferred |
 
 ## Data model
 
@@ -33,7 +33,7 @@ The unit that flows through the pipeline is a **Project** (one client engagement
 - `StageState` — id, status (`pending | in_progress | awaiting_confirmation | confirmed | skipped`), artifacts.
 - `Artifact` — stage, kind, title, markdown content, version, timestamp.
 
-Persistence (MVP): JSON per project under `.mainframe/projects/<clientId>/`, plus each artifact written as a readable `.md` alongside it. A real database replaces this later (runtime requirement R7).
+Persistence (MVP): JSON per project under `.jantra/projects/<clientId>/`, plus each artifact written as a readable `.md` alongside it. A real database replaces this later (runtime requirement R7).
 
 ## Orchestration
 
@@ -44,10 +44,11 @@ Persistence (MVP): JSON per project under `.mainframe/projects/<clientId>/`, plu
 
 Every stage run is recorded in the runtime audit trail, so the whole engagement is auditable end to end.
 
-## Build increments (how "all four" actually ships)
+## Build increments (how the planning pipeline ships)
 
-1. **Foundation + Stage 1** (this increment): pipeline types, store, orchestrator, gate model, and the Intake agent. Run end to end on the CLI, stop at the first gate.
+1. **Foundation + Stage 1** (done): pipeline types, store, orchestrator, gate model, and the Intake agent. Run end to end on the CLI, stop at the first gate.
 2. **Stage 2 — Research:** wire web search/fetch tools; produce a cited report; gate it.
 3. **Stage 3 — Planning:** generate PRD + TRD + build plan from confirmed inputs; gate them.
-4. **Stage 4 — Build:** integrate a human-steered coding agent; scaffold from the build plan into a repo.
-5. **Hardening:** persistence to a real DB, approval/handoff UI (Slack then web), multi-turn polish, tests.
+4. **Hardening:** persistence to a real DB, approval/handoff UI (Slack then web), multi-turn polish, tests.
+
+> Stage 4 (Build) is deferred (see Scope above). If revisited, it slots in after Planning as a human-steered coding agent. The `build` stage stays registered in the runtime as a deferred, not-implemented stage so the structure is ready, but it is not on the roadmap right now.
