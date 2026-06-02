@@ -26,7 +26,7 @@ export interface AgentOptions {
 }
 
 /**
- * The Mainframe runtime. A manual agentic loop — chosen over the SDK's tool
+ * The Jantra AI runtime. A manual agentic loop — chosen over the SDK's tool
  * runner precisely because every action must pass the policy gate, be logged
  * with its reasoning, and be interruptible for human approval or handoff.
  *

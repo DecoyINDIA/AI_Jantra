@@ -23,7 +23,7 @@ async function main() {
     ask: async (question) => (await rl.question(`${question} > `)).trim(),
   };
 
-  console.log("\nMainframe — onboarding pipeline");
+  console.log("\nJantra AI — onboarding pipeline");
   console.log(`client: ${clientId}\n`);
 
   const project = createProject(clientId, "Untitled idea");
@@ -44,8 +44,8 @@ async function main() {
     `Stage "${stageTitle(project.currentStage)}" is awaiting your confirmation.`,
   );
   console.log(
-    `Saved to .mainframe/projects/${clientId}/${project.id}/ and audited at ` +
-      `.mainframe/audit/${project.id}.jsonl`,
+    `Saved to .jantra/projects/${clientId}/${project.id}/ and audited at ` +
+      `.jantra/audit/${project.id}.jsonl`,
   );
   console.log(
     "\nNext increment wires Stage 2 (Research) behind this gate. For now the pipeline stops here.",

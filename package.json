@@ -1,8 +1,8 @@
 {
-  "name": "@mainframe/runtime",
+  "name": "@jantra/runtime",
   "version": "0.0.1",
   "private": true,
-  "description": "Mainframe — reusable runtime for autonomous business-operations agents. Agentic tool-use loop on Claude, with a policy gate, a full audit trail, and human handoff.",
+  "description": "Jantra AI — reusable runtime for autonomous business-operations agents. Agentic tool-use loop on Claude, with a policy gate, a full audit trail, and human handoff.",
   "type": "module",
   "license": "UNLICENSED",
   "engines": {
