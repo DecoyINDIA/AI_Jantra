@@ -1,0 +1,26 @@
+{
+  "name": "@mainframe/runtime",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Mainframe — reusable runtime for autonomous business-operations agents. Agentic tool-use loop on Claude, with a policy gate, a full audit trail, and human handoff.",
+  "type": "module",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "support": "node --import tsx src/cli.ts",
+    "support:auto": "node --import tsx src/cli.ts --auto-approve"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "latest",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.19",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}
