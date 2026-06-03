@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck runtime
+        run: npx tsc -p tsconfig.json --noEmit
+
+      - name: Typecheck web
+        run: npm run typecheck --workspace=@jantra/web
+
+      - name: Typecheck client
+        run: npm run typecheck --workspace=@jantra/client
+
+      - name: Typecheck embed-widget
+        run: npm run typecheck --workspace=@jantra/embed-widget
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: typecheck
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build runtime
+        run: npx tsc -p tsconfig.json
+
+      - name: Build web
+        run: npm run build --workspace=@jantra/web
+
+      - name: Build client
+        run: npm run build --workspace=@jantra/client
+
+      - name: Build embed-widget
+        run: npm run build --workspace=@jantra/embed-widget
+
+      - name: Upload runtime dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-dist
+          path: dist/
+          retention-days: 7
