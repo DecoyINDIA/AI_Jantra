@@ -326,9 +326,10 @@ Relative phases; calendar start TBD (§18). Each phase ends with a checkable out
 
 11. **Name (decided):** **Jantra AI** — from *jantra/yantra* (machine/instrument); reads as "machine AI". GitHub: `DecoyINDIA/AI_Jantra`. A trademark + domain check is still worth doing before public launch, but the name is set.
 
+12. **Models (decided): Gemini 2.5 only — no Claude/Opus in the runtime.** Each stage is selectable between **Gemini 2.5 Flash** (cheap) and **Gemini 2.5 Pro** (higher quality) via config. Recommended defaults: Intake = Flash, Research = Flash (with Google Search grounding), Planning = Pro. Can be set to all-Flash (~$0.10–0.25/idea), the recommended mix (~$0.40–0.90/idea), or all-Pro (~$1–3/idea). The model layer uses Google's `@google/genai` SDK and a `GEMINI_API_KEY`. Gemini equivalents replace Claude features: thinking config (audit reasoning), context caching (cost), Search grounding (Research). Exact model IDs / SDK details to be verified against Google docs at build time. (Code still defaults to Claude until the Gemini layer is built.)
+
 **Remaining:**
-1. **Model routing / cost** — whether stages 1–3 run all-Claude, or hybrid (Gemini Flash for Research + Planning bulk, Claude for orchestration). Leaning toward starting single-provider, measuring, then optimizing. Default model is also still Opus; consider Sonnet/Haiku for cheaper runs.
-2. **Pricing numbers** — validate in the first external discovery calls.
+1. **Pricing numbers** — validate in the first external discovery calls.
 
 ---
 

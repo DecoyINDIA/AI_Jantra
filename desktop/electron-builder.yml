@@ -1,0 +1,19 @@
+appId: ai.jantra.desktop
+productName: Jantra
+directories:
+  output: release
+files:
+  - dist/**
+  - package.json
+  - ../dist/**
+  - ../web/dist/**
+extraMetadata:
+  main: dist/main.js
+win:
+  target:
+    - nsis
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+publish: null

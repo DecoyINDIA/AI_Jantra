@@ -1,0 +1,187 @@
+{
+  "entries": [
+    {
+      "stage": "intake",
+      "purpose": "generator",
+      "toolCalls": [
+        {
+          "name": "submit_idea_summary",
+          "args": {
+            "title": "Finance Reconciliation Copilot",
+            "problem": "Small finance teams lose time reconciling ecommerce orders, payment payouts, and accounting invoices across disconnected systems.",
+            "solution": "A daily reconciliation assistant connects Shopify, Stripe, and QuickBooks, flags mismatches, and prepares approval-ready summaries.",
+            "targetUsers": "Small finance and operations teams at ecommerce companies.",
+            "keyFeatures": [
+              "Connector-based reconciliation",
+              "Mismatch detection",
+              "Approval summaries",
+              "Audit trail"
+            ],
+            "constraints": "Start with Shopify, Stripe, and QuickBooks. Keep the first version focused on daily review workflows.",
+            "successCriteria": "Finance users can review mismatches each morning and approve a clear summary with evidence.",
+            "openQuestions": [
+              "Which accounting edge cases matter most in the first release?"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "stage": "intake",
+      "purpose": "critic",
+      "text": "{\"scores\":{\"specificity\":5,\"completeness\":5,\"researchability\":5,\"noInventedDetails\":5},\"passed\":true,\"notes\":\"The summary is specific enough for research and planning.\",\"followUpQuestions\":[]}"
+    },
+    {
+      "stage": "support",
+      "purpose": "agent_turn_1",
+      "text": "I found the order and need approval before issuing the refund.",
+      "toolCalls": [
+        {
+          "name": "get_order",
+          "args": {
+            "orderId": "A-1001"
+          }
+        },
+        {
+          "name": "issue_refund",
+          "args": {
+            "orderId": "A-1001",
+            "amountCents": 8900,
+            "reason": "Damaged item arrived with a cracked base."
+          }
+        }
+      ]
+    },
+    {
+      "stage": "support",
+      "purpose": "agent_turn_2",
+      "text": "I refunded order A-1001 for the damaged lamp and prepared the customer update."
+    },
+    {
+      "stage": "research",
+      "purpose": "planner",
+      "text": "{\"sections\":[{\"title\":\"Market demand\",\"question\":\"What demand signals support daily reconciliation for small ecommerce finance teams?\",\"searchQueries\":[\"small ecommerce finance reconciliation order payout invoice demand\",\"finance teams daily reconciliation mismatch approval summary\"]},{\"title\":\"Competitive landscape\",\"question\":\"Which products or approaches compete on reconciliation automation?\",\"searchQueries\":[\"reconciliation automation connector coverage mismatch detection tools\",\"finance automation approval workflow audit trail competitors\"]},{\"title\":\"Pricing and workflow norms\",\"question\":\"How do finance workflow buyers evaluate and price reconciliation automation?\",\"searchQueries\":[\"finance workflow automation pricing connected accounts transaction volume\",\"exception review approval summary month end close finance teams\"]},{\"title\":\"Risks and implementation caveats\",\"question\":\"What risks could block reconciliation automation adoption?\",\"searchQueries\":[\"reconciliation automation data quality integration mapping risks\",\"financial record automation security retention least privilege risks\"]}]}"
+    },
+    {
+      "stage": "research",
+      "purpose": "grounded_search",
+      "text": "Market demand points to daily reconciliation pain.",
+      "citations": [
+        { "uri": "{{fixtureDir}}/sources/market.html", "title": "Market signals for finance automation" }
+      ]
+    },
+    {
+      "stage": "research",
+      "purpose": "grounded_search",
+      "text": "Approval-summary expectations also appear in finance workflow norms.",
+      "citations": [
+        { "uri": "{{fixtureDir}}/sources/pricing.html", "title": "Finance workflow buying norms 2026" }
+      ]
+    },
+    {
+      "stage": "research",
+      "purpose": "grounded_search",
+      "text": "Competitors differentiate through connectors and workflows.",
+      "citations": [
+        { "uri": "{{fixtureDir}}/sources/competitors.html", "title": "Competitive landscape for reconciliation tools" }
+      ]
+    },
+    {
+      "stage": "research",
+      "purpose": "grounded_search",
+      "text": "Audit trails are a buying criterion.",
+      "citations": [
+        { "uri": "{{fixtureDir}}/sources/market.html", "title": "Market signals for finance automation" },
+        { "uri": "{{fixtureDir}}/sources/competitors.html", "title": "Competitive landscape for reconciliation tools" }
+      ]
+    },
+    {
+      "stage": "research",
+      "purpose": "grounded_search",
+      "text": "Pricing commonly scales with accounts and transaction volume.",
+      "citations": [
+        { "uri": "{{fixtureDir}}/sources/pricing.html", "title": "Finance workflow buying norms 2026" }
+      ]
+    },
+    {
+      "stage": "research",
+      "purpose": "grounded_search",
+      "text": "Workflow depth and auditability matter for finance buyers.",
+      "citations": [
+        { "uri": "{{fixtureDir}}/sources/competitors.html", "title": "Competitive landscape for reconciliation tools" }
+      ]
+    },
+    {
+      "stage": "research",
+      "purpose": "grounded_search",
+      "text": "Data quality and mapping are implementation risks.",
+      "citations": [
+        { "uri": "{{fixtureDir}}/sources/risks.html", "title": "Integration risks in finance automation" }
+      ]
+    },
+    {
+      "stage": "research",
+      "purpose": "grounded_search",
+      "text": "Security reviews focus on access and retention controls.",
+      "citations": [
+        { "uri": "{{fixtureDir}}/sources/pricing.html", "title": "Finance workflow buying norms 2026" },
+        { "uri": "{{fixtureDir}}/sources/risks.html", "title": "Integration risks in finance automation" }
+      ]
+    },
+    {
+      "stage": "research",
+      "purpose": "section_synthesis",
+      "text": "{\"summary\":\"Small ecommerce finance teams show a concrete daily reconciliation workflow with exception review pressure.\",\"claims\":[{\"text\":\"Small finance teams have a daily reconciliation workflow across orders, payouts, and invoices.\",\"citations\":[{\"sourceId\":\"src_market\",\"quote\":\"Small finance teams reconcile commerce orders, payment processor payouts, and accounting invoices every morning.\"}]},{\"text\":\"Approval summaries and exportable evidence are expected in finance review workflows.\",\"citations\":[{\"sourceId\":\"src_pricing\",\"quote\":\"Finance teams expect exception review queues, approval summaries, and exportable evidence for month-end close.\"}]}],\"risks\":[\"Demand must be validated by system-specific volume and close-cycle urgency.\"]}"
+    },
+    {
+      "stage": "research",
+      "purpose": "section_synthesis",
+      "text": "{\"summary\":\"The competitive field rewards products that combine connectors, explainability, workflow, and auditability.\",\"claims\":[{\"text\":\"Reconciliation automation competes on connector breadth, mismatch explainability, and approval workflows.\",\"citations\":[{\"sourceId\":\"src_competitors\",\"quote\":\"Automation tools compete on connector coverage, explainable mismatch detection, and approval workflows.\"}]},{\"text\":\"Finance buyers value an audit trail for reviewed exceptions.\",\"citations\":[{\"sourceId\":\"src_competitors\",\"quote\":\"Finance buyers prefer products that preserve an audit trail for every reviewed exception.\"}]}],\"risks\":[\"A thin connector set could make the product look narrower than established workflow tools.\"]}"
+    },
+    {
+      "stage": "research",
+      "purpose": "section_synthesis",
+      "text": "{\"summary\":\"Buying and packaging should map to connected systems, transaction volume, and depth of automation.\",\"claims\":[{\"text\":\"Pricing norms can scale with connected accounts, transaction volume, and workflow automation depth.\",\"citations\":[{\"sourceId\":\"src_pricing\",\"quote\":\"Pricing commonly scales with connected accounts, transaction volume, and workflow automation depth.\"}]},{\"text\":\"Exception review queues are part of expected finance workflow value.\",\"citations\":[{\"sourceId\":\"src_pricing\",\"quote\":\"Finance teams expect exception review queues, approval summaries, and exportable evidence for month-end close.\"}]}],\"risks\":[\"Usage-based pricing needs transparent limits so small teams do not fear runaway costs.\"]}"
+    },
+    {
+      "stage": "research",
+      "purpose": "section_synthesis",
+      "text": "{\"summary\":\"Implementation risk centers on source-system mappings, data quality, security, and retention controls.\",\"claims\":[{\"text\":\"Data quality and integration mapping are recurring risks for reconciliation automation.\",\"citations\":[{\"sourceId\":\"src_risks\",\"quote\":\"Data quality and integration mapping are recurring risks for reconciliation automation projects.\"}]},{\"text\":\"Security reviews focus on least privilege, encryption, and retention controls for financial records.\",\"citations\":[{\"sourceId\":\"src_risks\",\"quote\":\"Security reviews focus on least-privilege access, encryption, and clear retention controls for financial records.\"}]}],\"risks\":[\"The first release should constrain supported systems and document data handling clearly.\"]}"
+    },
+    {
+      "stage": "research",
+      "purpose": "critic",
+      "text": "{\"scores\":{\"factualAccuracy\":5,\"citationAccuracy\":5,\"completeness\":5,\"sourceQuality\":4,\"balance\":4},\"passed\":true,\"notes\":\"The report has verified quote-backed claims and useful risks.\"}"
+    },
+    {
+      "stage": "planning",
+      "purpose": "prd_generator",
+      "text": "{\"title\":\"PRD - Finance Reconciliation Copilot\",\"requirements\":[{\"id\":\"req-1\",\"text\":\"Connect Shopify, Stripe, and QuickBooks to reconcile orders, payouts, and invoices each morning.\",\"acceptanceCriteria\":[\"A user can connect the three systems in a test workspace.\",\"The system produces a daily reconciliation run.\"]},{\"id\":\"req-2\",\"text\":\"Detect and explain mismatches between commerce, payment, and accounting records.\",\"acceptanceCriteria\":[\"Mismatch rows include source evidence and reason codes.\",\"Users can filter by severity and system.\"]},{\"id\":\"req-3\",\"text\":\"Produce approval summaries with an auditable evidence trail.\",\"acceptanceCriteria\":[\"A reviewer can approve or reject a summary.\",\"Each approval links back to source records and reviewer notes.\"]}],\"sections\":[{\"heading\":\"Users and problem\",\"body\":\"Finance users need a daily requirement for reconciliation because success depends on catching risk before close.\",\"sourceIds\":[\"src_market\"],\"requirementIds\":[\"req-1\",\"req-2\"]},{\"heading\":\"Goals and success metrics\",\"body\":\"Success means fewer manual review hours, faster mismatch resolution, and a clear approval summary for each daily run.\",\"sourceIds\":[\"src_pricing\"],\"requirementIds\":[\"req-1\",\"req-3\"]},{\"heading\":\"Functional requirements\",\"body\":\"The product must connect systems, normalize data, detect mismatches, and route approval-ready summaries to finance users.\",\"sourceIds\":[\"src_competitors\"],\"requirementIds\":[\"req-1\",\"req-2\",\"req-3\"]},{\"heading\":\"Non-goals\",\"body\":\"The first release will not replace accounting systems or support every payment processor.\",\"sourceIds\":[],\"requirementIds\":[]},{\"heading\":\"Risks\",\"body\":\"Data quality, integration mapping, security, and retention risk must be handled explicitly.\",\"sourceIds\":[\"src_risks\"],\"requirementIds\":[\"req-1\",\"req-2\",\"req-3\"]}],\"risks\":[\"Connector scope could expand too quickly.\",\"Financial records require careful access controls.\"],\"openQuestions\":[\"Which mismatch reason codes are required at launch?\"]}"
+    },
+    {
+      "stage": "planning",
+      "purpose": "prd_critic",
+      "text": "{\"scores\":{\"completeness\":5,\"internalConsistency\":5,\"grounding\":5,\"technicalSoundness\":4,\"actionability\":5},\"passed\":true,\"notes\":\"The PRD is grounded and requirement IDs are stable.\"}"
+    },
+    {
+      "stage": "planning",
+      "purpose": "trd_generator",
+      "text": "{\"title\":\"TRD - Finance Reconciliation Copilot\",\"requirements\":[],\"sections\":[{\"heading\":\"Architecture overview\",\"body\":\"The architecture uses connector workers, a normalized reconciliation store, mismatch services, and approval APIs that trace to the PRD.\",\"sourceIds\":[],\"requirementIds\":[\"req-1\",\"req-2\",\"req-3\"]},{\"heading\":\"Data model\",\"body\":\"Data entities include accounts, source records, reconciliation runs, mismatch explanations, approval summaries, and audit events.\",\"sourceIds\":[],\"requirementIds\":[\"req-1\",\"req-2\",\"req-3\"]},{\"heading\":\"Integration boundaries\",\"body\":\"Integration adapters isolate Shopify, Stripe, and QuickBooks data mapping so each connector can fail independently.\",\"sourceIds\":[\"src_risks\"],\"requirementIds\":[\"req-1\"]},{\"heading\":\"Security and privacy\",\"body\":\"Security requires least privilege, encryption, retention controls, and immutable audit logs for financial records.\",\"sourceIds\":[\"src_risks\"],\"requirementIds\":[\"req-3\"]},{\"heading\":\"Mismatch engine\",\"body\":\"The mismatch engine compares normalized records and emits explainable reason codes for PRD review workflows.\",\"sourceIds\":[\"src_competitors\"],\"requirementIds\":[\"req-2\"]}],\"risks\":[\"Connector API limits may delay reconciliation runs.\"],\"openQuestions\":[\"Which storage engine is preferred for immutable audit events?\"]}"
+    },
+    {
+      "stage": "planning",
+      "purpose": "trd_critic",
+      "text": "{\"scores\":{\"completeness\":5,\"internalConsistency\":5,\"grounding\":5,\"technicalSoundness\":5,\"actionability\":5},\"passed\":true,\"notes\":\"The TRD covers the PRD requirements and includes architecture, data, security, and integration detail.\"}"
+    },
+    {
+      "stage": "planning",
+      "purpose": "build_plan_generator",
+      "text": "{\"title\":\"Build plan - Finance Reconciliation Copilot\",\"requirements\":[],\"sections\":[{\"heading\":\"Milestone 1 - Connector foundation\",\"body\":\"Build the connector sequence for Shopify, Stripe, and QuickBooks with acceptance tests against fixture records and PRD traceability.\",\"sourceIds\":[],\"requirementIds\":[\"req-1\"]},{\"heading\":\"Milestone 2 - Reconciliation and mismatch detection\",\"body\":\"Implement normalized data matching, reason codes, risk flags, and acceptance checks for mismatch accuracy.\",\"sourceIds\":[\"src_competitors\"],\"requirementIds\":[\"req-2\"]},{\"heading\":\"Milestone 3 - Approval workflow\",\"body\":\"Ship approval summaries, reviewer decisions, exportable evidence, and audit events with PRD coverage.\",\"sourceIds\":[\"src_pricing\"],\"requirementIds\":[\"req-3\"]},{\"heading\":\"Milestone 4 - Security hardening\",\"body\":\"Verify least privilege, encryption, retention controls, and audit-log review before launch.\",\"sourceIds\":[\"src_risks\"],\"requirementIds\":[\"req-1\",\"req-2\",\"req-3\"]},{\"heading\":\"Release sequence and risks\",\"body\":\"The sequence reduces integration risk first, then validates workflow acceptance and operational readiness.\",\"sourceIds\":[],\"requirementIds\":[\"req-1\",\"req-2\",\"req-3\"]}],\"risks\":[\"Unclear connector permissions could slow release.\",\"Mismatch precision must be tested before customer data is trusted.\"],\"openQuestions\":[\"Who approves launch readiness for financial data handling?\"]}"
+    },
+    {
+      "stage": "planning",
+      "purpose": "build_plan_critic",
+      "text": "{\"scores\":{\"completeness\":5,\"internalConsistency\":5,\"grounding\":5,\"technicalSoundness\":5,\"actionability\":5},\"passed\":true,\"notes\":\"The build plan covers every PRD requirement with milestones and acceptance criteria.\"}"
+    }
+  ]
+}

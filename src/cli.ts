@@ -22,13 +22,13 @@ function buildApprovalHandler(autoApprove: boolean): ApprovalHandler {
   if (!stdin.isTTY) {
     // No interactive terminal: deny rather than silently act.
     return async (req) => {
-      console.log(`\n[no TTY — denying] ${req.toolName} ${JSON.stringify(req.input)}`);
+      console.log(`\n[no TTY - denying] ${req.toolName} ${JSON.stringify(req.input)}`);
       return false;
     };
   }
   const rl = createInterface({ input: stdin, output: stdout });
   return async (req) => {
-    console.log(`\n———  APPROVAL NEEDED  ———`);
+    console.log(`\n---  APPROVAL NEEDED  ---`);
     console.log(`tool:   ${req.toolName}`);
     console.log(`reason: ${req.reason}`);
     console.log(`input:  ${JSON.stringify(req.input, null, 2)}`);
@@ -46,7 +46,7 @@ async function main() {
     args.filter((a) => !a.startsWith("--")).join(" ").trim() ||
     "Hi, my desk lamp on order A-1001 arrived with a cracked base. I'd like a refund. My email is dana@example.com.";
 
-  console.log(`\nJantra AI — ${supportAgentSpec.name}`);
+  console.log(`\nJantra AI - ${supportAgentSpec.name}`);
   console.log(`customer: ${message}\n`);
 
   const agent = new Agent({
@@ -58,12 +58,12 @@ async function main() {
 
   const result = await agent.run(message);
 
-  console.log("\n———  RESULT  ———");
+  console.log("\n---  RESULT  ---");
   if (result.finalText) console.log(result.finalText);
   console.log(
     `\nsteps: ${result.steps} | handed off: ${result.handedOff} | ` +
       `tokens in/out: ${result.usage.inputTokens}/${result.usage.outputTokens} ` +
-      `(cache read: ${result.usage.cacheReadTokens})`,
+      `(cached: ${result.usage.cachedTokens}) | cost: $${result.usage.costUsd.toFixed(4)}`,
   );
   console.log(`audit trail: .jantra/audit/${result.runId}.jsonl`);
 
