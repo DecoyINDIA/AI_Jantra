@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 
-import { loadProject } from "../../pipeline/store.js";
+import type { ProjectStore } from "../../pipeline/store.js";
 import { readAuditEvents, runEventBus, type RunEvent } from "../events.js";
 import { notFound } from "../errors.js";
 import { cursorQuerySchema, parseWith, runParamsSchema } from "../schemas.js";
@@ -8,6 +8,7 @@ import { assertProjectAccess, requestClientId } from "../tenancy.js";
 
 interface EventRouteDeps {
   clientId: string;
+  store: ProjectStore;
 }
 
 function writeSse(raw: NodeJS.WritableStream, event: RunEvent): void {
@@ -21,7 +22,7 @@ export function registerEventRoutes(app: FastifyInstance, deps: EventRouteDeps):
     const params = parseWith(runParamsSchema, request.params);
     const query = parseWith(cursorQuerySchema, request.query);
     const clientId = requestClientId(request, deps.clientId);
-    const project = loadProject(clientId, params.runId);
+    const project = deps.store.loadProject(clientId, params.runId);
     if (!project) throw notFound(`Run ${params.runId} was not found.`);
     assertProjectAccess(request.identity, project);
 

@@ -4,6 +4,7 @@ import {
   type AgentDefinition,
   type AgentDefinitionSnapshot,
 } from "./definition.js";
+import { intakePublicDefinition } from "./intakePublic.js";
 import { planningPipelineDefinition } from "./planningPipeline.js";
 import { supportAgentDefinition } from "./supportDefinition.js";
 
@@ -57,6 +58,7 @@ export class AgentRegistry {
 
 export const defaultAgentRegistry = new AgentRegistry([
   planningPipelineDefinition,
+  intakePublicDefinition,
   supportAgentDefinition,
 ]);
 

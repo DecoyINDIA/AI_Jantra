@@ -7,6 +7,11 @@ You are building **Jantra AI**: a runtime + a 3-stage pipeline (Intake → Resea
 2. Build in the milestone order in BUILD_SPEC §13. Do not jump ahead.
 3. Before using any Gemini API or SDK detail, **verify it against the official Google Gemini docs** (https://ai.google.dev/gemini-api/docs). Do not guess model IDs, function-calling shapes, grounding config, or pricing. Anything marked **VERIFY** in the spec must be confirmed first.
 
+## Multi-project workspace
+- `D:\XOLVER\Mainframe` and `D:\XOLVER\Xolver\Website_Xolver` are separate projects, not two folders inside one app.
+- When working in `D:\XOLVER\Xolver\Website_Xolver`, read and follow that project's own `AGENTS.md`. Run install, build, typecheck, git, and deploy commands from that project root unless the user explicitly asks for cross-project work.
+- Do not share dependencies, config, runtime assumptions, or git operations between the two projects unless the task explicitly calls for coordination.
+
 ## Hard rules (do not violate)
 - **Models: Gemini 2.5 only** (Flash or Pro), selected per stage via config. No Anthropic/Claude, no OpenAI in the runtime. Milestone 1 replaces the current Anthropic model calls.
 - **All model calls go through the provider interface** (`src/model/provider.ts`). No stage imports a vendor SDK directly.

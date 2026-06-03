@@ -1,0 +1,24 @@
+name = "jantra-edge"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+
+# The public hostname visitors and embeds call, e.g. api.jantra.in.
+# routes = [{ pattern = "api.jantra.in/*", custom_domain = true }]
+
+[vars]
+# Private Jantra Node origin (NOT public). Reachable only from the Worker.
+JANTRA_ORIGIN = "https://jantra-origin.example.com"
+# Comma list of embedding-site origins allowed to call the edge.
+ALLOWED_ORIGINS = "https://xolver.in,https://www.xolver.in"
+
+# Secret (do NOT put in this file): set with
+#   wrangler secret put JANTRA_API_KEY
+# Value must match a JANTRA_REMOTE_API_KEYS record on the origin, e.g. the key
+# part of "<key>:xolver:web".
+
+# Native per-IP rate limit for public intake traffic.
+[[unsafe.bindings]]
+name = "RATE_LIMITER"
+type = "ratelimit"
+namespace_id = "1001"
+simple = { limit = 15, period = 60 }

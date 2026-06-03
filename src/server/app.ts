@@ -2,12 +2,13 @@ import fastify, { type FastifyInstance } from "fastify";
 
 import { setAuditPublisher } from "../audit.js";
 import { defaultAgentRegistry, type AgentRegistry } from "../agents/registry.js";
-import { defaultStore, type ProjectStore } from "../pipeline/store.js";
+import { defaultStore, type ApiKeyStore, type ProjectStore } from "../pipeline/store.js";
 import { installApiKeyAuth, parseApiKeyRecords, type ApiKeyRecord } from "./auth/apiKeys.js";
 import { runEventBus } from "./events.js";
 import { sendHttpError } from "./errors.js";
 import { installLocalSecurity } from "./security.js";
 import { registerAgentRoutes } from "./routes/agents.js";
+import { registerAdminKeyRoutes } from "./routes/adminKeys.js";
 import { registerArtifactRoutes } from "./routes/artifacts.js";
 import { registerAuditRoutes } from "./routes/audit.js";
 import { registerEventRoutes } from "./routes/events.js";
@@ -20,7 +21,9 @@ export interface CreateServerOptions {
   clientId?: string;
   registry?: AgentRegistry;
   store?: ProjectStore;
+  apiKeyStore?: ApiKeyStore;
   apiKeys?: ApiKeyRecord[];
+  adminToken?: string;
   allowedOrigins?: string[];
   allowedHosts?: string[];
 }
@@ -31,6 +34,17 @@ export interface StartedLocalApi {
   loopbackToken: string;
 }
 
+function isApiKeyStore(store: ProjectStore): store is ProjectStore & ApiKeyStore {
+  const candidate = store as Partial<ApiKeyStore>;
+  return (
+    typeof candidate.createApiKey === "function" &&
+    typeof candidate.getApiKeyByHash === "function" &&
+    typeof candidate.listApiKeys === "function" &&
+    typeof candidate.revokeApiKey === "function" &&
+    typeof candidate.touchApiKeyLastUsed === "function"
+  );
+}
+
 export function createServer(options: CreateServerOptions): FastifyInstance {
   const app = fastify({
     logger: false,
@@ -39,9 +53,13 @@ export function createServer(options: CreateServerOptions): FastifyInstance {
   const clientId = options.clientId ?? "xolver";
   const registry = options.registry ?? defaultAgentRegistry;
   const store = options.store ?? defaultStore;
+  const apiKeyStore = options.apiKeyStore ?? (isApiKeyStore(store) ? store : undefined);
 
   if ((options.mode ?? "local") === "remote") {
-    installApiKeyAuth(app, options.apiKeys ?? parseApiKeyRecords());
+    installApiKeyAuth(app, {
+      apiKeyStore,
+      envRecords: options.apiKeys ?? parseApiKeyRecords(),
+    });
   } else {
     installLocalSecurity(app, {
       loopbackToken: options.loopbackToken,
@@ -52,12 +70,19 @@ export function createServer(options: CreateServerOptions): FastifyInstance {
 
   setAuditPublisher((entry) => runEventBus.publishAuditEntry(entry));
 
+  if (options.adminToken) {
+    if (!apiKeyStore) {
+      throw new Error("JANTRA_ADMIN_TOKEN requires a SQLite ApiKeyStore.");
+    }
+    registerAdminKeyRoutes(app, { adminToken: options.adminToken, apiKeyStore });
+  }
+
   registerAgentRoutes(app, registry);
   registerRunRoutes(app, { clientId, registry, store });
-  registerInteractionRoutes(app, { clientId });
-  registerArtifactRoutes(app, { clientId });
-  registerAuditRoutes(app, { clientId });
-  registerEventRoutes(app, { clientId });
+  registerInteractionRoutes(app, { clientId, store });
+  registerArtifactRoutes(app, { clientId, store });
+  registerAuditRoutes(app, { clientId, store });
+  registerEventRoutes(app, { clientId, store });
 
   app.setErrorHandler((err, _request, reply) => {
     sendHttpError(reply, err);

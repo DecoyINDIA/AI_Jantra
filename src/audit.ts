@@ -8,8 +8,10 @@ import { join } from "node:path";
  * synchronous on purpose. We never want to lose an entry to a crash.
  */
 export type AuditType =
+  | "run_created"
   | "run_start"
   | "run_end"
+  | "interaction"
   | "agent_thinking"
   | "agent_message"
   | "tool_call"
@@ -27,6 +29,8 @@ export type AuditType =
   | "cost_rollup"
   | "source_registered"
   | "source_cap_applied"
+  | "key_created"
+  | "key_revoked"
   | "resume"
   | "error";
 

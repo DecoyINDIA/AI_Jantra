@@ -20,6 +20,7 @@
     "support:auto": "node --import tsx src/cli.ts --auto-approve",
     "pipeline": "node --import tsx src/pipeline/cli.ts",
     "server": "node --import tsx src/server/index.ts",
+    "server:remote": "node --import tsx src/server/remote.ts",
     "server:smoke": "node --import tsx src/server/smoke.ts",
     "web:dev": "npm.cmd run dev -w @jantra/web",
     "web:build": "npm.cmd run build -w @jantra/web",
@@ -27,6 +28,7 @@
     "desktop:build": "npm.cmd run build && npm.cmd run web:build && npm.cmd run build -w @jantra/desktop && npm.cmd run dist -w @jantra/desktop",
     "client:build": "npm.cmd run build -w @jantra/client",
     "embed:build": "npm.cmd run build -w @jantra/embed-widget",
+    "edge:verify": "node deploy/cloudflare-worker/verify-edge.mjs",
     "eval": "node --import tsx src/runtime/evals/index.ts",
     "smoke": "node --import tsx src/runtime/evals/smoke.ts"
   },
