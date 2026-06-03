@@ -53,6 +53,7 @@ async function startApi(): Promise<ApiHandle> {
     loopbackToken: randomBytes(32).toString("base64url"),
     clientId: "xolver",
     store: new SqliteProjectStore(desktopDatabasePath()),
+    adminToken: process.env.JANTRA_ADMIN_TOKEN,
   });
 }
 
@@ -76,6 +77,7 @@ async function createMainWindow(api: ApiHandle): Promise<void> {
       additionalArguments: [
         `--jantra-api-base=${api.baseUrl}`,
         `--jantra-loopback-token=${api.loopbackToken}`,
+        `--jantra-admin-token=${process.env.JANTRA_ADMIN_TOKEN ?? ""}`,
       ],
     },
   });

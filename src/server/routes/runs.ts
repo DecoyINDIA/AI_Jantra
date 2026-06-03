@@ -1,9 +1,10 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 
+import { AuditLogger } from "../../audit.js";
+import { config } from "../../config.js";
 import type { AgentRegistry } from "../../agents/registry.js";
 import { advanceStage, confirmStage, createProject, rejectStage } from "../../pipeline/orchestrator.js";
 import type { ProjectStore } from "../../pipeline/store.js";
-import { loadProject, saveProject } from "../../pipeline/store.js";
 import { notFound } from "../errors.js";
 import {
   createRunBodySchema,
@@ -20,8 +21,13 @@ interface RunRouteDeps {
   store: ProjectStore;
 }
 
-function loadScopedProject(request: FastifyRequest, clientId: string, runId: string) {
-  const project = loadProject(clientId, runId);
+function loadScopedProject(
+  request: FastifyRequest,
+  store: ProjectStore,
+  clientId: string,
+  runId: string,
+) {
+  const project = store.loadProject(clientId, runId);
   if (!project) throw notFound(`Run ${runId} was not found.`);
   assertProjectAccess(request.identity, project);
   return project;
@@ -37,6 +43,16 @@ export function registerRunRoutes(app: FastifyInstance, deps: RunRouteDeps): voi
       title: body.title,
       definition,
     });
+    const audit = new AuditLogger(project.id, config.auditDir);
+    audit.record("run_created", {
+      clientId: project.clientId,
+      projectId: project.id,
+      agentId: project.agentId,
+      agentVersion: project.agentVersion,
+      titleChars: body.title.length,
+      initialInputChars: body.input?.length ?? 0,
+    });
+    deps.store.saveProject(project);
     if (body.input) {
       project.stages[project.currentStage]?.artifacts.push({
         stage: project.currentStage,
@@ -46,7 +62,7 @@ export function registerRunRoutes(app: FastifyInstance, deps: RunRouteDeps): voi
         version: 1,
         createdAt: new Date().toISOString(),
       });
-      saveProject(project);
+      deps.store.saveProject(project);
     }
     return { run: project };
   });
@@ -67,22 +83,24 @@ export function registerRunRoutes(app: FastifyInstance, deps: RunRouteDeps): voi
   app.get("/v1/runs/:runId", async (request) => {
     const clientId = requestClientId(request, deps.clientId);
     const params = parseWith(runParamsSchema, request.params);
-    return { run: loadScopedProject(request, clientId, params.runId) };
+    return { run: loadScopedProject(request, deps.store, clientId, params.runId) };
   });
 
   app.post("/v1/runs/:runId/advance", async (request) => {
     const clientId = requestClientId(request, deps.clientId);
     const params = parseWith(runParamsSchema, request.params);
-    const project = loadScopedProject(request, clientId, params.runId);
+    const project = loadScopedProject(request, deps.store, clientId, params.runId);
     const step = await advanceStage(project);
+    deps.store.saveProject(project);
     return { run: project, step };
   });
 
   app.post("/v1/runs/:runId/confirm", async (request) => {
     const clientId = requestClientId(request, deps.clientId);
     const params = parseWith(runParamsSchema, request.params);
-    const project = loadScopedProject(request, clientId, params.runId);
+    const project = loadScopedProject(request, deps.store, clientId, params.runId);
     const nextStage = confirmStage(project);
+    deps.store.saveProject(project);
     return { run: project, nextStage };
   });
 
@@ -90,8 +108,9 @@ export function registerRunRoutes(app: FastifyInstance, deps: RunRouteDeps): voi
     const clientId = requestClientId(request, deps.clientId);
     const params = parseWith(runParamsSchema, request.params);
     const body = parseWith(rejectRunBodySchema, request.body);
-    const project = loadScopedProject(request, clientId, params.runId);
+    const project = loadScopedProject(request, deps.store, clientId, params.runId);
     rejectStage(project, body.reason);
+    deps.store.saveProject(project);
     return { run: project };
   });
 }

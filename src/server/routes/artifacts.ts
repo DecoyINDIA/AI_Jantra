@@ -1,19 +1,20 @@
 import type { FastifyInstance } from "fastify";
 
-import { loadProject } from "../../pipeline/store.js";
+import type { ProjectStore } from "../../pipeline/store.js";
 import { notFound } from "../errors.js";
 import { artifactParamsSchema, parseWith, runParamsSchema } from "../schemas.js";
 import { assertProjectAccess, requestClientId } from "../tenancy.js";
 
 interface ArtifactRouteDeps {
   clientId: string;
+  store: ProjectStore;
 }
 
 export function registerArtifactRoutes(app: FastifyInstance, deps: ArtifactRouteDeps): void {
   app.get("/v1/runs/:runId/artifacts/:artifactId", async (request) => {
     const clientId = requestClientId(request, deps.clientId);
     const params = parseWith(artifactParamsSchema, request.params);
-    const project = loadProject(clientId, params.runId);
+    const project = deps.store.loadProject(clientId, params.runId);
     if (!project) throw notFound(`Run ${params.runId} was not found.`);
     assertProjectAccess(request.identity, project);
     const artifact = Object.values(project.stages)
@@ -30,7 +31,7 @@ export function registerArtifactRoutes(app: FastifyInstance, deps: ArtifactRoute
   app.get("/v1/runs/:runId/sources", async (request) => {
     const clientId = requestClientId(request, deps.clientId);
     const params = parseWith(runParamsSchema, request.params);
-    const project = loadProject(clientId, params.runId);
+    const project = deps.store.loadProject(clientId, params.runId);
     if (!project) throw notFound(`Run ${params.runId} was not found.`);
     assertProjectAccess(request.identity, project);
     return { sources: project.sources };

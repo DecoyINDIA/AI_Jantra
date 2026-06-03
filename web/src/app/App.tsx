@@ -1,11 +1,12 @@
-import { Boxes, ListChecks, Settings as SettingsIcon } from "lucide-react";
+import { Boxes, KeyRound, ListChecks, Settings as SettingsIcon } from "lucide-react";
 import { useState } from "react";
 import AgentCatalog from "../routes/AgentCatalog";
+import ApiKeys from "../routes/ApiKeys";
 import RunDetail from "../routes/RunDetail";
 import RunList from "../routes/RunList";
 import Settings from "../routes/Settings";
 
-type View = "agents" | "runs" | "settings";
+type View = "agents" | "runs" | "apiKeys" | "settings";
 
 export default function App() {
   const [view, setView] = useState<View>("agents");
@@ -36,6 +37,15 @@ export default function App() {
           <ListChecks aria-hidden="true" /> Runs
         </button>
         <button
+          className={view === "apiKeys" ? "active" : ""}
+          onClick={() => {
+            setRunId(null);
+            setView("apiKeys");
+          }}
+        >
+          <KeyRound aria-hidden="true" /> API Keys
+        </button>
+        <button
           className={view === "settings" ? "active" : ""}
           onClick={() => {
             setRunId(null);
@@ -57,6 +67,8 @@ export default function App() {
           />
         ) : view === "runs" ? (
           <RunList onOpenRun={setRunId} />
+        ) : view === "apiKeys" ? (
+          <ApiKeys />
         ) : (
           <Settings />
         )}

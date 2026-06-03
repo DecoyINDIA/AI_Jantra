@@ -75,7 +75,10 @@ function setCorsHeaders(reply: FastifyReply, origin: string | null): void {
   if (!origin) return;
   reply.header("Access-Control-Allow-Origin", origin);
   reply.header("Vary", "Origin");
-  reply.header("Access-Control-Allow-Headers", "authorization, content-type, x-jantra-loopback-token");
+  reply.header(
+    "Access-Control-Allow-Headers",
+    "authorization, content-type, x-jantra-loopback-token, x-jantra-admin-token",
+  );
   reply.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
 }
 

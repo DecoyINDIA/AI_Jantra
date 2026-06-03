@@ -6,6 +6,7 @@ export default function Settings() {
   const current = getApiConfig();
   const [baseUrl, setBaseUrl] = useState(current.baseUrl);
   const [token, setToken] = useState(current.token);
+  const [adminToken, setAdminToken] = useState(current.adminToken);
   const [desktopResult, setDesktopResult] = useState("");
   const [saved, setSaved] = useState(false);
   const desktop = window.jantraDesktop;
@@ -20,10 +21,22 @@ export default function Settings() {
         Loopback token
         <input value={token} onChange={(event) => setToken(event.target.value)} />
       </label>
+      <label>
+        Admin token
+        <input
+          value={adminToken}
+          onChange={(event) => setAdminToken(event.target.value)}
+          type="password"
+        />
+      </label>
+      <p className="empty">
+        The desktop app can inject this token without storage. Manual browser entry is stored in
+        localStorage for v1 and is exposed to page script.
+      </p>
       <button
         className="primary"
         onClick={() => {
-          saveApiConfig({ baseUrl, token });
+          saveApiConfig({ baseUrl, token, adminToken });
           setSaved(true);
         }}
       >

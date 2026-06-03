@@ -220,6 +220,12 @@ h3 {
   overflow-x: auto;
 }
 
+.api-key-table {
+  display: grid;
+  margin-top: 12px;
+  overflow-x: auto;
+}
+
 .run-row {
   display: grid;
   grid-template-columns: minmax(210px, 2fr) minmax(150px, 1fr) 110px 150px 90px;
@@ -240,6 +246,35 @@ h3 {
   cursor: default;
   font-size: 13px;
   font-weight: 700;
+}
+
+.api-key-row {
+  display: grid;
+  grid-template-columns:
+    minmax(170px, 1.4fr) minmax(120px, 0.8fr) minmax(100px, 0.7fr)
+    minmax(180px, 1.2fr) minmax(150px, 1fr) minmax(150px, 1fr) 88px 118px;
+  width: 100%;
+  min-width: 1080px;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--line);
+  padding: 11px 8px;
+}
+
+.api-key-row.head {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.api-key-row.is-revoked {
+  color: var(--muted);
+  background: #f8f9f7;
+}
+
+.api-key-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .run-detail {
@@ -446,6 +481,65 @@ h3 {
 .error {
   color: var(--red);
   white-space: pre-wrap;
+}
+
+.warning {
+  color: var(--amber);
+  font-weight: 700;
+}
+
+.toggle-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.toggle-row input {
+  width: 16px;
+  height: 16px;
+}
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  background: rgba(23, 32, 28, 0.32);
+  padding: 16px;
+}
+
+.key-dialog {
+  width: min(520px, 100%);
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+}
+
+.key-form,
+.created-key {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.key-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.created-key code {
+  display: block;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f7faf7;
+  padding: 10px;
 }
 
 .settings {

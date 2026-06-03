@@ -41,10 +41,14 @@ export function applyModelCost(project: Project, stage: StageId, result: ModelRe
   addToCost(project.cost.perStage[stage], result);
 }
 
+function formatUsd(value: number): string {
+  return value < 0.01 ? value.toFixed(4) : value.toFixed(2);
+}
+
 export function assertUnderCostCeiling(project: Project): void {
   if (project.cost.usd <= config.costCeilingUsd) return;
   throw new CostCeilingExceededError(
-    `Project exceeded cost ceiling of $${config.costCeilingUsd.toFixed(2)}.`,
+    `Project exceeded cost ceiling of $${formatUsd(config.costCeilingUsd)}.`,
     {
       projectId: project.id,
       clientId: project.clientId,

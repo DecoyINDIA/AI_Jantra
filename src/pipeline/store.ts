@@ -35,6 +35,29 @@ export interface ProjectStore {
   ): string;
 }
 
+export interface ApiKeyMetadata {
+  id: string;
+  prefix: string;
+  clientId: string;
+  subject: string;
+  label: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+}
+
+export interface StoredApiKeyRecord extends ApiKeyMetadata {
+  keyHash: string;
+}
+
+export interface ApiKeyStore {
+  createApiKey(record: StoredApiKeyRecord): ApiKeyMetadata;
+  getApiKeyByHash(keyHash: string): StoredApiKeyRecord | null;
+  listApiKeys(query: { clientId?: string; includeRevoked?: boolean }): ApiKeyMetadata[];
+  revokeApiKey(id: string, revokedAt: string): ApiKeyMetadata | null;
+  touchApiKeyLastUsed(id: string, usedAt: string): void;
+}
+
 function clientDir(clientId: string): string {
   return join(config.projectDir, clientId);
 }

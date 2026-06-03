@@ -8,6 +8,7 @@ function argValue(prefix: string): string {
 contextBridge.exposeInMainWorld("JANTRA_DESKTOP", {
   baseUrl: argValue("--jantra-api-base="),
   token: argValue("--jantra-loopback-token="),
+  adminToken: argValue("--jantra-admin-token="),
 });
 
 contextBridge.exposeInMainWorld("jantraDesktop", {
