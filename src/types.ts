@@ -72,7 +72,7 @@ export type HandoffHandler = (req: {
 /** Definition of an agent: who it is, what it can do, how it behaves. */
 export interface AgentSpec {
   name: string;
-  /** Frozen system prompt — kept byte-stable so the prompt cache stays warm. */
+  /** Frozen system prompt, kept byte-stable so the prompt cache stays warm. */
   systemPrompt: string;
   /** Stable order matters for prompt caching; do not sort at request time. */
   tools: AnyTool[];
@@ -88,7 +88,8 @@ export interface RunResult {
   usage: {
     inputTokens: number;
     outputTokens: number;
-    cacheReadTokens: number;
-    cacheCreationTokens: number;
+    cachedTokens: number;
+    thinkingTokens: number;
+    costUsd: number;
   };
 }

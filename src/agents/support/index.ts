@@ -37,7 +37,7 @@ Tone: calm, concrete, no filler. Short sentences. No em dashes.`;
 export const supportAgentSpec: AgentSpec = {
   name: "support-agent",
   systemPrompt: SYSTEM_PROMPT,
-  // Order is stable and intentional — do not reorder (prompt-cache prefix).
+  // Order is stable and intentional. Do not reorder (prompt-cache prefix).
   tools: [
     searchKbTool,
     getOrderTool,

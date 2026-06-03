@@ -5,63 +5,234 @@ import {
   readdirSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
-import type { Artifact, Project } from "./types.js";
+import { config } from "../config.js";
+import { planningPipelineDefinition } from "../agents/planningPipeline.js";
+import { snapshotDefinition } from "../agents/definition.js";
+import { emptyCostRollup } from "../runtime/telemetry.js";
+import type {
+  Artifact,
+  CostRollup,
+  Project,
+  ProjectListQuery,
+  ProjectPage,
+  ProjectSummary,
+  Source,
+} from "./types.js";
+import { scoreSource } from "./research/sourceQuality.js";
 
-/**
- * MVP persistence: one JSON file per project under
- * .jantra/projects/<clientId>/, plus each artifact written as a readable
- * .md so a human can open it directly. A real database replaces this later
- * (runtime requirement R7); the interface here is what stays.
- */
-const ROOT = ".jantra/projects";
+export interface ProjectStore {
+  saveProject(project: Project): void;
+  loadProject(clientId: string, projectId: string): Project | null;
+  listProjects(query: ProjectListQuery): ProjectPage;
+  writeArtifactFile(clientId: string, projectId: string, artifact: Artifact): string;
+  writeSourceContentFile(
+    clientId: string,
+    projectId: string,
+    source: Source,
+    content: string,
+  ): string;
+}
 
 function clientDir(clientId: string): string {
-  return join(ROOT, clientId);
+  return join(config.projectDir, clientId);
 }
 
 function projectFile(clientId: string, projectId: string): string {
   return join(clientDir(clientId), `${projectId}.json`);
 }
 
-function artifactDir(clientId: string, projectId: string): string {
+function projectDir(clientId: string, projectId: string): string {
   return join(clientDir(clientId), projectId);
 }
 
-export function saveProject(project: Project): void {
-  mkdirSync(clientDir(project.clientId), { recursive: true });
-  writeFileSync(
-    projectFile(project.clientId, project.id),
-    JSON.stringify(project, null, 2),
-    "utf8",
+function artifactDir(clientId: string, projectId: string): string {
+  return projectDir(clientId, projectId);
+}
+
+function sourceDir(clientId: string, projectId: string): string {
+  return join(projectDir(clientId, projectId), "sources");
+}
+
+const LEGACY_PLANNING_SNAPSHOT = snapshotDefinition(planningPipelineDefinition);
+
+function ensureCost(
+  cost: Partial<CostRollup> | undefined,
+  stageIds: string[],
+): CostRollup {
+  const empty = emptyCostRollup(stageIds);
+  return {
+    ...empty,
+    ...cost,
+    perStage: {
+      ...empty.perStage,
+      ...(cost?.perStage ?? {}),
+    },
+  };
+}
+
+export function normalizeProject(project: Project): Project {
+  project.agentId ??= LEGACY_PLANNING_SNAPSHOT.id;
+  project.agentVersion ??= LEGACY_PLANNING_SNAPSHOT.version;
+  project.agentDefinitionSnapshot ??= LEGACY_PLANNING_SNAPSHOT;
+  for (const stage of Object.values(project.stages)) {
+    stage.evals ??= [];
+  }
+  project.sources ??= [];
+  for (const source of project.sources) {
+    source.qualityScore ??= scoreSource(source);
+  }
+  project.claims ??= [];
+  project.interactions ??= [];
+  project.execution ??= {};
+  project.cost = ensureCost(
+    project.cost,
+    project.agentDefinitionSnapshot.stageOrder.length
+      ? project.agentDefinitionSnapshot.stageOrder
+      : Object.keys(project.stages),
   );
+  return project;
+}
+
+function encodeCursor(project: ProjectSummary): string {
+  return Buffer.from(`${project.updatedAt}\n${project.id}`, "utf8").toString("base64url");
+}
+
+function decodeCursor(cursor: string | undefined): { updatedAt: string; id: string } | null {
+  if (!cursor) return null;
+  try {
+    const [updatedAt, id] = Buffer.from(cursor, "base64url").toString("utf8").split("\n");
+    if (!updatedAt || !id) return null;
+    return { updatedAt, id };
+  } catch {
+    return null;
+  }
+}
+
+function projectSummary(project: Project): ProjectSummary {
+  const currentStage = project.stages[project.currentStage];
+  return {
+    id: project.id,
+    title: project.title,
+    clientId: project.clientId,
+    agentId: project.agentId,
+    agentVersion: project.agentVersion,
+    status: project.status,
+    currentStage: project.currentStage,
+    currentStageStatus: currentStage?.status ?? "pending",
+    costUsd: project.cost.usd,
+    createdAt: project.createdAt,
+    updatedAt: project.updatedAt,
+  };
+}
+
+export function pageProjects(projects: Project[], query: ProjectListQuery): ProjectPage {
+  const limit = Math.min(Math.max(query.limit ?? 25, 1), 100);
+  const cursor = decodeCursor(query.cursor);
+  const filtered = projects
+    .filter((project) => project.clientId === query.clientId)
+    .filter((project) => !query.agentId || project.agentId === query.agentId)
+    .filter((project) => !query.status || project.status === query.status)
+    .filter((project) => !query.currentStage || project.currentStage === query.currentStage)
+    .sort((a, b) => {
+      const byUpdated = b.updatedAt.localeCompare(a.updatedAt);
+      return byUpdated || b.id.localeCompare(a.id);
+    });
+  const start = cursor
+    ? filtered.findIndex(
+        (project) => project.updatedAt === cursor.updatedAt && project.id === cursor.id,
+      ) + 1
+    : 0;
+  const page = filtered.slice(Math.max(start, 0), Math.max(start, 0) + limit);
+  const items = page.map(projectSummary);
+  const hasMore = Math.max(start, 0) + limit < filtered.length;
+  return {
+    items,
+    nextCursor: hasMore && items.length ? encodeCursor(items[items.length - 1]!) : undefined,
+  };
+}
+
+export class JsonProjectStore implements ProjectStore {
+  saveProject(project: Project): void {
+    mkdirSync(clientDir(project.clientId), { recursive: true });
+    writeFileSync(
+      projectFile(project.clientId, project.id),
+      JSON.stringify(normalizeProject(project), null, 2),
+      "utf8",
+    );
+  }
+
+  loadProject(clientId: string, projectId: string): Project | null {
+    const file = projectFile(clientId, projectId);
+    if (!existsSync(file)) return null;
+    return normalizeProject(JSON.parse(readFileSync(file, "utf8")) as Project);
+  }
+
+  listProjects(query: ProjectListQuery): ProjectPage {
+    const dir = clientDir(query.clientId);
+    if (!existsSync(dir)) return { items: [] };
+    const projects = readdirSync(dir)
+      .filter((f) => f.endsWith(".json"))
+      .map((f) => normalizeProject(JSON.parse(readFileSync(join(dir, f), "utf8")) as Project));
+    return pageProjects(projects, query);
+  }
+
+  writeArtifactFile(clientId: string, projectId: string, artifact: Artifact): string {
+    const dir = artifactDir(clientId, projectId);
+    mkdirSync(dir, { recursive: true });
+    const name = `${artifact.stage}-${artifact.kind}-v${artifact.version}.md`;
+    const path = join(dir, name);
+    writeFileSync(path, artifact.content, "utf8");
+    return path;
+  }
+
+  writeSourceContentFile(
+    clientId: string,
+    projectId: string,
+    source: Source,
+    content: string,
+  ): string {
+    const dir = sourceDir(clientId, projectId);
+    mkdirSync(dir, { recursive: true });
+    const safeId = source.id.replace(/[^a-zA-Z0-9_-]/g, "_");
+    const path = join(dir, `${safeId}.txt`);
+    writeFileSync(path, content, "utf8");
+    return path;
+  }
+}
+
+export const defaultStore: ProjectStore = new JsonProjectStore();
+
+export function saveProject(project: Project): void {
+  defaultStore.saveProject(project);
 }
 
 export function loadProject(clientId: string, projectId: string): Project | null {
-  const file = projectFile(clientId, projectId);
-  if (!existsSync(file)) return null;
-  return JSON.parse(readFileSync(file, "utf8")) as Project;
+  return defaultStore.loadProject(clientId, projectId);
 }
 
-export function listProjects(clientId: string): Project[] {
-  const dir = clientDir(clientId);
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir)
-    .filter((f) => f.endsWith(".json"))
-    .map((f) => JSON.parse(readFileSync(join(dir, f), "utf8")) as Project);
+export function listProjects(query: ProjectListQuery): ProjectPage {
+  return defaultStore.listProjects(query);
 }
 
-/** Write an artifact as a readable markdown file next to the project JSON. */
 export function writeArtifactFile(
   clientId: string,
   projectId: string,
   artifact: Artifact,
 ): string {
-  const dir = artifactDir(clientId, projectId);
-  mkdirSync(dir, { recursive: true });
-  const name = `${artifact.stage}-${artifact.kind}-v${artifact.version}.md`;
-  const path = join(dir, name);
-  writeFileSync(path, artifact.content, "utf8");
-  return path;
+  return defaultStore.writeArtifactFile(clientId, projectId, artifact);
+}
+
+export function writeSourceContentFile(
+  clientId: string,
+  projectId: string,
+  source: Source,
+  content: string,
+): string {
+  return defaultStore.writeSourceContentFile(clientId, projectId, source, content);
+}
+
+export function ensureParentDir(path: string): void {
+  mkdirSync(dirname(path), { recursive: true });
 }

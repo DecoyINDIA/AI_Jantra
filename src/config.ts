@@ -1,31 +1,101 @@
 import "dotenv/config";
 
-/**
- * Central config. Read once at startup. Nothing here is interpolated into a
- * system prompt, so changing it never breaks prompt caching.
- */
+export type StageModelChoice = "flash" | "pro";
+export type GeminiModelId = "gemini-2.5-flash" | "gemini-2.5-pro";
+
+const MODEL_IDS: Record<StageModelChoice, GeminiModelId> = {
+  flash: "gemini-2.5-flash",
+  pro: "gemini-2.5-pro",
+};
+
+function modelChoiceFromEnv(name: string, fallback: StageModelChoice): StageModelChoice {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  if (raw === "flash" || raw === "pro") return raw;
+  throw new Error(`${name} must be "flash" or "pro". Received "${raw}".`);
+}
+
+function numberFromEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error(`${name} must be a non-negative number. Received "${raw}".`);
+  }
+  return value;
+}
+
+function boundedIntegerFromEnv(
+  name: string,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  const value = Math.trunc(numberFromEnv(name, fallback));
+  return Math.min(max, Math.max(min, value));
+}
+
+function providerFromEnv(): "gemini" | "mock" {
+  const raw = process.env.JANTRA_PROVIDER ?? "gemini";
+  if (raw === "gemini" || raw === "mock") return raw;
+  throw new Error(`JANTRA_PROVIDER must be "gemini" or "mock". Received "${raw}".`);
+}
+
+function booleanFromEnv(name: string, fallback: boolean): boolean {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  if (["1", "true", "yes", "on"].includes(raw.toLowerCase())) return true;
+  if (["0", "false", "no", "off"].includes(raw.toLowerCase())) return false;
+  throw new Error(`${name} must be a boolean-like value. Received "${raw}".`);
+}
+
 export const config = {
-  /** ALWAYS the latest Opus unless explicitly overridden. */
-  model: process.env.JANTRA_MODEL ?? "claude-opus-4-8",
-  /** low | medium | high | xhigh | max — high is the right default for agentic work. */
-  effort: (process.env.JANTRA_EFFORT ?? "high") as
-    | "low"
-    | "medium"
-    | "high"
-    | "xhigh"
-    | "max",
-  /** Where the audit trail (one JSONL file per run) is written. */
+  provider: providerFromEnv(),
+  geminiApiKey: process.env.GEMINI_API_KEY ?? "",
+  mockFixturePath:
+    process.env.JANTRA_MOCK_FIXTURE ?? "src/runtime/evals/fixtures/transcript.json",
+  explicitCache: booleanFromEnv("JANTRA_EXPLICIT_CACHE", true),
   auditDir: process.env.JANTRA_AUDIT_DIR ?? ".jantra/audit",
-  /** Hard ceiling on agentic steps, so a misbehaving agent can't loop forever. */
-  maxSteps: 16,
-  /** Per-turn output cap. 16000 stays under the SDK's non-streaming HTTP timeout. */
-  maxTokens: 16000,
+  projectDir: process.env.JANTRA_PROJECT_DIR ?? ".jantra/projects",
+  maxSteps: Math.trunc(numberFromEnv("JANTRA_MAX_STEPS", 16)),
+  maxEvalRounds: Math.trunc(numberFromEnv("JANTRA_MAX_EVAL_ROUNDS", 2)),
+  maxOutputTokens: Math.trunc(numberFromEnv("JANTRA_MAX_OUTPUT_TOKENS", 12000)),
+  costCeilingUsd: numberFromEnv("JANTRA_COST_CEILING_USD", 10),
+  researchConcurrency: boundedIntegerFromEnv("JANTRA_RESEARCH_CONCURRENCY", 4, 1, 8),
+  synthesisConcurrency: boundedIntegerFromEnv("JANTRA_SYNTHESIS_CONCURRENCY", 3, 1, 6),
+  maxSources: boundedIntegerFromEnv("JANTRA_MAX_SOURCES", 24, 1, 48),
 };
 
 export function requireApiKey(): void {
-  if (!process.env.ANTHROPIC_API_KEY) {
+  if (config.provider !== "mock" && !config.geminiApiKey) {
     throw new Error(
-      "ANTHROPIC_API_KEY is not set. Copy .env.example to .env and add your key.",
+      "GEMINI_API_KEY is not set. Copy .env.example to .env and add your key.",
     );
   }
+}
+
+function envKeyPart(value: string): string {
+  return value.toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+export function resolveStageModel(
+  agentId: string,
+  stageId: string,
+  fallback: StageModelChoice,
+): StageModelChoice {
+  const scoped = `JANTRA_MODEL_${envKeyPart(agentId)}_${envKeyPart(stageId)}`;
+  const legacy = `JANTRA_MODEL_${envKeyPart(stageId)}`;
+  return modelChoiceFromEnv(scoped, modelChoiceFromEnv(legacy, fallback));
+}
+
+export function getModelId(choice: StageModelChoice): GeminiModelId {
+  return MODEL_IDS[choice];
+}
+
+export function getModelIdForStage(
+  stageId: string,
+  fallback: StageModelChoice = "flash",
+  agentId = "planning-pipeline",
+): GeminiModelId {
+  return getModelId(resolveStageModel(agentId, stageId, fallback));
 }

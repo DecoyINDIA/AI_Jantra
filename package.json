@@ -2,24 +2,44 @@
   "name": "@jantra/runtime",
   "version": "0.0.1",
   "private": true,
-  "description": "Jantra AI — reusable runtime for autonomous business-operations agents. Agentic tool-use loop on Claude, with a policy gate, a full audit trail, and human handoff.",
+  "description": "Jantra AI runtime and planning pipeline on Gemini 2.5, with guardrails, audit, and human gates.",
   "type": "module",
   "license": "UNLICENSED",
+  "workspaces": [
+    "web",
+    "desktop",
+    "packages/*"
+  ],
   "engines": {
     "node": ">=20"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && npm.cmd run typecheck -w @jantra/web --if-present && npm.cmd run typecheck -w @jantra/desktop --if-present && npm.cmd run typecheck -w @jantra/client --if-present && npm.cmd run typecheck -w @jantra/embed-widget --if-present",
     "support": "node --import tsx src/cli.ts",
     "support:auto": "node --import tsx src/cli.ts --auto-approve",
-    "pipeline": "node --import tsx src/pipeline/cli.ts"
+    "pipeline": "node --import tsx src/pipeline/cli.ts",
+    "server": "node --import tsx src/server/index.ts",
+    "server:smoke": "node --import tsx src/server/smoke.ts",
+    "web:dev": "npm.cmd run dev -w @jantra/web",
+    "web:build": "npm.cmd run build -w @jantra/web",
+    "desktop:dev": "npm.cmd run build && npm.cmd run web:build && npm.cmd run build -w @jantra/desktop && npm.cmd run dev -w @jantra/desktop",
+    "desktop:build": "npm.cmd run build && npm.cmd run web:build && npm.cmd run build -w @jantra/desktop && npm.cmd run dist -w @jantra/desktop",
+    "client:build": "npm.cmd run build -w @jantra/client",
+    "embed:build": "npm.cmd run build -w @jantra/embed-widget",
+    "eval": "node --import tsx src/runtime/evals/index.ts",
+    "smoke": "node --import tsx src/runtime/evals/smoke.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "latest",
-    "dotenv": "^16.4.5"
+    "@google/genai": "^2.7.0",
+    "better-sqlite3": "12.10.0",
+    "dotenv": "^16.4.5",
+    "fastify": "5.8.5",
+    "zod": "^4.4.3",
+    "zod-to-json-schema": "^3.25.2"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "7.6.13",
     "@types/node": "^22.19.19",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3"

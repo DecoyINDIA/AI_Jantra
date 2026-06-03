@@ -2,7 +2,7 @@ import type { ToolDef } from "../types.js";
 
 /**
  * Built-in handoff tool. Available to every agent. When the agent is unsure, or
- * judgment is needed, it calls this instead of guessing — and the loop stops.
+ * judgment is needed, it calls this instead of guessing, and the loop stops.
  */
 export const escalateTool: ToolDef<{ reason: string; summary: string }> = {
   name: "escalate_to_human",

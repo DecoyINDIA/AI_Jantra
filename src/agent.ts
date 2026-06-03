@@ -1,10 +1,12 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { randomUUID } from "node:crypto";
 
-import { config } from "./config.js";
 import { AuditLogger } from "./audit.js";
+import { config } from "./config.js";
 import { consoleHandoff } from "./handoff.js";
+import { createProviderForStage } from "./model/index.js";
+import type { ModelContentPart, ModelMessage, ModelProvider, ToolCall } from "./model/provider.js";
 import { RuleBasedPolicy } from "./policy.js";
+import { recordModelCall } from "./runtime/telemetry.js";
 import type {
   AgentSpec,
   AnyTool,
@@ -17,43 +19,29 @@ import type {
 
 export interface AgentOptions {
   spec: AgentSpec;
-  client?: Anthropic;
+  provider?: ModelProvider;
   policy?: Policy;
-  /** Called when a gated action needs sign-off. Default denies (fail closed). */
   onApproval?: ApprovalHandler;
-  /** Called when the agent hands off to a human. */
   onHandoff?: HandoffHandler;
 }
 
 /**
- * The Jantra AI runtime. A manual agentic loop — chosen over the SDK's tool
- * runner precisely because every action must pass the policy gate, be logged
- * with its reasoning, and be interruptible for human approval or handoff.
- *
- * The same runtime drives any vertical; only the AgentSpec (prompt + tools)
- * changes. That is the studio thesis: one engine, many agents.
+ * The Jantra AI runtime. It keeps tool execution outside the SDK runner because
+ * every action must pass policy, approval, audit, and handoff checks first.
  */
 export class Agent {
-  private readonly client: Anthropic;
+  private readonly provider: ModelProvider;
   private readonly policy: Policy;
   private readonly onApproval: ApprovalHandler;
   private readonly onHandoff: HandoffHandler;
   private readonly toolsByName: Map<string, AnyTool>;
-  private readonly anthropicTools: Anthropic.Tool[];
 
   constructor(private readonly opts: AgentOptions) {
-    this.client = opts.client ?? new Anthropic();
+    this.provider = opts.provider ?? createProviderForStage("intake");
     this.policy = opts.policy ?? new RuleBasedPolicy();
     this.onApproval = opts.onApproval ?? (async () => false);
     this.onHandoff = opts.onHandoff ?? consoleHandoff;
-
     this.toolsByName = new Map(opts.spec.tools.map((t) => [t.name, t]));
-    // Stable order — never sort at request time, or the prompt cache breaks.
-    this.anthropicTools = opts.spec.tools.map((t) => ({
-      name: t.name,
-      description: t.description,
-      input_schema: t.inputSchema as Anthropic.Tool.InputSchema,
-    }));
   }
 
   async run(userMessage: string): Promise<RunResult> {
@@ -71,19 +59,17 @@ export class Agent {
 
     audit.record("run_start", {
       agent: this.opts.spec.name,
-      model: config.model,
-      effort: config.effort,
+      provider: this.provider.id,
       userMessage,
     });
 
-    const messages: Anthropic.MessageParam[] = [
-      { role: "user", content: userMessage },
-    ];
+    const messages: ModelMessage[] = [{ role: "user", content: userMessage }];
     const usage = {
       inputTokens: 0,
       outputTokens: 0,
-      cacheReadTokens: 0,
-      cacheCreationTokens: 0,
+      cachedTokens: 0,
+      thinkingTokens: 0,
+      costUsd: 0,
     };
 
     let finalText: string | null = null;
@@ -91,76 +77,41 @@ export class Agent {
 
     while (steps < config.maxSteps) {
       steps++;
-
-      // Tools render first, then system. cache_control on the last system block
-      // caches tools + system together; the prompt is byte-stable across turns.
-      const response = await this.client.messages.create({
-        model: config.model,
-        max_tokens: config.maxTokens,
-        thinking: { type: "adaptive", display: "summarized" },
-        output_config: { effort: config.effort },
-        system: [
-          {
-            type: "text",
-            text: this.opts.spec.systemPrompt,
-            cache_control: { type: "ephemeral" },
-          },
-        ],
-        tools: this.anthropicTools,
+      const result = await this.provider.generate({
+        purpose: "agent_turn",
+        system: this.opts.spec.systemPrompt,
         messages,
-      } as Anthropic.MessageCreateParamsNonStreaming);
+        tools: this.opts.spec.tools.map((tool) => ({
+          name: tool.name,
+          description: tool.description,
+          inputSchema: tool.inputSchema,
+        })),
+        thinking: true,
+        maxOutputTokens: config.maxOutputTokens,
+      });
+      recordModelCall(audit, null, null, "agent_turn", result);
+      usage.inputTokens += result.usage.inputTokens;
+      usage.outputTokens += result.usage.outputTokens;
+      usage.cachedTokens += result.usage.cachedTokens;
+      usage.thinkingTokens += result.usage.thinkingTokens;
+      usage.costUsd += result.costUsd;
 
-      usage.inputTokens += response.usage.input_tokens;
-      usage.outputTokens += response.usage.output_tokens;
-      usage.cacheReadTokens += response.usage.cache_read_input_tokens ?? 0;
-      usage.cacheCreationTokens += response.usage.cache_creation_input_tokens ?? 0;
-      audit.record("model_usage", { step: steps, usage: response.usage });
-
-      // Log the agent's reasoning and any prose — the "why" behind every action.
-      for (const block of response.content) {
-        if (block.type === "thinking" && block.thinking) {
-          audit.record("agent_thinking", { step: steps, text: block.thinking });
-        } else if (block.type === "text") {
-          audit.record("agent_message", { step: steps, text: block.text });
-        }
+      if (result.text) {
+        audit.record("agent_message", { step: steps, text: result.text });
       }
+      messages.push(result.message);
 
-      // Preserve the full assistant turn (incl. thinking + tool_use blocks).
-      messages.push({ role: "assistant", content: response.content });
-
-      if (response.stop_reason === "refusal") {
-        ctx.requestHandoff(
-          "model_refusal",
-          "The model declined to act on this request. A person should review it.",
-        );
+      if (!result.toolCalls.length) {
+        finalText = result.text.trim() || null;
         break;
       }
 
-      if (response.stop_reason === "end_turn") {
-        finalText = response.content
-          .filter((b): b is Anthropic.TextBlock => b.type === "text")
-          .map((b) => b.text)
-          .join("\n")
-          .trim();
-        break;
-      }
-
-      if (response.stop_reason !== "tool_use") {
-        // pause_turn or anything unexpected: re-send to let the server resume.
-        continue;
-      }
-
-      const toolUses = response.content.filter(
-        (b): b is Anthropic.ToolUseBlock => b.type === "tool_use",
-      );
-
-      const toolResults: Anthropic.ToolResultBlockParam[] = [];
-      for (const call of toolUses) {
+      const toolResults: ModelContentPart[] = [];
+      for (const call of result.toolCalls) {
         toolResults.push(await this.handleToolCall(call, ctx));
-        if (handoff) break; // an escalate tool fired — stop dispatching more
+        if (handoff) break;
       }
       messages.push({ role: "user", content: toolResults });
-
       if (handoff) break;
     }
 
@@ -187,28 +138,27 @@ export class Agent {
   }
 
   private async handleToolCall(
-    call: Anthropic.ToolUseBlock,
+    call: ToolCall,
     ctx: ToolContext,
-  ): Promise<Anthropic.ToolResultBlockParam> {
+  ): Promise<ModelContentPart> {
     const tool = this.toolsByName.get(call.name);
     if (!tool) {
       ctx.audit.record("error", { toolName: call.name, error: "unknown_tool" });
       return {
-        type: "tool_result",
-        tool_use_id: call.id,
-        is_error: true,
-        content: `Unknown tool: ${call.name}`,
+        type: "functionResponse",
+        id: call.id,
+        name: call.name,
+        response: { error: `Unknown tool: ${call.name}` },
       };
     }
 
     ctx.audit.record("tool_call", {
       toolName: tool.name,
       risk: tool.risk,
-      input: call.input,
+      input: call.args,
     });
 
-    // 1. Guardrail gate.
-    const verdict = this.policy.decide(tool, call.input);
+    const verdict = this.policy.decide(tool, call.args);
     ctx.audit.record("policy_decision", {
       toolName: tool.name,
       decision: verdict.decision,
@@ -217,54 +167,58 @@ export class Agent {
 
     if (verdict.decision === "deny") {
       return {
-        type: "tool_result",
-        tool_use_id: call.id,
-        is_error: true,
-        content: `Action blocked by policy: ${verdict.reason} Do not retry; hand off if needed.`,
+        type: "functionResponse",
+        id: call.id,
+        name: call.name,
+        response: {
+          error: `Action blocked by policy: ${verdict.reason} Do not retry; hand off if needed.`,
+        },
       };
     }
 
-    // 2. Human-in-the-loop for gated actions.
     if (verdict.decision === "ask") {
       const approved = await this.onApproval({
         runId: ctx.runId,
         toolName: tool.name,
-        input: call.input,
+        input: call.args,
         reason: verdict.reason,
       });
       ctx.audit.record("approval", { toolName: tool.name, approved });
       if (!approved) {
         return {
-          type: "tool_result",
-          tool_use_id: call.id,
-          is_error: true,
-          content: `A human declined this action. Do not retry it. Consider an alternative or hand off.`,
+          type: "functionResponse",
+          id: call.id,
+          name: call.name,
+          response: {
+            error: "A human declined this action. Do not retry it.",
+          },
         };
       }
     }
 
-    // 3. Execute.
     try {
-      const result = await tool.run(call.input as Record<string, unknown>, ctx);
+      const result = await tool.run(call.args, ctx);
       ctx.audit.record("tool_result", {
         toolName: tool.name,
         isError: result.isError ?? false,
         content: result.content,
       });
       return {
-        type: "tool_result",
-        tool_use_id: call.id,
-        is_error: result.isError ?? false,
-        content: result.content,
+        type: "functionResponse",
+        id: call.id,
+        name: call.name,
+        response: result.isError
+          ? { error: result.content }
+          : { output: result.content },
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       ctx.audit.record("error", { toolName: tool.name, error: message });
       return {
-        type: "tool_result",
-        tool_use_id: call.id,
-        is_error: true,
-        content: `Tool "${tool.name}" failed: ${message}`,
+        type: "functionResponse",
+        id: call.id,
+        name: call.name,
+        response: { error: `Tool "${tool.name}" failed: ${message}` },
       };
     }
   }
