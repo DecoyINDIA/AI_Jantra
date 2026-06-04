@@ -1,5 +1,5 @@
 import { Check, FastForward, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type PendingInteractionView, type RunEvent } from "../api/client";
 import { subscribeRunEvents } from "../api/events";
@@ -7,6 +7,7 @@ import ArtifactViewer from "../components/ArtifactViewer";
 import AuditTimeline from "../components/AuditTimeline";
 import CostPanel from "../components/CostPanel";
 import InteractionPanel from "../components/InteractionPanel";
+import SourceList from "../components/SourceList";
 import StageTimeline from "../components/StageTimeline";
 
 interface Props {
@@ -16,6 +17,8 @@ interface Props {
 export default function RunDetail({ runId }: Props) {
   const queryClient = useQueryClient();
   const [events, setEvents] = useState<RunEvent[]>([]);
+  const pendingEvents = useRef<RunEvent[]>([]);
+  const eventFrame = useRef<number | null>(null);
   const run = useQuery({ queryKey: ["run", runId], queryFn: () => api.getRun(runId), refetchInterval: 3000 });
   const interactions = useQuery({
     queryKey: ["interactions", runId],
@@ -23,33 +26,57 @@ export default function RunDetail({ runId }: Props) {
     refetchInterval: 3000,
   });
   const audit = useQuery({ queryKey: ["audit", runId], queryFn: () => api.getAudit(runId), refetchInterval: 5000 });
-  const mutations = {
-    advance: useMutation({ mutationFn: () => api.advanceRun(runId), onSuccess: () => invalidate() }),
-    confirm: useMutation({ mutationFn: () => api.confirmRun(runId), onSuccess: () => invalidate() }),
-    reject: useMutation({ mutationFn: () => api.rejectRun(runId, "Rejected from panel."), onSuccess: () => invalidate() }),
-    answer: useMutation({
-      mutationFn: (payload: { interaction: PendingInteractionView; body: { text?: string; approved?: boolean } }) =>
-        api.answerInteraction(runId, payload.interaction.id, payload.body),
-      onSuccess: () => invalidate(),
-    }),
-  };
 
-  function invalidate() {
+  const invalidate = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ["run", runId] });
     void queryClient.invalidateQueries({ queryKey: ["runs"] });
     void queryClient.invalidateQueries({ queryKey: ["interactions", runId] });
     void queryClient.invalidateQueries({ queryKey: ["audit", runId] });
-  }
+  }, [queryClient, runId]);
+
+  const advance = useMutation({ mutationFn: () => api.advanceRun(runId), onSuccess: invalidate });
+  const confirm = useMutation({ mutationFn: () => api.confirmRun(runId), onSuccess: invalidate });
+  const reject = useMutation({ mutationFn: () => api.rejectRun(runId, "Rejected from panel."), onSuccess: invalidate });
+  const answer = useMutation({
+    mutationFn: (payload: { interaction: PendingInteractionView; body: { text?: string; approved?: boolean } }) =>
+      api.answerInteraction(runId, payload.interaction.id, payload.body),
+    onSuccess: invalidate,
+  });
+
+  const answerInteraction = answer.mutate;
+  const handleAnswer = useCallback(
+    (interaction: PendingInteractionView, body: { text?: string; approved?: boolean }) =>
+      answerInteraction({ interaction, body }),
+    [answerInteraction],
+  );
+
+  const scheduleEventUpdate = useCallback((event: RunEvent) => {
+    pendingEvents.current.push(event);
+    if (eventFrame.current !== null) return;
+    eventFrame.current = window.requestAnimationFrame(() => {
+      eventFrame.current = null;
+      const batch = pendingEvents.current.splice(0);
+      if (!batch.length) return;
+      setEvents((current) => [...batch.reverse(), ...current].slice(0, 100));
+    });
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
-    void subscribeRunEvents(
-      runId,
-      (event) => setEvents((current) => [event, ...current].slice(0, 100)),
-      controller.signal,
-    );
-    return () => controller.abort();
-  }, [runId]);
+    pendingEvents.current = [];
+    setEvents([]);
+    void subscribeRunEvents(runId, scheduleEventUpdate, controller.signal).catch(() => {
+      // Polling remains the fallback when the optional live event stream is unavailable.
+    });
+    return () => {
+      controller.abort();
+      pendingEvents.current = [];
+      if (eventFrame.current !== null) {
+        window.cancelAnimationFrame(eventFrame.current);
+        eventFrame.current = null;
+      }
+    };
+  }, [runId, scheduleEventUpdate]);
 
   const artifacts = useMemo(
     () => Object.values(run.data?.run.stages ?? {}).flatMap((stage) => stage.artifacts),
@@ -59,7 +86,7 @@ export default function RunDetail({ runId }: Props) {
   if (run.isLoading) return <p className="empty">Loading run.</p>;
   if (run.isError || !run.data) return <p className="error">{String(run.error)}</p>;
   const currentStage = run.data.run.stages[run.data.run.currentStage];
-  const busy = Object.values(mutations).some((mutation) => mutation.isPending);
+  const busy = advance.isPending || confirm.isPending || reject.isPending || answer.isPending;
 
   return (
     <section className="run-detail">
@@ -69,17 +96,17 @@ export default function RunDetail({ runId }: Props) {
           <h1>{run.data.run.title}</h1>
         </div>
         <div className="button-row">
-          <button disabled={busy || run.data.run.status !== "active"} onClick={() => mutations.advance.mutate()}>
+          <button disabled={busy || run.data.run.status !== "active"} onClick={() => advance.mutate()}>
             <FastForward aria-hidden="true" /> Advance
           </button>
           <button
             className="primary"
             disabled={busy || currentStage?.status !== "awaiting_confirmation"}
-            onClick={() => mutations.confirm.mutate()}
+            onClick={() => confirm.mutate()}
           >
             <Check aria-hidden="true" /> Confirm
           </button>
-          <button disabled={busy || run.data.run.status !== "active"} onClick={() => mutations.reject.mutate()}>
+          <button disabled={busy || run.data.run.status !== "active"} onClick={() => reject.mutate()}>
             <X aria-hidden="true" /> Reject
           </button>
         </div>
@@ -93,7 +120,7 @@ export default function RunDetail({ runId }: Props) {
             <InteractionPanel
               interactions={interactions.data?.interactions ?? []}
               busy={busy}
-              onAnswer={(interaction, body) => mutations.answer.mutate({ interaction, body })}
+              onAnswer={handleAnswer}
             />
           </section>
         </aside>
@@ -104,18 +131,7 @@ export default function RunDetail({ runId }: Props) {
           </section>
           <section className="panel-block">
             <h2>Sources</h2>
-            <div className="source-list">
-              {run.data.run.sources.length ? (
-                run.data.run.sources.map((source) => (
-                  <a href={source.url} target="_blank" rel="noreferrer" key={source.id}>
-                    <strong>{source.title}</strong>
-                    <span>{source.id}</span>
-                  </a>
-                ))
-              ) : (
-                <p className="empty">No sources registered yet.</p>
-              )}
-            </div>
+            <SourceList sources={run.data.run.sources} />
           </section>
           <section className="panel-block">
             <h2>Audit</h2>

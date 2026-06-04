@@ -1,4 +1,5 @@
 import { CheckCircle2, Circle, Clock3, OctagonAlert, PauseCircle } from "lucide-react";
+import { memo } from "react";
 import type { RunDetail } from "../api/client";
 
 interface Props {
@@ -13,7 +14,7 @@ function statusIcon(status: string) {
   return <Circle aria-hidden="true" />;
 }
 
-export default function StageTimeline({ run }: Props) {
+function StageTimeline({ run }: Props) {
   return (
     <ol className="timeline" aria-label="Stages">
       {run.agentDefinitionSnapshot.stages.map((stage) => {
@@ -33,3 +34,5 @@ export default function StageTimeline({ run }: Props) {
     </ol>
   );
 }
+
+export default memo(StageTimeline);
