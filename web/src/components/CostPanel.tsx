@@ -1,10 +1,11 @@
+import { memo } from "react";
 import type { CostRollupView } from "../api/client";
 
 interface Props {
   cost: CostRollupView;
 }
 
-export default function CostPanel({ cost }: Props) {
+function CostPanel({ cost }: Props) {
   return (
     <div className="metric-grid">
       <div className="metric">
@@ -26,3 +27,5 @@ export default function CostPanel({ cost }: Props) {
     </div>
   );
 }
+
+export default memo(CostPanel);

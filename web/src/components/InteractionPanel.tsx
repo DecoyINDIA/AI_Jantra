@@ -1,5 +1,5 @@
 import { Check, Send, X } from "lucide-react";
-import { useState } from "react";
+import { memo, useState } from "react";
 import type { PendingInteractionView } from "../api/client";
 
 interface Props {
@@ -8,7 +8,7 @@ interface Props {
   busy: boolean;
 }
 
-export default function InteractionPanel({ interactions, onAnswer, busy }: Props) {
+function InteractionPanel({ interactions, onAnswer, busy }: Props) {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   if (!interactions.length) return <p className="empty">No pending interactions.</p>;
   return (
@@ -50,3 +50,5 @@ export default function InteractionPanel({ interactions, onAnswer, busy }: Props
     </div>
   );
 }
+
+export default memo(InteractionPanel);

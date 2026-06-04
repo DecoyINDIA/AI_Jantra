@@ -412,6 +412,8 @@ h3 {
 
 .artifact {
   box-shadow: none;
+  content-visibility: auto;
+  contain-intrinsic-size: 1px 360px;
 }
 
 .markdown {
@@ -439,6 +441,7 @@ h3 {
 .source-list a {
   display: grid;
   gap: 3px;
+  contain: content;
   border: 1px solid var(--line);
   border-radius: 8px;
   color: var(--blue);
@@ -463,6 +466,7 @@ h3 {
   display: grid;
   grid-template-columns: 84px 140px minmax(0, 1fr);
   gap: 8px;
+  contain: content;
   align-items: start;
   border-bottom: 1px solid var(--line);
   padding: 8px 0;
