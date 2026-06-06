@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { AuditLogger } from "./audit.js";
 import { config } from "./config.js";
@@ -16,6 +16,11 @@ import type {
   RunResult,
   ToolContext,
 } from "./types.js";
+
+function agentCacheKey(spec: AgentSpec): string {
+  const hash = createHash("sha256").update(spec.systemPrompt).digest("hex").slice(0, 16);
+  return `agent:${spec.name}:system:${hash}`;
+}
 
 export interface AgentOptions {
   spec: AgentSpec;
@@ -91,6 +96,9 @@ export class Agent {
         thinking: true,
         thinkingBudget:
           this.opts.thinkingBudget ?? this.opts.spec.thinkingBudget ?? config.thinkingBudget,
+        cacheKey: agentCacheKey(this.opts.spec),
+        cacheSystem: this.opts.spec.systemPrompt,
+        cacheFallbackMessages: false,
         maxOutputTokens:
           this.opts.maxOutputTokens ?? this.opts.spec.maxOutputTokens ?? config.maxOutputTokens,
       });

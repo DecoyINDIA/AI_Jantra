@@ -331,18 +331,26 @@ export class GeminiProvider implements ModelProvider {
 
   private async resolveCache(opts: GenerateOptions): Promise<{
     messages: ModelMessage[];
+    system?: string;
     cachedContent?: string;
     cache?: ModelResult["cache"];
   }> {
-    if (!opts.cacheKey || !opts.cacheMessages?.length) {
-      return { messages: opts.messages };
+    if (!opts.cacheKey || (!opts.cacheMessages?.length && !opts.cacheSystem)) {
+      return { messages: opts.messages, system: opts.system };
     }
 
-    const fallbackMessages = [...opts.cacheMessages, ...opts.messages];
-    const estimatedTokens = estimateTokens(opts.cacheMessages);
+    const shouldFallbackWithMessages = opts.cacheFallbackMessages ?? true;
+    const fallbackMessages =
+      opts.cacheMessages?.length && shouldFallbackWithMessages
+        ? [...opts.cacheMessages, ...opts.messages]
+        : opts.messages;
+    const estimatedTokens =
+      estimateTokens(opts.cacheMessages ?? []) +
+      Math.ceil((opts.cacheSystem?.length ?? 0) / 4);
     if (!config.explicitCache) {
       return {
         messages: fallbackMessages,
+        system: opts.system,
         cache: {
           key: opts.cacheKey,
           status: "skipped",
@@ -353,6 +361,7 @@ export class GeminiProvider implements ModelProvider {
     if (estimatedTokens < CACHE_MIN_TOKENS[this.id]) {
       return {
         messages: fallbackMessages,
+        system: opts.system,
         cache: {
           key: opts.cacheKey,
           status: "skipped",
@@ -365,6 +374,7 @@ export class GeminiProvider implements ModelProvider {
     if (existing) {
       return {
         messages: opts.messages,
+        system: opts.cacheSystem ? undefined : opts.system,
         cachedContent: existing,
         cache: { key: opts.cacheKey, status: "hit" },
       };
@@ -374,7 +384,8 @@ export class GeminiProvider implements ModelProvider {
       const cache = await this.ai.caches.create({
         model: this.id,
         config: {
-          contents: opts.cacheMessages.map(toGeminiContent),
+          contents: opts.cacheMessages?.map(toGeminiContent),
+          systemInstruction: opts.cacheSystem,
           displayName: opts.cacheKey,
           ttl: `${opts.cacheTtlSeconds ?? 3600}s`,
         },
@@ -392,12 +403,14 @@ export class GeminiProvider implements ModelProvider {
       this.cacheHandles.set(opts.cacheKey, cache.name);
       return {
         messages: opts.messages,
+        system: opts.cacheSystem ? undefined : opts.system,
         cachedContent: cache.name,
         cache: { key: opts.cacheKey, status: "created" },
       };
     } catch (err) {
       return {
         messages: fallbackMessages,
+        system: opts.system,
         cache: {
           key: opts.cacheKey,
           status: "failed",
@@ -415,7 +428,7 @@ export class GeminiProvider implements ModelProvider {
     const request = {
       model: this.id,
       contents: cache.messages.map(toGeminiContent),
-      config: buildConfig(opts, cache.cachedContent),
+      config: buildConfig({ ...opts, system: cache.system }, cache.cachedContent),
     };
 
     let response: GenerateContentResponse | null = null;
