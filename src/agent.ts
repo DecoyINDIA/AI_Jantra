@@ -128,9 +128,19 @@ export class Agent {
       }
 
       const toolResults: ModelContentPart[] = [];
-      for (const call of result.toolCalls) {
+      for (let index = 0; index < result.toolCalls.length; index++) {
+        const call = result.toolCalls[index]!;
         toolResults.push(await this.handleToolCall(call, ctx));
-        if (handoff) break;
+        if (handoff) {
+          for (const skipped of result.toolCalls.slice(index + 1)) {
+            audit.record("tool_call", {
+              toolName: skipped.name,
+              skipped: true,
+              reason: "handoff",
+            });
+          }
+          break;
+        }
       }
       messages.push({ role: "user", content: toolResults });
       if (handoff) break;

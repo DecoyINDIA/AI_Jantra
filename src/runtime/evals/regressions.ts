@@ -539,6 +539,55 @@ async function verifyGeminiCacheDispose(): Promise<void> {
   assert(provider.cacheHandles.size === 0, "Gemini cache handles were not cleared.");
 }
 
+async function verifyHandoffSkippedToolAudit(): Promise<void> {
+  let skippedRuns = 0;
+  const handoffTool: AnyTool = {
+    name: "handoff_tool",
+    description: "Hands off.",
+    inputSchema: {},
+    risk: "read",
+    run: (_input, ctx) => {
+      ctx.requestHandoff("needs_human", "Stop and hand off.");
+      return { content: "handoff requested" };
+    },
+  };
+  const skippedTool: AnyTool = {
+    name: "skipped_tool",
+    description: "Should be skipped.",
+    inputSchema: {},
+    risk: "read",
+    run: () => {
+      skippedRuns++;
+      return { content: "should not run" };
+    },
+  };
+  const agent = new Agent({
+    spec: {
+      name: "handoff-skip-regression",
+      systemPrompt: "Use the tools.",
+      tools: [handoffTool, skippedTool],
+    },
+    provider: new SequenceProvider([
+      result("", [
+        { id: "handoff", name: "handoff_tool", args: {} },
+        { id: "skip-1", name: "skipped_tool", args: { n: 1 } },
+        { id: "skip-2", name: "skipped_tool", args: { n: 2 } },
+      ]),
+    ]),
+  });
+  const run = await agent.run("trigger handoff");
+  assert(run.handedOff, "Agent did not hand off.");
+  assert(skippedRuns === 0, "Skipped tools ran after handoff.");
+  const skipped = readAuditJsonl(run.runId).filter(
+    (entry) =>
+      entry.type === "tool_call" &&
+      entry.toolName === "skipped_tool" &&
+      entry.skipped === true &&
+      entry.reason === "handoff",
+  );
+  assert(skipped.length === 2, "Skipped handoff tool calls were not audited.");
+}
+
 async function verifyClientDailyIdeationBudget(): Promise<void> {
   const token = "daily-budget-regression-token";
   const day = intakeBudgetDayUtc();
@@ -706,6 +755,7 @@ export async function runRegressionEvals(): Promise<StageEvalResult[]> {
     await runRegression("audit-redaction-truncation", verifyAuditRedactionAndTruncation),
     await runRegression("user-message-length", verifyUserMessageLengthGuard),
     await runRegression("gemini-cache-dispose", verifyGeminiCacheDispose),
+    await runRegression("handoff-skipped-tools", verifyHandoffSkippedToolAudit),
     await runRegression("intake-client-daily-budget", verifyClientDailyIdeationBudget),
     await runRegression("intake-session-budget", verifyIntakeSessionBudget),
   ];
