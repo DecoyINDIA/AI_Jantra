@@ -8,18 +8,20 @@
           "name": "submit_idea_summary",
           "args": {
             "title": "Finance Reconciliation Copilot",
+            "raw_idea": "A tool for small finance teams that reconciles Shopify orders, Stripe payments, and QuickBooks invoices every morning, flags mismatches, and prepares an approval-ready summary.",
             "problem": "Small finance teams lose time reconciling ecommerce orders, payment payouts, and accounting invoices across disconnected systems.",
             "solution": "A daily reconciliation assistant connects Shopify, Stripe, and QuickBooks, flags mismatches, and prepares approval-ready summaries.",
-            "targetUsers": "Small finance and operations teams at ecommerce companies.",
-            "keyFeatures": [
+            "target_users": "Small finance and operations teams at ecommerce companies.",
+            "build_philosophy": "lean_profitable",
+            "founder_philosophy": "self_experienced",
+            "constraints_flags": ["limited_tech"],
+            "key_features": [
               "Connector-based reconciliation",
               "Mismatch detection",
               "Approval summaries",
               "Audit trail"
             ],
-            "constraints": "Start with Shopify, Stripe, and QuickBooks. Keep the first version focused on daily review workflows.",
-            "successCriteria": "Finance users can review mismatches each morning and approve a clear summary with evidence.",
-            "openQuestions": [
+            "open_questions": [
               "Which accounting edge cases matter most in the first release?"
             ]
           }
@@ -29,7 +31,7 @@
     {
       "stage": "intake",
       "purpose": "critic",
-      "text": "{\"scores\":{\"specificity\":5,\"completeness\":5,\"researchability\":5,\"noInventedDetails\":5},\"passed\":true,\"notes\":\"The summary is specific enough for research and planning.\",\"followUpQuestions\":[]}"
+      "text": "{\"scores\":{\"specificity\":5,\"researchability\":5,\"noInventedDetails\":5,\"philosophyCaptured\":5},\"passed\":true,\"notes\":\"The summary is specific, researchable, and both philosophies are captured and consistent with the idea.\",\"followUpQuestions\":[]}"
     },
     {
       "stage": "support",
@@ -60,22 +62,28 @@
     {
       "stage": "research",
       "purpose": "planner",
-      "text": "{\"sections\":[{\"title\":\"Market demand\",\"question\":\"What demand signals support daily reconciliation for small ecommerce finance teams?\",\"searchQueries\":[\"small ecommerce finance reconciliation order payout invoice demand\",\"finance teams daily reconciliation mismatch approval summary\"]},{\"title\":\"Competitive landscape\",\"question\":\"Which products or approaches compete on reconciliation automation?\",\"searchQueries\":[\"reconciliation automation connector coverage mismatch detection tools\",\"finance automation approval workflow audit trail competitors\"]},{\"title\":\"Pricing and workflow norms\",\"question\":\"How do finance workflow buyers evaluate and price reconciliation automation?\",\"searchQueries\":[\"finance workflow automation pricing connected accounts transaction volume\",\"exception review approval summary month end close finance teams\"]},{\"title\":\"Risks and implementation caveats\",\"question\":\"What risks could block reconciliation automation adoption?\",\"searchQueries\":[\"reconciliation automation data quality integration mapping risks\",\"financial record automation security retention least privilege risks\"]}]}"
+      "text": "{\"market_demand\":[\"small ecommerce finance reconciliation order payout invoice demand\",\"finance teams daily reconciliation mismatch approval summary signals\"],\"competitive_landscape\":[\"reconciliation automation connector coverage mismatch detection tools\",\"finance automation approval workflow audit trail competitors\"],\"viability_assessment\":[\"finance workflow automation pricing connected accounts transaction volume\",\"reconciliation automation unit economics CAC payback SaaS benchmarks\"],\"regulatory_legal\":[\"financial records data retention encryption compliance requirements\",\"finance automation security least privilege access controls\"],\"technical_feasibility\":[\"shopify stripe quickbooks api integration mapping data quality\",\"reconciliation automation integration dependencies infrastructure limits\"]}"
     },
     {
       "stage": "research",
       "purpose": "grounded_search",
       "text": "Market demand points to daily reconciliation pain.",
       "citations": [
-        { "uri": "{{fixtureDir}}/sources/market.html", "title": "Market signals for finance automation" }
+        { "uri": "{{fixtureDir}}/sources/market.html", "title": "Market signals for finance automation" },
+        { "uri": "{{fixtureDir}}/sources/pricing.html", "title": "Finance workflow buying norms 2026" },
+        { "uri": "{{fixtureDir}}/sources/competitors.html", "title": "Competitive landscape for reconciliation tools" },
+        { "uri": "{{fixtureDir}}/sources/risks.html", "title": "Integration risks in finance automation" }
       ]
     },
     {
       "stage": "research",
       "purpose": "grounded_search",
-      "text": "Approval-summary expectations also appear in finance workflow norms.",
+      "text": "Exception review pressure recurs across finance teams.",
       "citations": [
-        { "uri": "{{fixtureDir}}/sources/pricing.html", "title": "Finance workflow buying norms 2026" }
+        { "uri": "{{fixtureDir}}/sources/market.html", "title": "Market signals for finance automation" },
+        { "uri": "{{fixtureDir}}/sources/pricing.html", "title": "Finance workflow buying norms 2026" },
+        { "uri": "{{fixtureDir}}/sources/competitors.html", "title": "Competitive landscape for reconciliation tools" },
+        { "uri": "{{fixtureDir}}/sources/risks.html", "title": "Integration risks in finance automation" }
       ]
     },
     {
@@ -83,7 +91,10 @@
       "purpose": "grounded_search",
       "text": "Competitors differentiate through connectors and workflows.",
       "citations": [
-        { "uri": "{{fixtureDir}}/sources/competitors.html", "title": "Competitive landscape for reconciliation tools" }
+        { "uri": "{{fixtureDir}}/sources/market.html", "title": "Market signals for finance automation" },
+        { "uri": "{{fixtureDir}}/sources/pricing.html", "title": "Finance workflow buying norms 2026" },
+        { "uri": "{{fixtureDir}}/sources/competitors.html", "title": "Competitive landscape for reconciliation tools" },
+        { "uri": "{{fixtureDir}}/sources/risks.html", "title": "Integration risks in finance automation" }
       ]
     },
     {
@@ -92,7 +103,9 @@
       "text": "Audit trails are a buying criterion.",
       "citations": [
         { "uri": "{{fixtureDir}}/sources/market.html", "title": "Market signals for finance automation" },
-        { "uri": "{{fixtureDir}}/sources/competitors.html", "title": "Competitive landscape for reconciliation tools" }
+        { "uri": "{{fixtureDir}}/sources/pricing.html", "title": "Finance workflow buying norms 2026" },
+        { "uri": "{{fixtureDir}}/sources/competitors.html", "title": "Competitive landscape for reconciliation tools" },
+        { "uri": "{{fixtureDir}}/sources/risks.html", "title": "Integration risks in finance automation" }
       ]
     },
     {
@@ -100,22 +113,20 @@
       "purpose": "grounded_search",
       "text": "Pricing commonly scales with accounts and transaction volume.",
       "citations": [
-        { "uri": "{{fixtureDir}}/sources/pricing.html", "title": "Finance workflow buying norms 2026" }
+        { "uri": "{{fixtureDir}}/sources/market.html", "title": "Market signals for finance automation" },
+        { "uri": "{{fixtureDir}}/sources/pricing.html", "title": "Finance workflow buying norms 2026" },
+        { "uri": "{{fixtureDir}}/sources/competitors.html", "title": "Competitive landscape for reconciliation tools" },
+        { "uri": "{{fixtureDir}}/sources/risks.html", "title": "Integration risks in finance automation" }
       ]
     },
     {
       "stage": "research",
       "purpose": "grounded_search",
-      "text": "Workflow depth and auditability matter for finance buyers.",
+      "text": "Unit economics depend on per-account revenue versus connector cost.",
       "citations": [
-        { "uri": "{{fixtureDir}}/sources/competitors.html", "title": "Competitive landscape for reconciliation tools" }
-      ]
-    },
-    {
-      "stage": "research",
-      "purpose": "grounded_search",
-      "text": "Data quality and mapping are implementation risks.",
-      "citations": [
+        { "uri": "{{fixtureDir}}/sources/market.html", "title": "Market signals for finance automation" },
+        { "uri": "{{fixtureDir}}/sources/pricing.html", "title": "Finance workflow buying norms 2026" },
+        { "uri": "{{fixtureDir}}/sources/competitors.html", "title": "Competitive landscape for reconciliation tools" },
         { "uri": "{{fixtureDir}}/sources/risks.html", "title": "Integration risks in finance automation" }
       ]
     },
@@ -124,14 +135,49 @@
       "purpose": "grounded_search",
       "text": "Security reviews focus on access and retention controls.",
       "citations": [
+        { "uri": "{{fixtureDir}}/sources/market.html", "title": "Market signals for finance automation" },
         { "uri": "{{fixtureDir}}/sources/pricing.html", "title": "Finance workflow buying norms 2026" },
+        { "uri": "{{fixtureDir}}/sources/competitors.html", "title": "Competitive landscape for reconciliation tools" },
+        { "uri": "{{fixtureDir}}/sources/risks.html", "title": "Integration risks in finance automation" }
+      ]
+    },
+    {
+      "stage": "research",
+      "purpose": "grounded_search",
+      "text": "Compliance controls vary with how financial records are stored.",
+      "citations": [
+        { "uri": "{{fixtureDir}}/sources/market.html", "title": "Market signals for finance automation" },
+        { "uri": "{{fixtureDir}}/sources/pricing.html", "title": "Finance workflow buying norms 2026" },
+        { "uri": "{{fixtureDir}}/sources/competitors.html", "title": "Competitive landscape for reconciliation tools" },
+        { "uri": "{{fixtureDir}}/sources/risks.html", "title": "Integration risks in finance automation" }
+      ]
+    },
+    {
+      "stage": "research",
+      "purpose": "grounded_search",
+      "text": "Data quality and mapping are implementation risks.",
+      "citations": [
+        { "uri": "{{fixtureDir}}/sources/market.html", "title": "Market signals for finance automation" },
+        { "uri": "{{fixtureDir}}/sources/pricing.html", "title": "Finance workflow buying norms 2026" },
+        { "uri": "{{fixtureDir}}/sources/competitors.html", "title": "Competitive landscape for reconciliation tools" },
+        { "uri": "{{fixtureDir}}/sources/risks.html", "title": "Integration risks in finance automation" }
+      ]
+    },
+    {
+      "stage": "research",
+      "purpose": "grounded_search",
+      "text": "Integration dependencies shape feasibility.",
+      "citations": [
+        { "uri": "{{fixtureDir}}/sources/market.html", "title": "Market signals for finance automation" },
+        { "uri": "{{fixtureDir}}/sources/pricing.html", "title": "Finance workflow buying norms 2026" },
+        { "uri": "{{fixtureDir}}/sources/competitors.html", "title": "Competitive landscape for reconciliation tools" },
         { "uri": "{{fixtureDir}}/sources/risks.html", "title": "Integration risks in finance automation" }
       ]
     },
     {
       "stage": "research",
       "purpose": "section_synthesis",
-      "text": "{\"summary\":\"Small ecommerce finance teams show a concrete daily reconciliation workflow with exception review pressure.\",\"claims\":[{\"text\":\"Small finance teams have a daily reconciliation workflow across orders, payouts, and invoices.\",\"citations\":[{\"sourceId\":\"src_market\",\"quote\":\"Small finance teams reconcile commerce orders, payment processor payouts, and accounting invoices every morning.\"}]},{\"text\":\"Approval summaries and exportable evidence are expected in finance review workflows.\",\"citations\":[{\"sourceId\":\"src_pricing\",\"quote\":\"Finance teams expect exception review queues, approval summaries, and exportable evidence for month-end close.\"}]}],\"risks\":[\"Demand must be validated by system-specific volume and close-cycle urgency.\"]}"
+      "text": "{\"summary\":\"Small ecommerce finance teams show a concrete daily reconciliation workflow with exception review pressure.\",\"claims\":[{\"text\":\"Small finance teams have a daily reconciliation workflow across orders, payouts, and invoices.\",\"citations\":[{\"sourceId\":\"src_market\",\"quote\":\"Small finance teams reconcile commerce orders, payment processor payouts, and accounting invoices every morning.\"}]},{\"text\":\"Manual exception review is a recurring bottleneck when systems disagree.\",\"citations\":[{\"sourceId\":\"src_market\",\"quote\":\"Manual exception review is a recurring bottleneck when order, payout, and invoice systems disagree.\"}]}],\"risks\":[\"Demand must be validated by system-specific volume and close-cycle urgency.\"]}"
     },
     {
       "stage": "research",
@@ -141,17 +187,32 @@
     {
       "stage": "research",
       "purpose": "section_synthesis",
-      "text": "{\"summary\":\"Buying and packaging should map to connected systems, transaction volume, and depth of automation.\",\"claims\":[{\"text\":\"Pricing norms can scale with connected accounts, transaction volume, and workflow automation depth.\",\"citations\":[{\"sourceId\":\"src_pricing\",\"quote\":\"Pricing commonly scales with connected accounts, transaction volume, and workflow automation depth.\"}]},{\"text\":\"Exception review queues are part of expected finance workflow value.\",\"citations\":[{\"sourceId\":\"src_pricing\",\"quote\":\"Finance teams expect exception review queues, approval summaries, and exportable evidence for month-end close.\"}]}],\"risks\":[\"Usage-based pricing needs transparent limits so small teams do not fear runaway costs.\"]}"
+      "text": "{\"summary\":\"Buying and packaging map to connected systems, transaction volume, and depth of automation, which sets the unit-economics frame.\",\"claims\":[{\"text\":\"Pricing norms can scale with connected accounts, transaction volume, and workflow automation depth.\",\"citations\":[{\"sourceId\":\"src_pricing\",\"quote\":\"Pricing commonly scales with connected accounts, transaction volume, and workflow automation depth.\"}]},{\"text\":\"Exception review queues and approval summaries are part of expected finance workflow value.\",\"citations\":[{\"sourceId\":\"src_pricing\",\"quote\":\"Finance teams expect exception review queues, approval summaries, and exportable evidence for month-end close.\"}]}],\"risks\":[\"Usage-based pricing needs transparent limits so small teams do not fear runaway costs.\"]}"
     },
     {
       "stage": "research",
       "purpose": "section_synthesis",
-      "text": "{\"summary\":\"Implementation risk centers on source-system mappings, data quality, security, and retention controls.\",\"claims\":[{\"text\":\"Data quality and integration mapping are recurring risks for reconciliation automation.\",\"citations\":[{\"sourceId\":\"src_risks\",\"quote\":\"Data quality and integration mapping are recurring risks for reconciliation automation projects.\"}]},{\"text\":\"Security reviews focus on least privilege, encryption, and retention controls for financial records.\",\"citations\":[{\"sourceId\":\"src_risks\",\"quote\":\"Security reviews focus on least-privilege access, encryption, and clear retention controls for financial records.\"}]}],\"risks\":[\"The first release should constrain supported systems and document data handling clearly.\"]}"
+      "text": "{\"summary\":\"Security and retention controls are central to how finance buyers evaluate financial-records tooling.\",\"claims\":[{\"text\":\"Security reviews focus on least privilege, encryption, and retention controls for financial records.\",\"citations\":[{\"sourceId\":\"src_risks\",\"quote\":\"Security reviews focus on least-privilege access, encryption, and clear retention controls for financial records.\"}]}],\"risks\":[\"Retention and access requirements may vary by jurisdiction.\"]}"
+    },
+    {
+      "stage": "research",
+      "purpose": "section_synthesis",
+      "text": "{\"summary\":\"Implementation feasibility centers on source-system mappings and data quality across connectors.\",\"claims\":[{\"text\":\"Data quality and integration mapping are recurring risks for reconciliation automation.\",\"citations\":[{\"sourceId\":\"src_risks\",\"quote\":\"Data quality and integration mapping are recurring risks for reconciliation automation projects.\"}]}],\"risks\":[\"The first release should constrain supported systems and document data handling clearly.\"]}"
+    },
+    {
+      "stage": "research",
+      "purpose": "founder_anchor_synthesis",
+      "text": "{\"summary\":\"The evidence broadly supports a lean, self-funded path, since the workflow pain is concrete and buyers already expect exception review and audit trails.\",\"alignmentPoints\":[\"A concrete, recurring daily workflow fits the lean and profitable goal because the pain is specific and frequent.\",\"Buyer expectations for audit trails sit in a domain the founder has experienced directly.\"],\"tensions\":[\"Pricing that scales with transaction volume could complicate an early profitable model if usage limits are unclear.\"]}"
+    },
+    {
+      "stage": "research",
+      "purpose": "viability_summary",
+      "text": "{\"redFlags\":[\"A thin initial connector set could look narrow against established workflow tools.\"],\"opportunities\":[\"Finance buyers already expect exception review queues and audit trails, which signals active demand.\",\"Pricing norms tied to accounts and transaction volume give a clear path to revenue.\"],\"economicsNote\":\"Pricing commonly scales with connected accounts and transaction volume, so sustainability depends on keeping connector and review costs low relative to per-account revenue.\"}"
     },
     {
       "stage": "research",
       "purpose": "critic",
-      "text": "{\"scores\":{\"factualAccuracy\":5,\"citationAccuracy\":5,\"completeness\":5,\"sourceQuality\":4,\"balance\":4},\"passed\":true,\"notes\":\"The report has verified quote-backed claims and useful risks.\"}"
+      "text": "{\"scores\":{\"factualAccuracy\":5,\"citationAccuracy\":5,\"completeness\":5,\"sourceQuality\":4,\"balance\":4},\"passed\":true,\"notes\":\"The report has verified quote-backed claims, a neutral viability summary, and founder-anchor analysis.\"}"
     },
     {
       "stage": "planning",

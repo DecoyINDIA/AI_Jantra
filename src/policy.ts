@@ -88,6 +88,14 @@ export function sanitizeUntrustedWebContent(content: string): {
   };
 }
 
+const RECOMMENDATION_PATTERNS = [
+  /\bwe recommend\b/i,
+  /\bour recommendation\b/i,
+  /\bgo\/no-go\b/i,
+  /\byou should (not )?(build|launch|proceed|invest|pursue)\b/i,
+  /\bdo not (build|launch|proceed|invest|pursue)\b/i,
+];
+
 export function runArtifactOutputChecks(
   artifact: Artifact,
   claims: Claim[] = [],
@@ -107,6 +115,12 @@ export function runArtifactOutputChecks(
     );
     if (unverified.length) flags.push("unverified_research_claims");
     if (unsupported.length) flags.push("verified_claim_without_quote");
+    // The Research stage presents findings and never makes a go/no-go call
+    // (brief 6.2). This flags explicit recommendation language for review; it
+    // does not block, since the phrasing can legitimately appear inside a quote.
+    if (RECOMMENDATION_PATTERNS.some((pattern) => pattern.test(artifact.content))) {
+      flags.push("viability_recommendation_language");
+    }
   }
   return {
     allowed: !flags.includes("verified_claim_without_quote"),
