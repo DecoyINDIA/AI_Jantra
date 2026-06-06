@@ -9,6 +9,7 @@ import {
   pendingInteraction,
   upsertPendingInteraction,
 } from "../../runtime/interactions.js";
+import { enforceIntakeRunCeiling, recordIntakeSpend } from "../../runtime/intakeBudget.js";
 import { trackStageModelCall } from "../../runtime/telemetry.js";
 import {
   createStageExecutionState,
@@ -298,6 +299,8 @@ async function critiqueSummary(
     temperature: 0,
   });
   trackStageModelCall(ctx.audit, ctx.project, ctx.stageId, "critic", result);
+  recordIntakeSpend(ctx.store, ctx.project, ctx.stageId, result.costUsd);
+  enforceIntakeRunCeiling(ctx.audit, ctx.project, ctx.stageId);
   const parsed = intakeCritiqueSchema.safeParse(JSON.parse(result.text));
   if (!parsed.success) {
     throw new SchemaValidationError("Intake critique failed schema validation.", {
@@ -391,6 +394,8 @@ export async function runIntake(ctx: StageContext): Promise<Artifact[]> {
       maxOutputTokens: INTAKE_GENERATOR_OUTPUT_TOKENS,
     });
     trackStageModelCall(audit, project, ctx.stageId, "generator", result);
+    recordIntakeSpend(ctx.store, project, ctx.stageId, result.costUsd);
+    enforceIntakeRunCeiling(audit, project, ctx.stageId);
     messages.push(result.message);
 
     const submit = result.toolCalls.find((call) => call.name === "submit_idea_summary");
@@ -514,6 +519,8 @@ async function continueIntake(
       maxOutputTokens: INTAKE_GENERATOR_OUTPUT_TOKENS,
     });
     trackStageModelCall(ctx.audit, ctx.project, ctx.stageId, "generator", result);
+    recordIntakeSpend(ctx.store, ctx.project, ctx.stageId, result.costUsd);
+    enforceIntakeRunCeiling(ctx.audit, ctx.project, ctx.stageId);
     state.messages.push(result.message);
 
     const submit = result.toolCalls.find((call) => call.name === "submit_idea_summary");

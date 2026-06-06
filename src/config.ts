@@ -72,6 +72,11 @@ export const config = {
   maxOutputTokens: Math.trunc(numberFromEnv("JANTRA_MAX_OUTPUT_TOKENS", 12000)),
   thinkingBudget: thinkingBudgetFromEnv("JANTRA_THINKING_BUDGET", 4096),
   costCeilingUsd: numberFromEnv("JANTRA_COST_CEILING_USD", 10),
+  intakeRunCeilingUsd: numberFromEnv("JANTRA_INTAKE_RUN_CEILING_USD", 0.25),
+  intakeClientDailyCeilingUsd: numberFromEnv(
+    "JANTRA_INTAKE_CLIENT_DAILY_CEILING_USD",
+    0.5,
+  ),
   researchConcurrency: boundedIntegerFromEnv("JANTRA_RESEARCH_CONCURRENCY", 4, 1, 8),
   synthesisConcurrency: boundedIntegerFromEnv("JANTRA_SYNTHESIS_CONCURRENCY", 3, 1, 6),
   maxSources: boundedIntegerFromEnv("JANTRA_MAX_SOURCES", 24, 1, 48),

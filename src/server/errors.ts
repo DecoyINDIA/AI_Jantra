@@ -1,5 +1,7 @@
 import type { FastifyReply } from "fastify";
 
+import { CostCeilingExceededError } from "../runtime/errors.js";
+
 export class HttpError extends Error {
   constructor(
     readonly statusCode: number,
@@ -28,6 +30,16 @@ export function conflict(code: string, message: string, details?: unknown): Http
 }
 
 export function sendHttpError(reply: FastifyReply, err: unknown): void {
+  if (err instanceof CostCeilingExceededError) {
+    reply.status(429).send({
+      error: {
+        code: err.code,
+        message: err.message,
+        details: err.details,
+      },
+    });
+    return;
+  }
   if (err instanceof HttpError) {
     reply.status(err.statusCode).send({
       error: {

@@ -27,6 +27,7 @@ export type AuditType =
   | "guardrail_block"
   | "stage_gate"
   | "cost_rollup"
+  | "cost_ceiling_exceeded"
   | "source_registered"
   | "source_cap_applied"
   | "key_created"
