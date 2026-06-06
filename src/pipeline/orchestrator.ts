@@ -362,10 +362,10 @@ export function confirmStage(project: Project): StageId | null {
 export function rejectStage(project: Project, reason: string): void {
   const stage = getStageState(project, project.currentStage);
   stage.status = "rejected";
+  stage.rejectionReason = reason;
   stage.updatedAt = new Date().toISOString();
   project.updatedAt = stage.updatedAt;
   saveProject(project);
-  void reason;
 }
 
 function advanceProject(
