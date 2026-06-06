@@ -24,7 +24,7 @@ import type {
   PersistedStageState,
   StageContext,
 } from "../../pipeline/types.js";
-import type { AnyTool, ToolContext } from "../../types.js";
+import type { AnyTool, Policy, ToolContext } from "../../types.js";
 import { supportAgentSpec } from "./index.js";
 
 type SupportPhase = "awaiting_request" | "model_turn" | "awaiting_approval" | "complete";
@@ -41,7 +41,6 @@ interface SupportStateData {
 const toolsByName = new Map<string, AnyTool>(
   supportAgentSpec.tools.map((tool) => [tool.name, tool]),
 );
-const policy = new RuleBasedPolicy();
 
 function supportData(state: PersistedStageState): SupportStateData {
   return {
@@ -200,6 +199,7 @@ async function executeAllowedTool(
 async function processToolCalls(
   ctx: StageContext,
   state: PersistedStageState,
+  policy: Policy,
   calls: ToolCall[],
   initialToolResults: ModelContentPart[] = [],
 ): Promise<StageRunStep | null> {
@@ -217,7 +217,7 @@ async function processToolCalls(
       risk: tool.risk,
       input: call.args,
     });
-    const verdict = policy.decide(tool);
+    const verdict = policy.decide(tool, call.args);
     ctx.audit.record("policy_decision", {
       toolName: tool.name,
       decision: verdict.decision,
@@ -254,7 +254,11 @@ async function processToolCalls(
   return null;
 }
 
-async function continueSupport(ctx: StageContext, state: PersistedStageState): Promise<StageRunStep> {
+async function continueSupport(
+  ctx: StageContext,
+  state: PersistedStageState,
+  policy: Policy,
+): Promise<StageRunStep> {
   while (state.step < config.maxSteps) {
     state.step++;
     const result = await ctx.provider.generate({
@@ -284,7 +288,7 @@ async function continueSupport(ctx: StageContext, state: PersistedStageState): P
       return completeSupport(ctx, state);
     }
 
-    const pending = await processToolCalls(ctx, state, result.toolCalls);
+    const pending = await processToolCalls(ctx, state, policy, result.toolCalls);
     if (pending) return pending;
   }
 
@@ -297,6 +301,7 @@ async function continueSupport(ctx: StageContext, state: PersistedStageState): P
 async function resumeApproval(
   ctx: StageContext,
   state: PersistedStageState,
+  policy: Policy,
   response: InteractionResponse,
 ): Promise<StageRunStep> {
   const data = supportData(state);
@@ -320,46 +325,56 @@ async function resumeApproval(
     pendingToolResults: undefined,
     remainingToolCalls: undefined,
   });
-  const pending = await processToolCalls(ctx, state, data.remainingToolCalls ?? [], toolResults);
+  const pending = await processToolCalls(
+    ctx,
+    state,
+    policy,
+    data.remainingToolCalls ?? [],
+    toolResults,
+  );
   if (pending) return pending;
-  return continueSupport(ctx, state);
+  return continueSupport(ctx, state, policy);
 }
 
-export const runSupportReentrant = {
-  async start(ctx: StageContext): Promise<StageRunStep> {
-    const state = loadStageExecutionState(ctx.project, ctx.stageId) ?? createSupportState(ctx);
-    const pending = pendingInteraction(ctx.project, state.pendingInteractionId);
-    if (pending) return { status: "awaiting_input", state, interaction: pending };
-    if (!state.messages.length) {
-      setSupportData(state, { phase: "awaiting_request" });
-      return awaitingQuestion(ctx, state, "What customer support request should I handle?");
-    }
-    return continueSupport(ctx, state);
-  },
+export function createSupportReentrant(policy: Policy = new RuleBasedPolicy()) {
+  return {
+    async start(ctx: StageContext): Promise<StageRunStep> {
+      const state = loadStageExecutionState(ctx.project, ctx.stageId) ?? createSupportState(ctx);
+      const pending = pendingInteraction(ctx.project, state.pendingInteractionId);
+      if (pending) return { status: "awaiting_input", state, interaction: pending };
+      if (!state.messages.length) {
+        setSupportData(state, { phase: "awaiting_request" });
+        return awaitingQuestion(ctx, state, "What customer support request should I handle?");
+      }
+      return continueSupport(ctx, state, policy);
+    },
 
-  async resume(ctx: StageContext, response: InteractionResponse): Promise<StageRunStep> {
-    const state = loadStageExecutionState(ctx.project, ctx.stageId) ?? createSupportState(ctx);
-    if (state.pendingInteractionId !== response.interactionId) {
-      throw new StageFailedClosedError("Interaction does not match the pending Support state.", {
-        expected: state.pendingInteractionId,
-        received: response.interactionId,
-      });
-    }
-    const data = supportData(state);
-    if (data.phase === "awaiting_approval") {
-      return resumeApproval(ctx, state, response);
-    }
+    async resume(ctx: StageContext, response: InteractionResponse): Promise<StageRunStep> {
+      const state = loadStageExecutionState(ctx.project, ctx.stageId) ?? createSupportState(ctx);
+      if (state.pendingInteractionId !== response.interactionId) {
+        throw new StageFailedClosedError("Interaction does not match the pending Support state.", {
+          expected: state.pendingInteractionId,
+          received: response.interactionId,
+        });
+      }
+      const data = supportData(state);
+      if (data.phase === "awaiting_approval") {
+        return resumeApproval(ctx, state, policy, response);
+      }
 
-    const request = response.text?.trim();
-    if (!request) {
-      throw new StageFailedClosedError("Support request response was empty.", {
-        interactionId: response.interactionId,
-      });
-    }
-    state.pendingInteractionId = undefined;
-    state.messages = [{ role: "user", content: request } satisfies ModelMessage];
-    setSupportData(state, { phase: "model_turn" });
-    saveStageExecutionState(ctx.project, ctx.stageId, state);
-    return continueSupport(ctx, state);
-  },
-};
+      const request = response.text?.trim();
+      if (!request) {
+        throw new StageFailedClosedError("Support request response was empty.", {
+          interactionId: response.interactionId,
+        });
+      }
+      state.pendingInteractionId = undefined;
+      state.messages = [{ role: "user", content: request } satisfies ModelMessage];
+      setSupportData(state, { phase: "model_turn" });
+      saveStageExecutionState(ctx.project, ctx.stageId, state);
+      return continueSupport(ctx, state, policy);
+    },
+  };
+}
+
+export const runSupportReentrant = createSupportReentrant();
