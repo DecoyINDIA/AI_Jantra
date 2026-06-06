@@ -256,7 +256,16 @@ async function processToolCalls(
     }
 
     toolResults.push(await executeAllowedTool(ctx, state, call));
-    if (supportData(state).handedOff) break;
+    if (supportData(state).handedOff) {
+      for (const skipped of calls.slice(index + 1)) {
+        ctx.audit.record("tool_call", {
+          toolName: skipped.name,
+          skipped: true,
+          reason: "handoff",
+        });
+      }
+      break;
+    }
   }
 
   state.messages.push({ role: "user", content: toolResults });
