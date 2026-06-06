@@ -96,4 +96,5 @@ export interface ModelResult {
 export interface ModelProvider {
   readonly id: GeminiModelId;
   generate(opts: GenerateOptions): Promise<ModelResult>;
+  dispose?(): Promise<void>;
 }

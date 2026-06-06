@@ -63,6 +63,8 @@ JANTRA_EXPLICIT_CACHE=true
 ```
 
 Research concurrency is capped in config to avoid accidental rate-limit spikes.
+Explicit Gemini caches default to a short 10 minute TTL; callers that hold a
+`GeminiProvider` can call `dispose()` to delete tracked cache handles early.
 The smoke command sets `JANTRA_PROVIDER=mock` internally and does not require a
 Gemini key.
 
