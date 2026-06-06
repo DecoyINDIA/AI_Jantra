@@ -79,37 +79,52 @@ function optionsBlock(map: Record<string, string>): string {
     .join("\n");
 }
 
-const SYSTEM_PROMPT = `You are the Intake specialist at Xolver, a studio that turns ideas into built products.
+const SYSTEM_PROMPT = `You are Manthan, the ideation guide at Xolver, a studio that turns ideas into built products.
 
-Your job is to understand a founder's idea well enough that a research team can investigate it with intention. You are the first touchpoint, so be warm, concise, and direct.
+The person you are talking to usually has just an idea, sometimes vague, often with no team, no technical background, and no startup yet. They came to Xolver because they want help shaping that idea, not a test to see if they qualify. Your job is to help them think it through, then hand a clear picture to the research team.
 
-How to work:
-- Ask focused questions, one or two at a time. Never ask more than two at once.
-- Follow the funnel: each answer shapes the next question. Do not ask what is already known.
-- For questions about constraints, budgets, or capacity: use categories, not exact figures.
-- You must capture build_philosophy (what they want to build toward) and founder_philosophy (why they are building this). These are required fields.
-- If the founder does not know the answer to something, record it as an open question for Research. Do not pressure them.
-- When you have enough to fill the Idea Summary schema, call submit_idea_summary.
+Mindset:
+- Treat every idea as worth taking seriously. There are no wrong answers.
+- You are a helpful guide, not an investor screening a startup. Never interrogate.
+- Assume no technical knowledge. Never ask how they would build it, what tech stack, team, or budget they have. They are here precisely because they do not know that yet.
+
+How to work, in this order:
+1. Understand the idea. Read what they gave you. If something core is missing (who it is for, or what pain it removes), ask one warm, plain-language question about it.
+2. Explore their vision. Ask one or two simple, exploratory questions about what they picture and what excites them about it. Keep it human, never technical.
+3. Reflect and offer directions. Once you understand the idea, mirror it back in a sentence or two so they feel heard, then offer 3 to 5 concrete directions this specific idea could take. Each direction is a short label plus one plain line describing it, tailored to their idea. Ask which one resonates, and make clear they can pick one, blend a few, or describe their own.
+4. Capture and hand off. When you understand the idea and the direction they lean toward, call submit_idea_summary.
+
+Rules:
+- Ask at most two questions at a time. Aim to be useful within about 3 to 5 exchanges, but if the person wants to keep exploring, stay with them. Never cut the conversation short or push them to finish.
+- Never re-ask something already answered, and never repeat a question they responded to in their own words. If their answer is free text, accept it. Do not force them into fixed options.
+- Use plain, warm, concrete language. Short sentences. No jargon, no filler, no em dashes.
+- Never ask for exact figures. Categories or plain descriptions only.
+- Do not invent features, users, or facts they did not mention.
 
 What you must NOT do:
-- Do not assess market viability. That is Research's job.
-- Do not suggest which path to take. That is Research's job after seeing the data.
-- Do not invent features, users, or constraints the founder did not mention.
-- Do not use em dashes.
+- Do not assess market viability or market size. That is the research team's job.
+- The directions you offer are product or strategic angles for THEIR idea, not generic business-model labels.
+- Do not present the internal classifications below to the person as a quiz. They are for your summary only.
 
-Tone: plain, warm, concrete. Short sentences. No filler.
 ${CONCISION_DIRECTIVE}
 
-Required category questions. When you ask these, present the options explicitly in the question text and store the chosen key.
+Internal classification reference. Infer these silently from the conversation. Never present them to the person as questions.
 
-build_philosophy - "What is your primary goal for this build right now?"
+build_philosophy - what the person wants to build toward (default to "exploring" if genuinely unclear):
 ${optionsBlock(BUILD_PHILOSOPHY)}
 
-founder_philosophy - "What is driving this idea for you personally? Pick the closest fit."
+founder_philosophy - why the person is building this, inferred from how they talk about it:
 ${optionsBlock(FOUNDER_PHILOSOPHY)}
 
-constraints_flags (optional, ask only if the idea involves real resource or regulatory complexity) - "Are there any constraints we should keep in mind as we research? Select all that apply."
-${optionsBlock(CONSTRAINT_FLAGS)}`;
+constraints_flags - record one only if the person raised it themselves. Do not ask a constraints checklist:
+${optionsBlock(CONSTRAINT_FLAGS)}
+
+If you cannot infer something, record it as an open question for research rather than pressing them for it.`;
+
+const directionSchema = z.object({
+  label: z.string().min(3).max(80),
+  summary: z.string().min(8).max(240),
+});
 
 const ideaSummarySchema = z.object({
   title: z.string().min(3).max(120),
@@ -121,6 +136,8 @@ const ideaSummarySchema = z.object({
   founder_philosophy: z.enum(founderPhilosophyKeys),
   constraints_flags: z.array(z.enum(constraintFlagKeys)).default([]),
   key_features: z.array(z.string().min(3).max(240)).min(1).max(8),
+  proposed_directions: z.array(directionSchema).max(5).default([]),
+  chosen_direction: z.string().max(300).optional(),
   open_questions: z.array(z.string().max(300)).max(8).default([]),
 });
 
@@ -147,7 +164,7 @@ const intakeRubric = {
 const submitTool: ToolSpec = {
   name: "submit_idea_summary",
   description:
-    "Submit the final structured summary of the founder's idea. Only call this once you understand the idea well enough for a research team to investigate it, and once build_philosophy and founder_philosophy are captured.",
+    "Submit the final structured summary of the founder's idea. Only call this once you understand the idea, have reflected a few tailored directions back to the person, and have inferred build_philosophy and founder_philosophy from the conversation.",
   inputSchema: {
     type: "object",
     properties: {
@@ -199,6 +216,27 @@ const submitTool: ToolSpec = {
         items: { type: "string", maxLength: 240 },
         description: "The must-have features as described by the founder. At least one.",
       },
+      proposed_directions: {
+        type: "array",
+        maxItems: 5,
+        items: {
+          type: "object",
+          properties: {
+            label: { type: "string", maxLength: 80 },
+            summary: { type: "string", maxLength: 240 },
+          },
+          required: ["label", "summary"],
+          additionalProperties: false,
+        },
+        description:
+          "The 3 to 5 directions you reflected back to the person, each a short label and one plain line. Empty if you did not reach the directions step.",
+      },
+      chosen_direction: {
+        type: "string",
+        maxLength: 300,
+        description:
+          "The direction the person leaned toward, in their words or a blend they described. Omit if they are still exploring.",
+      },
       open_questions: {
         type: "array",
         maxItems: 8,
@@ -228,6 +266,9 @@ function renderSummary(s: IdeaSummary): string {
   const constraints = s.constraints_flags.length
     ? s.constraints_flags.map((flag) => `- ${CONSTRAINT_FLAGS[flag]}`).join("\n")
     : "- None flagged";
+  const directions = s.proposed_directions.length
+    ? s.proposed_directions.map((d) => `- ${d.label}: ${d.summary}`).join("\n")
+    : "- (none reflected back)";
   return `# Idea summary - ${s.title}
 
 ## Raw idea
@@ -244,6 +285,12 @@ ${s.target_users}
 
 ## Key features
 ${list(s.key_features)}
+
+## Directions explored
+${directions}
+
+## Direction they lean toward
+${s.chosen_direction?.trim() ? s.chosen_direction.trim() : "Still exploring, no single direction chosen yet."}
 
 ## Build philosophy
 ${BUILD_PHILOSOPHY[s.build_philosophy]} (${s.build_philosophy})
@@ -377,7 +424,7 @@ export async function runIntake(ctx: StageContext): Promise<Artifact[]> {
   const { provider, audit, io, project } = ctx;
 
   io.say(
-    "Hi, I'm the Xolver intake assistant. Tell me about the idea you want to build, in your own words. There are no wrong answers here.",
+    "Hi, I'm Manthan, your ideation guide at Xolver. Tell me about the idea you have in mind, in your own words. It can be rough or half-formed. There are no wrong answers here, and I'm here to help you shape it.",
   );
   const firstIdea = await io.ask("your idea");
 
@@ -585,7 +632,7 @@ export const runIntakeReentrant = {
       return awaitingQuestion(
         ctx,
         state,
-        "Tell me about the idea you want to build, in your own words. There are no wrong answers here.",
+        "Hi, I'm Manthan, your ideation guide at Xolver. Tell me about the idea you have in mind, in your own words. It can be rough or half-formed. There are no wrong answers here, and I'm here to help you shape it.",
       );
     }
     return continueIntake(ctx, state);
