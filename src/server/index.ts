@@ -1,6 +1,9 @@
 import { generateLoopbackToken } from "./security.js";
 import { startLocalApi } from "./app.js";
+import { requireApiKey } from "../config.js";
 import { SqliteProjectStore } from "../pipeline/store/sqlite.js";
+
+requireApiKey();
 
 const token = process.env.JANTRA_LOOPBACK_TOKEN ?? generateLoopbackToken();
 const port = process.env.JANTRA_SERVER_PORT
