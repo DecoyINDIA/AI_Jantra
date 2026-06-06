@@ -23,6 +23,7 @@ export interface AgentOptions {
   policy?: Policy;
   onApproval?: ApprovalHandler;
   onHandoff?: HandoffHandler;
+  thinkingBudget?: number;
 }
 
 /**
@@ -87,6 +88,8 @@ export class Agent {
           inputSchema: tool.inputSchema,
         })),
         thinking: true,
+        thinkingBudget:
+          this.opts.thinkingBudget ?? this.opts.spec.thinkingBudget ?? config.thinkingBudget,
         maxOutputTokens: config.maxOutputTokens,
       });
       recordModelCall(audit, null, null, "agent_turn", result);

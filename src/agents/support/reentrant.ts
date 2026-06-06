@@ -271,6 +271,7 @@ async function continueSupport(
         inputSchema: tool.inputSchema,
       })),
       thinking: true,
+      thinkingBudget: supportAgentSpec.thinkingBudget ?? config.thinkingBudget,
       maxOutputTokens: config.maxOutputTokens,
     });
     trackStageModelCall(ctx.audit, ctx.project, ctx.stageId, "agent_turn", result);
