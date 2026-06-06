@@ -6,7 +6,7 @@ import { config } from "../../config.js";
 import { resumeStageInteraction } from "../../pipeline/orchestrator.js";
 import type { ProjectStore } from "../../pipeline/store.js";
 import { notFound } from "../errors.js";
-import { PUBLIC_INPUT_MAX_CHARS, parseWith, runParamsSchema } from "../schemas.js";
+import { EFFECTIVE_PUBLIC_INPUT_MAX_CHARS, parseWith, runParamsSchema } from "../schemas.js";
 import { assertProjectAccess, requestClientId } from "../tenancy.js";
 
 const interactionParamsSchema = runParamsSchema.extend({
@@ -15,7 +15,7 @@ const interactionParamsSchema = runParamsSchema.extend({
 
 const interactionBodySchema = z
   .object({
-    text: z.string().min(1).max(PUBLIC_INPUT_MAX_CHARS).optional(),
+    text: z.string().min(1).max(EFFECTIVE_PUBLIC_INPUT_MAX_CHARS).optional(),
     approved: z.boolean().optional(),
   })
   .refine((body) => body.text !== undefined || body.approved !== undefined, {

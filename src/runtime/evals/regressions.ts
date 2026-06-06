@@ -468,6 +468,48 @@ async function verifyAuditRedactionAndTruncation(): Promise<void> {
   );
 }
 
+async function verifyUserMessageLengthGuard(): Promise<void> {
+  const tool: AnyTool = {
+    name: "noop",
+    description: "No-op.",
+    inputSchema: {},
+    risk: "read",
+    run: () => ({ content: "ok" }),
+  };
+  const blockedProvider = new SequenceProvider([result("should not run")]);
+  const blockedAgent = new Agent({
+    spec: {
+      name: "message-length-blocked",
+      systemPrompt: "Answer directly.",
+      tools: [tool],
+    },
+    provider: blockedProvider,
+  });
+  let blocked = false;
+  try {
+    await blockedAgent.run("x".repeat(config.maxUserMessageChars + 1));
+  } catch (err) {
+    blocked =
+      err instanceof Error &&
+      "code" in err &&
+      err.code === "guardrail_blocked";
+  }
+  assert(blocked, "Over-length user message was not rejected loudly.");
+  assert(blockedProvider.requests.length === 0, "Provider was called for over-length message.");
+
+  const allowedProvider = new SequenceProvider([result("done")]);
+  const allowedAgent = new Agent({
+    spec: {
+      name: "message-length-allowed",
+      systemPrompt: "Answer directly.",
+      tools: [tool],
+    },
+    provider: allowedProvider,
+  });
+  const run = await allowedAgent.run("normal message");
+  assert(run.finalText === "done", "Normal user message was affected by the length guard.");
+}
+
 async function verifyClientDailyIdeationBudget(): Promise<void> {
   const token = "daily-budget-regression-token";
   const day = intakeBudgetDayUtc();
@@ -633,6 +675,7 @@ export async function runRegressionEvals(): Promise<StageEvalResult[]> {
     await runRegression("agent-output-cap", verifyAgentOutputCap),
     await runRegression("agent-system-cache", verifyAgentSystemPromptCache),
     await runRegression("audit-redaction-truncation", verifyAuditRedactionAndTruncation),
+    await runRegression("user-message-length", verifyUserMessageLengthGuard),
     await runRegression("intake-client-daily-budget", verifyClientDailyIdeationBudget),
     await runRegression("intake-session-budget", verifyIntakeSessionBudget),
   ];

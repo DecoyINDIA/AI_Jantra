@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { config } from "../config.js";
 import { HttpError } from "./errors.js";
 
 export const RUN_ID_MAX_CHARS = 96;
@@ -11,6 +12,10 @@ export const CURSOR_MAX_CHARS = 512;
 export const API_KEY_LABEL_MAX_CHARS = 120;
 export const API_KEY_CLIENT_ID_MAX_CHARS = 96;
 export const API_KEY_SUBJECT_MAX_CHARS = 160;
+export const EFFECTIVE_PUBLIC_INPUT_MAX_CHARS = Math.min(
+  PUBLIC_INPUT_MAX_CHARS,
+  config.maxUserMessageChars,
+);
 
 export const agentParamsSchema = z.object({
   agentId: z.string().min(1).max(AGENT_ID_MAX_CHARS),
@@ -27,7 +32,7 @@ export const artifactParamsSchema = runParamsSchema.extend({
 export const createRunBodySchema = z.object({
   agentId: z.string().min(1).max(AGENT_ID_MAX_CHARS).default("planning-pipeline"),
   title: z.string().min(1).max(RUN_TITLE_MAX_CHARS).default("Untitled run"),
-  input: z.string().max(PUBLIC_INPUT_MAX_CHARS).optional(),
+  input: z.string().max(EFFECTIVE_PUBLIC_INPUT_MAX_CHARS).optional(),
 });
 
 export const listRunsQuerySchema = z.object({

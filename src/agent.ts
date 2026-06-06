@@ -6,6 +6,7 @@ import { consoleHandoff } from "./handoff.js";
 import { createProviderForStage } from "./model/index.js";
 import type { ModelContentPart, ModelMessage, ModelProvider, ToolCall } from "./model/provider.js";
 import { RuleBasedPolicy } from "./policy.js";
+import { GuardrailBlockedError } from "./runtime/errors.js";
 import { recordModelCall } from "./runtime/telemetry.js";
 import type {
   AgentSpec,
@@ -52,6 +53,13 @@ export class Agent {
   }
 
   async run(userMessage: string): Promise<RunResult> {
+    if (userMessage.length > config.maxUserMessageChars) {
+      throw new GuardrailBlockedError("User message exceeds the configured length limit.", {
+        maxChars: config.maxUserMessageChars,
+        actualChars: userMessage.length,
+      });
+    }
+
     const runId = randomUUID();
     const audit = new AuditLogger(runId, config.auditDir);
 

@@ -69,6 +69,7 @@ export const config = {
   auditMaxFieldBytes: Math.trunc(numberFromEnv("JANTRA_AUDIT_MAX_FIELD_BYTES", 16 * 1024)),
   projectDir: process.env.JANTRA_PROJECT_DIR ?? ".jantra/projects",
   maxSteps: Math.trunc(numberFromEnv("JANTRA_MAX_STEPS", 16)),
+  maxUserMessageChars: Math.trunc(numberFromEnv("JANTRA_MAX_USER_MESSAGE_CHARS", 100_000)),
   maxEvalRounds: Math.trunc(numberFromEnv("JANTRA_MAX_EVAL_ROUNDS", 2)),
   maxOutputTokens: Math.trunc(numberFromEnv("JANTRA_MAX_OUTPUT_TOKENS", 12000)),
   thinkingBudget: thinkingBudgetFromEnv("JANTRA_THINKING_BUDGET", 4096),
