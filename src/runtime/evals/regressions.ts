@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { Agent } from "../../agent.js";
 import { intakePublicDefinition } from "../../agents/intakePublic.js";
 import { supportAgentDefinition } from "../../agents/supportDefinition.js";
@@ -28,6 +30,14 @@ import type { StageEvalResult } from "./report.js";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
+}
+
+function readAuditJsonl(runId: string): Array<Record<string, unknown>> {
+  return readFileSync(`${config.auditDir}/${runId}.jsonl`, "utf8")
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
 const usage: ModelUsage = {
@@ -400,6 +410,64 @@ async function verifyAgentSystemPromptCache(): Promise<void> {
   );
 }
 
+async function verifyAuditRedactionAndTruncation(): Promise<void> {
+  const secretTool: AnyTool = {
+    name: "secret_tool",
+    description: "Uses secret-looking inputs.",
+    inputSchema: { type: "object" },
+    risk: "read",
+    run: () => ({ content: "ok" }),
+  };
+  const agent = new Agent({
+    spec: {
+      name: "audit-redaction",
+      systemPrompt: "Call the tool once.",
+      tools: [secretTool],
+    },
+    provider: new SequenceProvider([
+      result("", [
+        {
+          id: "secret-call",
+          name: "secret_tool",
+          args: {
+            password: "p@ssword",
+            apiKey: "jantra-secret",
+            normal: "visible",
+          },
+        },
+      ]),
+      result("done"),
+    ]),
+  });
+  const run = await agent.run("use the secret tool");
+  const toolCall = readAuditJsonl(run.runId).find(
+    (entry) => entry.type === "tool_call" && entry.toolName === "secret_tool",
+  );
+  assert(toolCall, "Tool call audit entry was not written.");
+  const input = toolCall.input as Record<string, unknown>;
+  assert(
+    input.password === "[redacted]" &&
+      input.apiKey === "[redacted]" &&
+      input.normal === "visible",
+    "Tool-call input secrets were not redacted shallowly.",
+  );
+
+  const audit = new AuditLogger(`audit-truncation-${Date.now()}`, config.auditDir);
+  audit.record("tool_result", {
+    toolName: "large_tool",
+    content: "x".repeat(config.auditMaxFieldBytes * 4),
+  });
+  const [entry] = readAuditJsonl(audit.runId);
+  assert(entry, "Large audit entry was not written.");
+  const content = entry.content;
+  assert(typeof content === "string", "Large audit content did not serialize as a string.");
+  assert(content.includes("[truncated"), "Large audit content did not include a truncation marker.");
+  assert(
+    Buffer.byteLength(content, "utf8") <= config.auditMaxFieldBytes,
+    "Large audit field exceeded the configured field cap.",
+  );
+}
+
 async function verifyClientDailyIdeationBudget(): Promise<void> {
   const token = "daily-budget-regression-token";
   const day = intakeBudgetDayUtc();
@@ -564,6 +632,7 @@ export async function runRegressionEvals(): Promise<StageEvalResult[]> {
     await runRegression("agent-thinking-budget", verifyAgentThinkingBudget),
     await runRegression("agent-output-cap", verifyAgentOutputCap),
     await runRegression("agent-system-cache", verifyAgentSystemPromptCache),
+    await runRegression("audit-redaction-truncation", verifyAuditRedactionAndTruncation),
     await runRegression("intake-client-daily-budget", verifyClientDailyIdeationBudget),
     await runRegression("intake-session-budget", verifyIntakeSessionBudget),
   ];

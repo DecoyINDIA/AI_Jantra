@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 
-import { AuditLogger } from "./audit.js";
+import { AuditLogger, redactToolInput } from "./audit.js";
 import { config } from "./config.js";
 import { consoleHandoff } from "./handoff.js";
 import { createProviderForStage } from "./model/index.js";
@@ -168,7 +168,7 @@ export class Agent {
     ctx.audit.record("tool_call", {
       toolName: tool.name,
       risk: tool.risk,
-      input: call.args,
+      input: redactToolInput(call.args),
     });
 
     const verdict = this.policy.decide(tool, call.args);

@@ -66,6 +66,7 @@ export const config = {
     process.env.JANTRA_MOCK_FIXTURE ?? "src/runtime/evals/fixtures/transcript.json",
   explicitCache: booleanFromEnv("JANTRA_EXPLICIT_CACHE", true),
   auditDir: process.env.JANTRA_AUDIT_DIR ?? ".jantra/audit",
+  auditMaxFieldBytes: Math.trunc(numberFromEnv("JANTRA_AUDIT_MAX_FIELD_BYTES", 16 * 1024)),
   projectDir: process.env.JANTRA_PROJECT_DIR ?? ".jantra/projects",
   maxSteps: Math.trunc(numberFromEnv("JANTRA_MAX_STEPS", 16)),
   maxEvalRounds: Math.trunc(numberFromEnv("JANTRA_MAX_EVAL_ROUNDS", 2)),

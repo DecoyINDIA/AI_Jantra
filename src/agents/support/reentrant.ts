@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 
+import { redactToolInput } from "../../audit.js";
 import { config } from "../../config.js";
 import type {
   ModelContentPart,
@@ -225,7 +226,7 @@ async function processToolCalls(
     ctx.audit.record("tool_call", {
       toolName: tool.name,
       risk: tool.risk,
-      input: call.args,
+      input: redactToolInput(call.args),
     });
     const verdict = policy.decide(tool, call.args);
     ctx.audit.record("policy_decision", {
