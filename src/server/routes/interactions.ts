@@ -60,11 +60,16 @@ export function registerInteractionRoutes(
       approved: body.approved,
       subject: request.identity?.subject,
     });
-    const step = await resumeStageInteraction(project, {
-      interactionId: params.interactionId,
-      text: body.text,
-      approved: body.approved,
-    });
+    const step = await resumeStageInteraction(
+      project,
+      {
+        interactionId: params.interactionId,
+        text: body.text,
+        approved: body.approved,
+      },
+      undefined,
+      deps.store,
+    );
     deps.store.saveProject(project);
     return { run: project, step };
   });

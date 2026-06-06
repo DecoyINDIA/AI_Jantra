@@ -4,6 +4,7 @@ import type {
   StageDefinitionSnapshot,
 } from "../agents/definition.js";
 import type { ModelMessage, ModelProvider } from "../model/provider.js";
+import type { ProjectStore } from "./store.js";
 
 export type StageId = string;
 
@@ -173,6 +174,7 @@ export interface StageContext {
   audit: AuditLogger;
   provider: ModelProvider;
   io: StageIO;
+  store: ProjectStore;
 }
 
 export type StageRunner = (ctx: StageContext) => Promise<Artifact[]>;

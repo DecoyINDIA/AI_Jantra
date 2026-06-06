@@ -26,6 +26,8 @@ export interface ProjectStore {
   saveProject(project: Project): void;
   loadProject(clientId: string, projectId: string): Project | null;
   listProjects(query: ProjectListQuery): ProjectPage;
+  getClientDailyIdeationSpend(clientId: string, dayUtc: string): number;
+  addClientDailyIdeationSpend(clientId: string, dayUtc: string, deltaUsd: number): void;
   writeArtifactFile(clientId: string, projectId: string, artifact: Artifact): string;
   writeSourceContentFile(
     clientId: string,
@@ -64,6 +66,10 @@ function clientDir(clientId: string): string {
 
 function projectFile(clientId: string, projectId: string): string {
   return join(clientDir(clientId), `${projectId}.json`);
+}
+
+function spendFile(clientId: string): string {
+  return join(clientDir(clientId), "spend.json");
 }
 
 function projectDir(clientId: string, projectId: string): string {
@@ -116,6 +122,17 @@ export function normalizeProject(project: Project): Project {
       : Object.keys(project.stages),
   );
   return project;
+}
+
+function readSpend(clientId: string): Record<string, number> {
+  const file = spendFile(clientId);
+  if (!existsSync(file)) return {};
+  const parsed = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+  return Object.fromEntries(
+    Object.entries(parsed).filter(
+      (entry): entry is [string, number] => typeof entry[1] === "number",
+    ),
+  );
 }
 
 function encodeCursor(project: ProjectSummary): string {
@@ -196,9 +213,22 @@ export class JsonProjectStore implements ProjectStore {
     const dir = clientDir(query.clientId);
     if (!existsSync(dir)) return { items: [] };
     const projects = readdirSync(dir)
-      .filter((f) => f.endsWith(".json"))
+      .filter((f) => f.endsWith(".json") && f !== "spend.json")
       .map((f) => normalizeProject(JSON.parse(readFileSync(join(dir, f), "utf8")) as Project));
     return pageProjects(projects, query);
+  }
+
+  getClientDailyIdeationSpend(clientId: string, dayUtc: string): number {
+    return readSpend(clientId)[dayUtc] ?? 0;
+  }
+
+  addClientDailyIdeationSpend(clientId: string, dayUtc: string, deltaUsd: number): void {
+    mkdirSync(clientDir(clientId), { recursive: true });
+    // JSON storage is single-process today; read-modify-write is acceptable until
+    // the public service moves fully to a transactional database.
+    const spend = readSpend(clientId);
+    spend[dayUtc] = (spend[dayUtc] ?? 0) + deltaUsd;
+    writeFileSync(spendFile(clientId), JSON.stringify(spend, null, 2), "utf8");
   }
 
   writeArtifactFile(clientId: string, projectId: string, artifact: Artifact): string {
@@ -237,6 +267,18 @@ export function loadProject(clientId: string, projectId: string): Project | null
 
 export function listProjects(query: ProjectListQuery): ProjectPage {
   return defaultStore.listProjects(query);
+}
+
+export function getClientDailyIdeationSpend(clientId: string, dayUtc: string): number {
+  return defaultStore.getClientDailyIdeationSpend(clientId, dayUtc);
+}
+
+export function addClientDailyIdeationSpend(
+  clientId: string,
+  dayUtc: string,
+  deltaUsd: number,
+): void {
+  defaultStore.addClientDailyIdeationSpend(clientId, dayUtc, deltaUsd);
 }
 
 export function writeArtifactFile(

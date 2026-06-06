@@ -81,6 +81,14 @@ export class SqliteProjectStore implements ProjectStore, ApiKeyStore {
       create index if not exists idx_api_keys_revoked_at
         on api_keys (revoked_at);
     `);
+    this.db.exec(`
+      create table if not exists client_daily_ideation_spend (
+        client_id text not null,
+        day_utc text not null,
+        usd real not null,
+        primary key (client_id, day_utc)
+      )
+    `);
   }
 
   saveProject(project: Project): void {
@@ -116,6 +124,26 @@ export class SqliteProjectStore implements ProjectStore, ApiKeyStore {
       .filter((row): row is { data: string } => typeof row.data === "string")
       .map((row) => normalizeProject(JSON.parse(row.data) as Project));
     return pageProjects(projects, query);
+  }
+
+  getClientDailyIdeationSpend(clientId: string, dayUtc: string): number {
+    const row = this.db
+      .prepare(
+        "select usd from client_daily_ideation_spend where client_id = ? and day_utc = ?",
+      )
+      .get(clientId, dayUtc) as { usd?: number } | undefined;
+    return row?.usd ?? 0;
+  }
+
+  addClientDailyIdeationSpend(clientId: string, dayUtc: string, deltaUsd: number): void {
+    this.db
+      .prepare(
+        `insert into client_daily_ideation_spend (client_id, day_utc, usd)
+         values (?, ?, ?)
+         on conflict(client_id, day_utc)
+         do update set usd = usd + excluded.usd`,
+      )
+      .run(clientId, dayUtc, deltaUsd);
   }
 
   writeArtifactFile(clientId: string, projectId: string, artifact: Artifact): string {

@@ -15,7 +15,7 @@ import { StageFailedClosedError } from "../runtime/errors.js";
 import { resolvePendingInteraction } from "../runtime/interactions.js";
 import { emptyCostRollup } from "../runtime/telemetry.js";
 import type { StageRunStep } from "./reentrant.js";
-import { saveProject, writeArtifactFile } from "./store.js";
+import { defaultStore, saveProject, type ProjectStore } from "./store.js";
 import {
   type Artifact,
   type InteractionResponse,
@@ -117,7 +117,7 @@ export function createProject(
   return project;
 }
 
-function prepareStageRun(project: Project): {
+function prepareStageRun(project: Project, store: ProjectStore = defaultStore): {
   snapshot: AgentDefinitionSnapshot;
   stageDef: StageDefinitionSnapshot;
   stage: StageState;
@@ -140,7 +140,7 @@ function prepareStageRun(project: Project): {
     stage.status = "in_progress";
     stage.updatedAt = now;
     project.updatedAt = now;
-    saveProject(project);
+    store.saveProject(project);
 
     audit.record("run_start", {
       clientId: project.clientId,
@@ -165,22 +165,24 @@ function stageContext(
   stageDef: StageDefinitionSnapshot,
   audit: AuditLogger,
   io: StageIO,
+  store: ProjectStore = defaultStore,
 ): StageContext {
   const stageId = project.currentStage;
   const provider = createProviderForStage(stageId, stageDef.model, snapshot.id);
-  return { project, stageId, stageDefinition: stageDef, audit, provider, io };
+  return { project, stageId, stageDefinition: stageDef, audit, provider, io, store };
 }
 
 function recordStageFailure(
   project: Project,
   stage: StageState,
   audit: AuditLogger,
+  store: ProjectStore,
   err: unknown,
 ): never {
   stage.status = "rejected";
   stage.updatedAt = new Date().toISOString();
   project.updatedAt = stage.updatedAt;
-  saveProject(project);
+  store.saveProject(project);
 
   const message = err instanceof Error ? err.message : String(err);
   audit.record("error", {
@@ -205,10 +207,11 @@ function completeStageArtifacts(
   stageDef: StageDefinitionSnapshot,
   stage: StageState,
   audit: AuditLogger,
+  store: ProjectStore,
   artifacts: Artifact[],
 ): void {
   for (const artifact of artifacts) {
-    const path = writeArtifactFile(project.clientId, project.id, artifact);
+    const path = store.writeArtifactFile(project.clientId, project.id, artifact);
     audit.record("agent_message", {
       clientId: project.clientId,
       projectId: project.id,
@@ -225,7 +228,7 @@ function completeStageArtifacts(
   if (stageDef.gate === "auto") {
     advanceProject(project, snapshot);
   }
-  saveProject(project);
+  store.saveProject(project);
 
   audit.record("stage_gate", {
     clientId: project.clientId,
@@ -248,16 +251,20 @@ const inertIo: StageIO = {
   },
 };
 
-async function startReentrantStage(project: Project, io: StageIO): Promise<StageRunStep> {
-  const { snapshot, stageDef, stage, audit } = prepareStageRun(project);
+async function startReentrantStage(
+  project: Project,
+  io: StageIO,
+  store: ProjectStore,
+): Promise<StageRunStep> {
+  const { snapshot, stageDef, stage, audit } = prepareStageRun(project, store);
   try {
     const runner = getReentrantStageRunner(stageDef.runnerKind);
-    const ctx = stageContext(project, snapshot, stageDef, audit, io);
+    const ctx = stageContext(project, snapshot, stageDef, audit, io, store);
     const step = await runner.start(ctx);
-    persistStageStep(project, snapshot, stageDef, stage, audit, step);
+    persistStageStep(project, snapshot, stageDef, stage, audit, store, step);
     return step;
   } catch (err) {
-    recordStageFailure(project, stage, audit, err);
+    recordStageFailure(project, stage, audit, store, err);
   }
 }
 
@@ -265,17 +272,18 @@ export async function resumeStageInteraction(
   project: Project,
   response: InteractionResponse,
   io: StageIO = inertIo,
+  store: ProjectStore = defaultStore,
 ): Promise<StageRunStep> {
   resolvePendingInteraction(project, response);
-  const { snapshot, stageDef, stage, audit } = prepareStageRun(project);
+  const { snapshot, stageDef, stage, audit } = prepareStageRun(project, store);
   try {
     const runner = getReentrantStageRunner(stageDef.runnerKind);
-    const ctx = stageContext(project, snapshot, stageDef, audit, io);
+    const ctx = stageContext(project, snapshot, stageDef, audit, io, store);
     const step = await runner.resume(ctx, response);
-    persistStageStep(project, snapshot, stageDef, stage, audit, step);
+    persistStageStep(project, snapshot, stageDef, stage, audit, store, step);
     return step;
   } catch (err) {
-    recordStageFailure(project, stage, audit, err);
+    recordStageFailure(project, stage, audit, store, err);
   }
 }
 
@@ -285,13 +293,14 @@ function persistStageStep(
   stageDef: StageDefinitionSnapshot,
   stage: StageState,
   audit: AuditLogger,
+  store: ProjectStore,
   step: StageRunStep,
 ): void {
   if (step.status === "awaiting_input") {
     stage.status = "awaiting_input";
     stage.updatedAt = new Date().toISOString();
     project.updatedAt = stage.updatedAt;
-    saveProject(project);
+    store.saveProject(project);
     audit.record("stage_gate", {
       clientId: project.clientId,
       projectId: project.id,
@@ -302,22 +311,26 @@ function persistStageStep(
     return;
   }
   if (step.status === "awaiting_confirmation") {
-    completeStageArtifacts(project, snapshot, stageDef, stage, audit, step.artifacts);
+    completeStageArtifacts(project, snapshot, stageDef, stage, audit, store, step.artifacts);
     return;
   }
-  recordStageFailure(project, stage, audit, step.error);
+  recordStageFailure(project, stage, audit, store, step.error);
 }
 
-export async function advanceStage(project: Project, io: StageIO = inertIo): Promise<StageRunStep> {
-  const { snapshot, stageDef, stage, audit } = prepareStageRun(project);
+export async function advanceStage(
+  project: Project,
+  io: StageIO = inertIo,
+  store: ProjectStore = defaultStore,
+): Promise<StageRunStep> {
+  const { snapshot, stageDef, stage, audit } = prepareStageRun(project, store);
   if (stageDef.interactionMode === "reentrant") {
-    return startReentrantStage(project, io);
+    return startReentrantStage(project, io, store);
   }
   try {
     const runner: StageRunner = getStageRunner(stageDef.runnerKind);
-    const ctx = stageContext(project, snapshot, stageDef, audit, io);
+    const ctx = stageContext(project, snapshot, stageDef, audit, io, store);
     const artifacts = await runner(ctx);
-    completeStageArtifacts(project, snapshot, stageDef, stage, audit, artifacts);
+    completeStageArtifacts(project, snapshot, stageDef, stage, audit, store, artifacts);
     return {
       status: "awaiting_confirmation",
       state: {
@@ -331,16 +344,25 @@ export async function advanceStage(project: Project, io: StageIO = inertIo): Pro
       artifacts,
     };
   } catch (err) {
-    recordStageFailure(project, stage, audit, err);
+    recordStageFailure(project, stage, audit, store, err);
   }
 }
 
-export async function runStage(project: Project, io: StageIO): Promise<Artifact[]> {
-  let step = await advanceStage(project, io);
+export async function runStage(
+  project: Project,
+  io: StageIO,
+  store: ProjectStore = defaultStore,
+): Promise<Artifact[]> {
+  let step = await advanceStage(project, io, store);
   while (step.status === "awaiting_input") {
     io.say(step.interaction.prompt);
     const text = await io.ask(step.interaction.prompt);
-    step = await resumeStageInteraction(project, { interactionId: step.interaction.id, text }, io);
+    step = await resumeStageInteraction(
+      project,
+      { interactionId: step.interaction.id, text },
+      io,
+      store,
+    );
   }
   if (step.status === "failed") throw step.error;
   return step.artifacts;
@@ -353,6 +375,8 @@ export function confirmStage(project: Project): StageId | null {
   stage.status = "confirmed";
   stage.updatedAt = new Date().toISOString();
 
+  // TODO(post-gate budget): if owners later want an automated Research/Planning
+  // kill switch, check the approved run cost here before advancing past the gate.
   const next = advanceProject(project, snapshot);
   project.updatedAt = new Date().toISOString();
   saveProject(project);

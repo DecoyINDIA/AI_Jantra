@@ -1,4 +1,5 @@
 import { Agent } from "../../agent.js";
+import { intakePublicDefinition } from "../../agents/intakePublic.js";
 import { supportAgentDefinition } from "../../agents/supportDefinition.js";
 import { createSupportReentrant } from "../../agents/support/reentrant.js";
 import { AuditLogger } from "../../audit.js";
@@ -12,8 +13,15 @@ import type {
   ToolCall,
 } from "../../model/provider.js";
 import { createProject } from "../../pipeline/orchestrator.js";
+import { JsonProjectStore } from "../../pipeline/store.js";
 import type { StageContext } from "../../pipeline/types.js";
 import { createServer } from "../../server/app.js";
+import { readAuditEntries } from "../../server/events.js";
+import { runIntakeReentrant } from "../../pipeline/stages/intake.js";
+import {
+  intakeBudgetAuditRunId,
+  intakeBudgetDayUtc,
+} from "../intakeBudget.js";
 import { RuleBasedPolicy, type PolicyConfig } from "../../policy.js";
 import type { AnyTool, Policy } from "../../types.js";
 import type { StageEvalResult } from "./report.js";
@@ -153,6 +161,7 @@ async function verifyReentrantPolicyArgs(): Promise<void> {
       result("done"),
     ]),
     io: { say: () => undefined, ask: async () => "unused" },
+    store: new JsonProjectStore(),
   };
 
   const runner = createSupportReentrant(deniedPolicy());
@@ -347,6 +356,137 @@ async function verifyAgentOutputCap(): Promise<void> {
   );
 }
 
+async function verifyClientDailyIdeationBudget(): Promise<void> {
+  const token = "daily-budget-regression-token";
+  const day = intakeBudgetDayUtc();
+  const clientId = `eval-budget-${Date.now()}`;
+  const store = new JsonProjectStore();
+  store.addClientDailyIdeationSpend(clientId, day, config.intakeClientDailyCeilingUsd);
+  assert(
+    store.getClientDailyIdeationSpend(clientId, "2099-01-01") === 0,
+    "Daily ideation spend did not reset by UTC day key.",
+  );
+  const auth = { authorization: `Bearer ${token}`, host: "127.0.0.1:4317" };
+  const app = createServer({ loopbackToken: token, clientId, store });
+  try {
+    const blocked = await app.inject({
+      method: "POST",
+      url: "/v1/runs",
+      headers: { ...auth, "content-type": "application/json" },
+      payload: {
+        agentId: "intake-public",
+        title: "Budget blocked intake",
+      },
+    });
+    assert(blocked.statusCode === 429, `Daily budget did not return 429: ${blocked.body}`);
+    const body = blocked.json() as Record<string, unknown>;
+    assert(
+      body.code === "client_daily_ideation_budget_exceeded" &&
+        body.spend === config.intakeClientDailyCeilingUsd &&
+        body.ceiling === config.intakeClientDailyCeilingUsd &&
+        body.day === day,
+      "Daily budget response did not include code, spend, ceiling, and day.",
+    );
+    assert(
+      store.listProjects({ clientId }).items.length === 0,
+      "Daily budget preflight created a run despite being exhausted.",
+    );
+    const audit = readAuditEntries(intakeBudgetAuditRunId(clientId, day));
+    assert(
+      audit.items.some(
+        (entry) =>
+          entry.type === "cost_ceiling_exceeded" &&
+          entry.scope === "client_daily_ideation" &&
+          entry.clientId === clientId &&
+          entry.day === day,
+      ),
+      "Daily budget preflight did not audit the rejection.",
+    );
+  } finally {
+    await app.close();
+  }
+
+  const freshClientId = `${clientId}-fresh`;
+  const freshApp = createServer({ loopbackToken: token, clientId: freshClientId, store });
+  try {
+    const allowed = await freshApp.inject({
+      method: "POST",
+      url: "/v1/runs",
+      headers: { ...auth, "content-type": "application/json" },
+      payload: {
+        agentId: "intake-public",
+        title: "Budget allowed intake",
+      },
+    });
+    assert(allowed.statusCode === 200, `Normal intake session was affected: ${allowed.body}`);
+  } finally {
+    await freshApp.close();
+  }
+}
+
+async function verifyIntakeSessionBudget(): Promise<void> {
+  const project = createProject({
+    clientId: `eval-session-budget-${Date.now()}`,
+    title: "Session budget regression",
+    definition: intakePublicDefinition,
+  });
+  const stageDefinition = project.agentDefinitionSnapshot.stages[0];
+  assert(stageDefinition, "Public intake definition had no stage.");
+  const store = new JsonProjectStore();
+  const audit = new AuditLogger(project.id, config.auditDir);
+  class CostProvider extends SequenceProvider {
+    override async generate(opts: GenerateOptions): Promise<ModelResult> {
+      this.requests.push(opts);
+      const callCount = this.requests.length;
+      return {
+        ...result(callCount === 1 ? "Question one?" : "Question two?"),
+        costUsd: 0.13,
+      };
+    }
+  }
+  const provider = new CostProvider([]);
+  const ctx: StageContext = {
+    project,
+    stageId: "intake",
+    stageDefinition,
+    audit,
+    provider,
+    io: { say: () => undefined, ask: async () => "unused" },
+    store,
+  };
+
+  let step = await runIntakeReentrant.start(ctx);
+  assert(step.status === "awaiting_input", "Public intake did not request the first idea.");
+  step = await runIntakeReentrant.resume(ctx, {
+    interactionId: step.interaction.id,
+    text: "A reconciliation assistant for ecommerce finance teams.",
+  });
+  assert(step.status === "awaiting_input", "First paid intake turn should remain under budget.");
+
+  let blocked = false;
+  try {
+    await runIntakeReentrant.resume(ctx, {
+      interactionId: step.interaction.id,
+      text: "They use Shopify, Stripe, and QuickBooks.",
+    });
+  } catch (err) {
+    blocked =
+      err instanceof Error &&
+      "code" in err &&
+      err.code === "cost_ceiling_exceeded";
+  }
+  assert(blocked, "Crossing the intake session ceiling did not fail closed.");
+  assert(provider.requests.length === 2, "Intake issued another generate after crossing budget.");
+  const ceilingEvents = audit.entries.filter(
+    (entry) => entry.type === "cost_ceiling_exceeded" && entry.scope === "intake_session",
+  );
+  assert(ceilingEvents.length === 1, "Intake session budget was not audited exactly once.");
+  assert(
+    store.getClientDailyIdeationSpend(project.clientId, intakeBudgetDayUtc()) === 0.26,
+    "Intake daily accounting did not add model-call deltas.",
+  );
+}
+
 async function runRegression(
   fixtureId: string,
   fn: () => Promise<void> | void,
@@ -379,5 +519,7 @@ export async function runRegressionEvals(): Promise<StageEvalResult[]> {
     await runRegression("reject-route-reason", verifyRejectRoutePersistsReason),
     await runRegression("agent-thinking-budget", verifyAgentThinkingBudget),
     await runRegression("agent-output-cap", verifyAgentOutputCap),
+    await runRegression("intake-client-daily-budget", verifyClientDailyIdeationBudget),
+    await runRegression("intake-session-budget", verifyIntakeSessionBudget),
   ];
 }
