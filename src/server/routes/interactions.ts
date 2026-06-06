@@ -5,7 +5,7 @@ import { AuditLogger } from "../../audit.js";
 import { config } from "../../config.js";
 import { resumeStageInteraction } from "../../pipeline/orchestrator.js";
 import type { ProjectStore } from "../../pipeline/store.js";
-import { notFound } from "../errors.js";
+import { conflict, notFound } from "../errors.js";
 import { EFFECTIVE_PUBLIC_INPUT_MAX_CHARS, parseWith, runParamsSchema } from "../schemas.js";
 import { assertProjectAccess, requestClientId } from "../tenancy.js";
 
@@ -51,6 +51,25 @@ export function registerInteractionRoutes(
     const project = deps.store.loadProject(clientId, params.runId);
     if (!project) throw notFound(`Run ${params.runId} was not found.`);
     assertProjectAccess(request.identity, project);
+
+    // Guard against resubmitting an interaction that is no longer awaiting a
+    // response (double-submit, retry after the run advanced, or stale client
+    // state). Without this, resolvePendingInteraction throws a plain Error that
+    // surfaces as an opaque 500 internal_error.
+    const target = project.interactions.find(
+      (interaction) => interaction.id === params.interactionId,
+    );
+    if (!target) {
+      throw notFound(`Interaction ${params.interactionId} was not found.`);
+    }
+    if (target.status !== "pending") {
+      throw conflict(
+        "interaction_not_pending",
+        `Interaction ${params.interactionId} is no longer awaiting a response (status: ${target.status}).`,
+        { status: target.status },
+      );
+    }
+
     new AuditLogger(project.id, config.auditDir).record("interaction", {
       clientId: project.clientId,
       projectId: project.id,
