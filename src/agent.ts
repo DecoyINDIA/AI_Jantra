@@ -24,6 +24,7 @@ export interface AgentOptions {
   onApproval?: ApprovalHandler;
   onHandoff?: HandoffHandler;
   thinkingBudget?: number;
+  maxOutputTokens?: number;
 }
 
 /**
@@ -90,7 +91,8 @@ export class Agent {
         thinking: true,
         thinkingBudget:
           this.opts.thinkingBudget ?? this.opts.spec.thinkingBudget ?? config.thinkingBudget,
-        maxOutputTokens: config.maxOutputTokens,
+        maxOutputTokens:
+          this.opts.maxOutputTokens ?? this.opts.spec.maxOutputTokens ?? config.maxOutputTokens,
       });
       recordModelCall(audit, null, null, "agent_turn", result);
       usage.inputTokens += result.usage.inputTokens;

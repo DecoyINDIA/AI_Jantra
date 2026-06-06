@@ -16,6 +16,12 @@ import type { Artifact, ArtifactKind, EvalScore, StageContext } from "../types.j
 
 type PlanningKind = "prd" | "trd" | "build_plan";
 
+const PLANNING_DOCUMENT_OUTPUT_TOKENS = 7000;
+const PLANNING_CRITIQUE_OUTPUT_TOKENS = 1800;
+const PLANNING_REFINE_OUTPUT_TOKENS = 7000;
+const CONCISION_DIRECTIVE =
+  "Be specific and concise. No filler, no preamble, do not restate the prompt. Prefer structured bullets over prose. Every sentence must add information.";
+
 function latestArtifact(ctx: StageContext, kind: ArtifactKind): Artifact {
   const artifact = Object.values(ctx.project.stages)
     .flatMap((stage) => stage.artifacts)
@@ -97,15 +103,15 @@ async function generateDocument(
         content: `Confirmed research report:\n${research.content.slice(0, 30_000)}`,
       },
     ],
-    system:
-      "You are the Planning generator. Produce a build-ready planning document that is grounded in the provided research. Return only JSON.",
+    system: `You are the Planning generator. Produce a build-ready planning document that is grounded in the provided research. Return only JSON.
+${CONCISION_DIRECTIVE}`,
     messages: [
       { role: "user", content: documentPrompt(kind, idea, research, prior, prdRequirements) },
     ],
     responseJsonSchema: z.toJSONSchema(planningDocumentSchema),
     thinking: true,
     temperature: 0.1,
-    maxOutputTokens: config.maxOutputTokens,
+    maxOutputTokens: PLANNING_DOCUMENT_OUTPUT_TOKENS,
   });
   trackStageModelCall(ctx.audit, ctx.project, ctx.stageId, purpose, result);
   return parseJson(planningDocumentSchema, result.text, `${kind} generation`);
@@ -118,13 +124,13 @@ async function critiqueDocument(
 ): Promise<Critique<PlanningDocument>> {
   const result = await ctx.provider.generate({
     purpose: `${kind}_critic`,
-    system:
-      "You are the Planning critic. Score completeness, internal consistency, grounding, technical soundness, and actionability. Return only JSON.",
+    system: `You are the Planning critic. Score completeness, internal consistency, grounding, technical soundness, and actionability. Return only JSON.
+${CONCISION_DIRECTIVE}`,
     messages: [{ role: "user", content: renderDocument(doc) }],
     responseJsonSchema: z.toJSONSchema(planningCritiqueSchema),
     thinking: true,
     temperature: 0,
-    maxOutputTokens: 2500,
+    maxOutputTokens: PLANNING_CRITIQUE_OUTPUT_TOKENS,
   });
   trackStageModelCall(ctx.audit, ctx.project, ctx.stageId, `${kind}_critic`, result);
   const parsed = parseJson(planningCritiqueSchema, result.text, `${kind} critique`);
@@ -163,8 +169,8 @@ async function refineDocument(
         content: `Confirmed research report:\n${research.content.slice(0, 30_000)}`,
       },
     ],
-    system:
-      "You are the Planning refiner. Improve the document to satisfy the critic while preserving research grounding. Return only JSON.",
+    system: `You are the Planning refiner. Improve the document to satisfy the critic while preserving research grounding. Return only JSON.
+${CONCISION_DIRECTIVE}`,
     messages: [
       {
         role: "user",
@@ -176,7 +182,7 @@ async function refineDocument(
     responseJsonSchema: z.toJSONSchema(planningDocumentSchema),
     thinking: true,
     temperature: 0,
-    maxOutputTokens: config.maxOutputTokens,
+    maxOutputTokens: PLANNING_REFINE_OUTPUT_TOKENS,
   });
   trackStageModelCall(ctx.audit, ctx.project, ctx.stageId, `${kind}_refine`, result);
   return parseJson(planningDocumentSchema, result.text, `${kind} refinement`);

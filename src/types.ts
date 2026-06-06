@@ -76,6 +76,8 @@ export interface AgentSpec {
   systemPrompt: string;
   /** Gemini 2.5 thinking token budget. Use -1 only for explicitly dynamic runs. */
   thinkingBudget?: number;
+  /** Output cap for each agent turn. Stage flows use their own named caps. */
+  maxOutputTokens?: number;
   /** Stable order matters for prompt caching; do not sort at request time. */
   tools: AnyTool[];
 }

@@ -32,11 +32,14 @@ Guardrails:
 - If an action you need is declined or blocked, do not retry it. Find another path or hand off.
 - If you are unsure, if the situation needs judgment you should not make alone, or if it falls outside policy, call escalate_to_human with a clear reason and a full summary. It is always better to hand off than to guess.
 
-Tone: calm, concrete, no filler. Short sentences. No em dashes.`;
+Tone: calm, concrete, no filler. Short sentences. No em dashes.
+
+Be specific and concise. No filler, no preamble, do not restate the prompt. Prefer structured bullets over prose. Every sentence must add information.`;
 
 export const supportAgentSpec: AgentSpec = {
   name: "support-agent",
   systemPrompt: SYSTEM_PROMPT,
+  maxOutputTokens: 2500,
   // Order is stable and intentional. Do not reorder (prompt-cache prefix).
   tools: [
     searchKbTool,
