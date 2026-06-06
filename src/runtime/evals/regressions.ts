@@ -4,6 +4,7 @@ import { createSupportReentrant } from "../../agents/support/reentrant.js";
 import { AuditLogger } from "../../audit.js";
 import { config, type GeminiModelId } from "../../config.js";
 import type {
+  GenerateOptions,
   ModelMessage,
   ModelProvider,
   ModelResult,
@@ -59,10 +60,12 @@ function result(
 class SequenceProvider implements ModelProvider {
   readonly id: GeminiModelId = "gemini-2.5-flash";
   private index = 0;
+  readonly requests: GenerateOptions[] = [];
 
   constructor(private readonly results: ModelResult[]) {}
 
-  async generate(): Promise<ModelResult> {
+  async generate(opts: GenerateOptions): Promise<ModelResult> {
+    this.requests.push(opts);
     const next = this.results[this.index++];
     if (!next) throw new Error("SequenceProvider had no remaining result.");
     return next;
@@ -262,6 +265,46 @@ async function verifyRejectRoutePersistsReason(): Promise<void> {
   }
 }
 
+async function verifyAgentThinkingBudget(): Promise<void> {
+  const tool: AnyTool = {
+    name: "noop",
+    description: "No-op.",
+    inputSchema: {},
+    risk: "read",
+    run: () => ({ content: "ok" }),
+  };
+  const defaultProvider = new SequenceProvider([result("done")]);
+  const defaultAgent = new Agent({
+    spec: {
+      name: "thinking-budget-default",
+      systemPrompt: "Answer directly.",
+      tools: [tool],
+    },
+    provider: defaultProvider,
+  });
+  await defaultAgent.run("hello");
+  assert(
+    defaultProvider.requests[0]?.thinkingBudget === config.thinkingBudget,
+    "Agent did not send the configured finite thinking budget.",
+  );
+
+  const unlimitedProvider = new SequenceProvider([result("done")]);
+  const unlimitedAgent = new Agent({
+    spec: {
+      name: "thinking-budget-unlimited",
+      systemPrompt: "Answer directly.",
+      tools: [tool],
+    },
+    provider: unlimitedProvider,
+    thinkingBudget: -1,
+  });
+  await unlimitedAgent.run("hello");
+  assert(
+    unlimitedProvider.requests[0]?.thinkingBudget === -1,
+    "Agent did not preserve an explicit unlimited thinking budget.",
+  );
+}
+
 async function runRegression(
   fixtureId: string,
   fn: () => Promise<void> | void,
@@ -292,5 +335,6 @@ export async function runRegressionEvals(): Promise<StageEvalResult[]> {
     await runRegression("policy-agent-args", verifyAgentPolicyArgs),
     await runRegression("policy-reentrant-args", verifyReentrantPolicyArgs),
     await runRegression("reject-route-reason", verifyRejectRoutePersistsReason),
+    await runRegression("agent-thinking-budget", verifyAgentThinkingBudget),
   ];
 }

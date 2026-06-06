@@ -74,6 +74,8 @@ export interface AgentSpec {
   name: string;
   /** Frozen system prompt, kept byte-stable so the prompt cache stays warm. */
   systemPrompt: string;
+  /** Gemini 2.5 thinking token budget. Use -1 only for explicitly dynamic runs. */
+  thinkingBudget?: number;
   /** Stable order matters for prompt caching; do not sort at request time. */
   tools: AnyTool[];
 }

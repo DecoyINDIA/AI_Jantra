@@ -186,7 +186,7 @@ function buildConfig(opts: GenerateOptions, cachedContent?: string): GenerateCon
     thinkingConfig: opts.thinking
       ? {
           includeThoughts: true,
-          thinkingBudget: opts.thinkingBudget ?? -1,
+          thinkingBudget: opts.thinkingBudget ?? config.thinkingBudget,
         }
       : undefined,
     tools: tools.length ? tools : undefined,

@@ -25,6 +25,16 @@ function numberFromEnv(name: string, fallback: number): number {
   return value;
 }
 
+function thinkingBudgetFromEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < -1) {
+    throw new Error(`${name} must be an integer >= -1. Received "${raw}".`);
+  }
+  return value;
+}
+
 function boundedIntegerFromEnv(
   name: string,
   fallback: number,
@@ -60,6 +70,7 @@ export const config = {
   maxSteps: Math.trunc(numberFromEnv("JANTRA_MAX_STEPS", 16)),
   maxEvalRounds: Math.trunc(numberFromEnv("JANTRA_MAX_EVAL_ROUNDS", 2)),
   maxOutputTokens: Math.trunc(numberFromEnv("JANTRA_MAX_OUTPUT_TOKENS", 12000)),
+  thinkingBudget: thinkingBudgetFromEnv("JANTRA_THINKING_BUDGET", 4096),
   costCeilingUsd: numberFromEnv("JANTRA_COST_CEILING_USD", 10),
   researchConcurrency: boundedIntegerFromEnv("JANTRA_RESEARCH_CONCURRENCY", 4, 1, 8),
   synthesisConcurrency: boundedIntegerFromEnv("JANTRA_SYNTHESIS_CONCURRENCY", 3, 1, 6),
