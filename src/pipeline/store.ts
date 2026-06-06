@@ -22,6 +22,7 @@ import type {
 } from "./types.js";
 import { scoreSource } from "./research/sourceQuality.js";
 
+// SQLite migration work lives under ./store/ while this file keeps the shared store contract.
 export interface ProjectStore {
   saveProject(project: Project): void;
   loadProject(clientId: string, projectId: string): Project | null;
