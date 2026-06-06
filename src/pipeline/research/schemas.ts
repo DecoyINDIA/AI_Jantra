@@ -16,7 +16,7 @@ export const EVIDENCE_SECTION_KEYS = [
 
 export type EvidenceSectionKey = (typeof EVIDENCE_SECTION_KEYS)[number];
 
-const queryList = z.array(z.string().min(5)).min(2).max(4);
+const queryList = z.array(z.string().min(5).max(180)).min(2).max(4);
 
 export const researchPlanSchema = z.object({
   market_demand: queryList,
@@ -29,21 +29,22 @@ export const researchPlanSchema = z.object({
 export type ResearchPlan = z.infer<typeof researchPlanSchema>;
 
 export const sectionClaimsSchema = z.object({
-  summary: z.string().min(20),
+  summary: z.string().min(20).max(900),
   claims: z.array(
     z.object({
-      text: z.string().min(10),
+      text: z.string().min(10).max(500),
       citations: z
         .array(
           z.object({
             sourceId: z.string().min(1),
-            quote: z.string().trim().min(1),
+            quote: z.string().trim().min(1).max(700),
           }),
         )
-        .min(1),
+        .min(1)
+        .max(3),
     }),
-  ),
-  risks: z.array(z.string()).default([]),
+  ).max(8),
+  risks: z.array(z.string().max(350)).max(6).default([]),
 });
 
 export type SectionClaims = z.infer<typeof sectionClaimsSchema>;
@@ -55,9 +56,9 @@ export type SectionClaims = z.infer<typeof sectionClaimsSchema>;
  * citations - only alignment observations and tensions.
  */
 export const founderAnchorSchema = z.object({
-  summary: z.string().min(20),
-  alignmentPoints: z.array(z.string().min(8)).default([]),
-  tensions: z.array(z.string().min(8)).default([]),
+  summary: z.string().min(20).max(700),
+  alignmentPoints: z.array(z.string().min(8).max(350)).max(6).default([]),
+  tensions: z.array(z.string().min(8).max(350)).max(6).default([]),
 });
 
 export type FounderAnchorFit = z.infer<typeof founderAnchorSchema>;
@@ -68,9 +69,9 @@ export type FounderAnchorFit = z.infer<typeof founderAnchorSchema>;
  * go/no-go recommendation.
  */
 export const viabilitySummarySchema = z.object({
-  redFlags: z.array(z.string().min(8)).default([]),
-  opportunities: z.array(z.string().min(8)).default([]),
-  economicsNote: z.string().min(20),
+  redFlags: z.array(z.string().min(8).max(350)).max(6).default([]),
+  opportunities: z.array(z.string().min(8).max(350)).max(6).default([]),
+  economicsNote: z.string().min(20).max(700),
 });
 
 export type ViabilitySummary = z.infer<typeof viabilitySummarySchema>;
@@ -84,7 +85,7 @@ export const researchCritiqueSchema = z.object({
     balance: z.number().min(1).max(5),
   }),
   passed: z.boolean(),
-  notes: z.string(),
+  notes: z.string().max(900),
 });
 
 export type ResearchCritique = z.infer<typeof researchCritiqueSchema>;

@@ -272,7 +272,7 @@ async function continueSupport(
       })),
       thinking: true,
       thinkingBudget: supportAgentSpec.thinkingBudget ?? config.thinkingBudget,
-      maxOutputTokens: config.maxOutputTokens,
+      maxOutputTokens: supportAgentSpec.maxOutputTokens ?? config.maxOutputTokens,
     });
     trackStageModelCall(ctx.audit, ctx.project, ctx.stageId, "agent_turn", result);
     if (result.text) {

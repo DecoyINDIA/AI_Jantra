@@ -43,6 +43,16 @@ interface SectionDef {
   guidance: string;
 }
 
+const RESEARCH_PLANNER_OUTPUT_TOKENS = 2200;
+const GROUNDED_SEARCH_OUTPUT_TOKENS = 2500;
+const SECTION_SYNTHESIS_OUTPUT_TOKENS = 4500;
+const FOUNDER_ANCHOR_OUTPUT_TOKENS = 1800;
+const VIABILITY_SUMMARY_OUTPUT_TOKENS = 1800;
+const RESEARCH_CRITIQUE_OUTPUT_TOKENS = 1800;
+const REPORT_REFINE_OUTPUT_TOKENS = 5000;
+const CONCISION_DIRECTIVE =
+  "Be specific and concise. No filler, no preamble, do not restate the prompt. Prefer structured bullets over prose. Every sentence must add information.";
+
 /**
  * The five evidence sections, always planned regardless of idea type
  * (brief 6.1). Founder-Anchor Fit is the sixth required section and is handled
@@ -177,8 +187,8 @@ async function planResearch(
   ).join("\n");
   const result = await ctx.provider.generate({
     purpose: "planner",
-    system:
-      "You are a research planner. You must produce 2 to 4 concrete search queries for each of the five fixed research sections. Queries must be specific to the idea and grounded in primary sources, competitors, risks, demand, and economics. Weight queries toward what the founder's build_philosophy and founder_philosophy make most relevant, but always cover every section. Return only JSON keyed by the section keys.",
+    system: `You are a research planner. You must produce 2 to 4 concrete search queries for each of the five fixed research sections. Queries must be specific to the idea and grounded in primary sources, competitors, risks, demand, and economics. Weight queries toward what the founder's build_philosophy and founder_philosophy make most relevant, but always cover every section. Return only JSON keyed by the section keys.
+${CONCISION_DIRECTIVE}`,
     messages: [
       {
         role: "user",
@@ -190,7 +200,7 @@ async function planResearch(
     responseJsonSchema: z.toJSONSchema(researchPlanSchema),
     thinking: true,
     temperature: 0,
-    maxOutputTokens: 3000,
+    maxOutputTokens: RESEARCH_PLANNER_OUTPUT_TOKENS,
   });
   trackStageModelCall(ctx.audit, ctx.project, ctx.stageId, "planner", result);
   return parseJson(researchPlanSchema, result.text, "Research plan");
@@ -233,8 +243,8 @@ async function groundedSearch(
         content: `Confirmed idea summary:\n${idea.content}`,
       },
     ],
-    system:
-      "You are a market researcher. Use Google Search grounding. Summarize only what the search results support, and include risks or counter-evidence when available.",
+    system: `You are a market researcher. Use Google Search grounding. Summarize only what the search results support, and include risks or counter-evidence when available.
+${CONCISION_DIRECTIVE}`,
     messages: [
       {
         role: "user",
@@ -243,7 +253,7 @@ async function groundedSearch(
     ],
     grounding: true,
     thinking: true,
-    maxOutputTokens: 4000,
+    maxOutputTokens: GROUNDED_SEARCH_OUTPUT_TOKENS,
   });
   trackStageModelCall(ctx.audit, ctx.project, ctx.stageId, "grounded_search", result);
   return { sectionTitle: section.title, query, citations: result.citations };
@@ -324,8 +334,8 @@ async function synthesizeSection(
 
   const result = await ctx.provider.generate({
     purpose: "section_synthesis",
-    system:
-      "You synthesize market research from registered source excerpts. Every factual market claim must cite one or more provided source IDs and one verbatim quote copied from each cited source excerpt. Do not cite URLs or sources not provided, and never invent quotes. Return only JSON.",
+    system: `You synthesize market research from registered source excerpts. Every factual market claim must cite one or more provided source IDs and one verbatim quote copied from each cited source excerpt. Do not cite URLs or sources not provided, and never invent quotes. Return only JSON.
+${CONCISION_DIRECTIVE}`,
     messages: [
       {
         role: "user",
@@ -335,7 +345,7 @@ async function synthesizeSection(
     responseJsonSchema: z.toJSONSchema(sectionClaimsSchema),
     thinking: true,
     temperature: 0,
-    maxOutputTokens: 5000,
+    maxOutputTokens: SECTION_SYNTHESIS_OUTPUT_TOKENS,
   });
   trackStageModelCall(ctx.audit, ctx.project, ctx.stageId, "section_synthesis", result);
   const parsed = parseJson(sectionClaimsSchema, result.text, "Research section synthesis");
@@ -365,8 +375,8 @@ async function synthesizeFounderAnchorFit(
 ): Promise<FounderAnchorFit> {
   const result = await ctx.provider.generate({
     purpose: "founder_anchor_synthesis",
-    system:
-      "You assess how well the market evidence aligns with the founder's stated build_philosophy and founder_philosophy. Use only the findings provided. Note where evidence supports the chosen direction and where it creates tension. Do not invent market facts, do not cite sources, and do not recommend a go or no-go decision. Return only JSON.",
+    system: `You assess how well the market evidence aligns with the founder's stated build_philosophy and founder_philosophy. Use only the findings provided. Note where evidence supports the chosen direction and where it creates tension. Do not invent market facts, do not cite sources, and do not recommend a go or no-go decision. Return only JSON.
+${CONCISION_DIRECTIVE}`,
     messages: [
       {
         role: "user",
@@ -378,7 +388,7 @@ async function synthesizeFounderAnchorFit(
     responseJsonSchema: z.toJSONSchema(founderAnchorSchema),
     thinking: true,
     temperature: 0,
-    maxOutputTokens: 2500,
+    maxOutputTokens: FOUNDER_ANCHOR_OUTPUT_TOKENS,
   });
   trackStageModelCall(ctx.audit, ctx.project, ctx.stageId, "founder_anchor_synthesis", result);
   return parseJson(founderAnchorSchema, result.text, "Founder-anchor fit");
@@ -396,8 +406,8 @@ async function summarizeViability(
 ): Promise<ViabilitySummary> {
   const result = await ctx.provider.generate({
     purpose: "viability_summary",
-    system:
-      "You produce a neutral viability summary for a human gate. List key red flags (saturation, funded competitors, no demand evidence, unsustainable economics) and key opportunities (underserved niche, weak existing solutions, growing demand), and write one short note on economic sustainability grounded in the pricing and unit-economics findings. Present the data only. Never recommend whether to proceed, never say go or no-go, and never tell the founder what to do. Use only the findings provided. Return only JSON.",
+    system: `You produce a neutral viability summary for a human gate. List key red flags (saturation, funded competitors, no demand evidence, unsustainable economics) and key opportunities (underserved niche, weak existing solutions, growing demand), and write one short note on economic sustainability grounded in the pricing and unit-economics findings. Present the data only. Never recommend whether to proceed, never say go or no-go, and never tell the founder what to do. Use only the findings provided. Return only JSON.
+${CONCISION_DIRECTIVE}`,
     messages: [
       {
         role: "user",
@@ -409,7 +419,7 @@ async function summarizeViability(
     responseJsonSchema: z.toJSONSchema(viabilitySummarySchema),
     thinking: true,
     temperature: 0,
-    maxOutputTokens: 2500,
+    maxOutputTokens: VIABILITY_SUMMARY_OUTPUT_TOKENS,
   });
   trackStageModelCall(ctx.audit, ctx.project, ctx.stageId, "viability_summary", result);
   return parseJson(viabilitySummarySchema, result.text, "Viability summary");
@@ -506,8 +516,8 @@ async function critiqueReport(
   };
   const result = await ctx.provider.generate({
     purpose: "critic",
-    system:
-      "You are the Research verifier. Score the report for factual accuracy, citation accuracy, completeness, source quality, and balance. Return only JSON.",
+    system: `You are the Research verifier. Score the report for factual accuracy, citation accuracy, completeness, source quality, and balance. Return only JSON.
+${CONCISION_DIRECTIVE}`,
     messages: [
       {
         role: "user",
@@ -519,7 +529,7 @@ async function critiqueReport(
     responseJsonSchema: z.toJSONSchema(researchCritiqueSchema),
     thinking: true,
     temperature: 0,
-    maxOutputTokens: 2500,
+    maxOutputTokens: RESEARCH_CRITIQUE_OUTPUT_TOKENS,
   });
   trackStageModelCall(ctx.audit, ctx.project, ctx.stageId, "critic", result);
   const parsed = parseJson(researchCritiqueSchema, result.text, "Research critique");
@@ -549,8 +559,8 @@ async function refineReport(
     .join("\n");
   const result = await ctx.provider.generate({
     purpose: "report_refine",
-    system:
-      "You are the Research refiner. Improve clarity, balance, and completeness using only the verified claims and quotes provided. Do not add new market facts, citations, URLs, or source IDs. Preserve every section, including the Viability Summary and the Founder-Anchor Fit. Keep the framing neutral and never add a go or no-go recommendation. Return markdown only.",
+    system: `You are the Research refiner. Improve clarity, balance, and completeness using only the verified claims and quotes provided. Do not add new market facts, citations, URLs, or source IDs. Preserve every section, including the Viability Summary and the Founder-Anchor Fit. Keep the framing neutral and never add a go or no-go recommendation. Return markdown only.
+${CONCISION_DIRECTIVE}`,
     messages: [
       {
         role: "user",
@@ -559,7 +569,7 @@ async function refineReport(
     ],
     thinking: true,
     temperature: 0,
-    maxOutputTokens: config.maxOutputTokens,
+    maxOutputTokens: REPORT_REFINE_OUTPUT_TOKENS,
   });
   trackStageModelCall(ctx.audit, ctx.project, ctx.stageId, "report_refine", result);
   const refined = result.text.trim();

@@ -67,6 +67,10 @@ const constraintFlagKeys = Object.keys(CONSTRAINT_FLAGS) as [keyof typeof CONSTR
 
 /** Up to two critic-driven follow-up rounds before the stage fails closed. */
 const MAX_FOLLOWUP_ROUNDS = 2;
+const INTAKE_GENERATOR_OUTPUT_TOKENS = 2500;
+const INTAKE_CRITIQUE_OUTPUT_TOKENS = 1800;
+const CONCISION_DIRECTIVE =
+  "Be specific and concise. No filler, no preamble, do not restate the prompt. Prefer structured bullets over prose. Every sentence must add information.";
 
 function optionsBlock(map: Record<string, string>): string {
   return Object.entries(map)
@@ -93,6 +97,7 @@ What you must NOT do:
 - Do not use em dashes.
 
 Tone: plain, warm, concrete. Short sentences. No filler.
+${CONCISION_DIRECTIVE}
 
 Required category questions. When you ask these, present the options explicitly in the question text and store the chosen key.
 
@@ -106,16 +111,16 @@ constraints_flags (optional, ask only if the idea involves real resource or regu
 ${optionsBlock(CONSTRAINT_FLAGS)}`;
 
 const ideaSummarySchema = z.object({
-  title: z.string().min(3),
-  raw_idea: z.string().min(20),
-  problem: z.string().min(10),
-  solution: z.string().min(10),
-  target_users: z.string().min(5),
+  title: z.string().min(3).max(120),
+  raw_idea: z.string().min(20).max(2000),
+  problem: z.string().min(10).max(700),
+  solution: z.string().min(10).max(700),
+  target_users: z.string().min(5).max(500),
   build_philosophy: z.enum(buildPhilosophyKeys),
   founder_philosophy: z.enum(founderPhilosophyKeys),
   constraints_flags: z.array(z.enum(constraintFlagKeys)).default([]),
-  key_features: z.array(z.string().min(3)).min(1),
-  open_questions: z.array(z.string()).default([]),
+  key_features: z.array(z.string().min(3).max(240)).min(1).max(8),
+  open_questions: z.array(z.string().max(300)).max(8).default([]),
 });
 
 type IdeaSummary = z.infer<typeof ideaSummarySchema>;
@@ -128,8 +133,8 @@ const intakeCritiqueSchema = z.object({
     philosophyCaptured: z.number().min(1).max(5),
   }),
   passed: z.boolean(),
-  notes: z.string(),
-  followUpQuestions: z.array(z.string()).default([]),
+  notes: z.string().max(700),
+  followUpQuestions: z.array(z.string().max(300)).max(2).default([]),
 });
 
 const intakeRubric = {
@@ -145,18 +150,29 @@ const submitTool: ToolSpec = {
   inputSchema: {
     type: "object",
     properties: {
-      title: { type: "string", description: "A short name for the idea, inferred or confirmed." },
+      title: {
+        type: "string",
+        maxLength: 120,
+        description: "A short name for the idea, inferred or confirmed.",
+      },
       raw_idea: {
         type: "string",
-        description: "The founder's original words describing the idea, unedited.",
+        maxLength: 2000,
+        description: "The founder's original words describing the idea, unedited and concise.",
       },
       problem: {
         type: "string",
+        maxLength: 700,
         description: "The core problem being solved, with user context if provided.",
       },
-      solution: { type: "string", description: "The proposed solution in plain terms." },
+      solution: {
+        type: "string",
+        maxLength: 700,
+        description: "The proposed solution in plain terms.",
+      },
       target_users: {
         type: "string",
+        maxLength: 500,
         description: "Who this is for, as specific as the founder has described.",
       },
       build_philosophy: {
@@ -178,12 +194,14 @@ const submitTool: ToolSpec = {
       },
       key_features: {
         type: "array",
-        items: { type: "string" },
+        maxItems: 8,
+        items: { type: "string", maxLength: 240 },
         description: "The must-have features as described by the founder. At least one.",
       },
       open_questions: {
         type: "array",
-        items: { type: "string" },
+        maxItems: 8,
+        items: { type: "string", maxLength: 300 },
         description:
           "Things still unresolved that Research should investigate. Auto-generate if the founder has not stated any.",
       },
@@ -276,7 +294,7 @@ async function critiqueSummary(
     ],
     responseJsonSchema: z.toJSONSchema(intakeCritiqueSchema),
     thinking: true,
-    maxOutputTokens: 2000,
+    maxOutputTokens: INTAKE_CRITIQUE_OUTPUT_TOKENS,
     temperature: 0,
   });
   trackStageModelCall(ctx.audit, ctx.project, ctx.stageId, "critic", result);
@@ -370,7 +388,7 @@ export async function runIntake(ctx: StageContext): Promise<Artifact[]> {
       messages,
       tools: [submitTool],
       thinking: true,
-      maxOutputTokens: config.maxOutputTokens,
+      maxOutputTokens: INTAKE_GENERATOR_OUTPUT_TOKENS,
     });
     trackStageModelCall(audit, project, ctx.stageId, "generator", result);
     messages.push(result.message);
@@ -493,7 +511,7 @@ async function continueIntake(
       messages: state.messages,
       tools: [submitTool],
       thinking: true,
-      maxOutputTokens: config.maxOutputTokens,
+      maxOutputTokens: INTAKE_GENERATOR_OUTPUT_TOKENS,
     });
     trackStageModelCall(ctx.audit, ctx.project, ctx.stageId, "generator", result);
     state.messages.push(result.message);

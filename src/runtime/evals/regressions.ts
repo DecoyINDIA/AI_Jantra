@@ -305,6 +305,48 @@ async function verifyAgentThinkingBudget(): Promise<void> {
   );
 }
 
+async function verifyAgentOutputCap(): Promise<void> {
+  const tool: AnyTool = {
+    name: "noop",
+    description: "No-op.",
+    inputSchema: {},
+    risk: "read",
+    run: () => ({ content: "ok" }),
+  };
+  const specProvider = new SequenceProvider([result("done")]);
+  const specAgent = new Agent({
+    spec: {
+      name: "output-cap-spec",
+      systemPrompt: "Answer directly.",
+      maxOutputTokens: 1234,
+      tools: [tool],
+    },
+    provider: specProvider,
+  });
+  await specAgent.run("hello");
+  assert(
+    specProvider.requests[0]?.maxOutputTokens === 1234,
+    "Agent did not use the spec output cap.",
+  );
+
+  const optionProvider = new SequenceProvider([result("done")]);
+  const optionAgent = new Agent({
+    spec: {
+      name: "output-cap-option",
+      systemPrompt: "Answer directly.",
+      maxOutputTokens: 1234,
+      tools: [tool],
+    },
+    provider: optionProvider,
+    maxOutputTokens: 567,
+  });
+  await optionAgent.run("hello");
+  assert(
+    optionProvider.requests[0]?.maxOutputTokens === 567,
+    "Agent option output cap did not override the spec cap.",
+  );
+}
+
 async function runRegression(
   fixtureId: string,
   fn: () => Promise<void> | void,
@@ -336,5 +378,6 @@ export async function runRegressionEvals(): Promise<StageEvalResult[]> {
     await runRegression("policy-reentrant-args", verifyReentrantPolicyArgs),
     await runRegression("reject-route-reason", verifyRejectRoutePersistsReason),
     await runRegression("agent-thinking-budget", verifyAgentThinkingBudget),
+    await runRegression("agent-output-cap", verifyAgentOutputCap),
   ];
 }
