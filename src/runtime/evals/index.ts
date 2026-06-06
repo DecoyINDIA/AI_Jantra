@@ -7,6 +7,7 @@ import {
   judgeResearchSourceSelection,
 } from "./judge.js";
 import { runModelJudgeEvals } from "./modelJudge.js";
+import { runRegressionEvals } from "./regressions.js";
 import { renderEvalReport, type StageEvalResult } from "./report.js";
 import { rubrics } from "./rubrics.js";
 
@@ -30,6 +31,7 @@ export async function runEvalSuite(): Promise<StageEvalResult[]> {
   results.push(judgeResearchSourceSelection());
   results.push(await judgeEvaluatorLoopRefinement());
   results.push(...(await runModelJudgeEvals(fixtures)));
+  results.push(...(await runRegressionEvals()));
   return results;
 }
 

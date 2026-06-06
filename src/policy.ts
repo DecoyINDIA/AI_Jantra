@@ -6,6 +6,12 @@ export interface PolicyConfig {
   byRisk: Record<Risk, PolicyVerdict["decision"]>;
   /** Tool names that are always denied, whatever their risk class. */
   denyTools?: string[];
+  /** Argument-aware denials for tenant- or tool-specific guardrails. */
+  denyWhen?: Array<{
+    tool?: string;
+    predicate: (tool: ToolDef, input: unknown) => boolean;
+    reason: string;
+  }>;
   /** Tool names that always require human sign-off. */
   alwaysAsk?: string[];
 }
@@ -22,9 +28,15 @@ export const defaultPolicyConfig: PolicyConfig = {
 export class RuleBasedPolicy implements Policy {
   constructor(private readonly cfg: PolicyConfig = defaultPolicyConfig) {}
 
-  decide(tool: ToolDef): PolicyVerdict {
+  decide(tool: ToolDef, input: unknown): PolicyVerdict {
     if (this.cfg.denyTools?.includes(tool.name)) {
       return { decision: "deny", reason: `Tool "${tool.name}" is on the deny list.` };
+    }
+    for (const rule of this.cfg.denyWhen ?? []) {
+      if (rule.tool && rule.tool !== tool.name) continue;
+      if (rule.predicate(tool, input)) {
+        return { decision: "deny", reason: rule.reason };
+      }
     }
     if (this.cfg.alwaysAsk?.includes(tool.name)) {
       return {
