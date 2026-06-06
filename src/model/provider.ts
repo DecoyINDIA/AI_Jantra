@@ -59,7 +59,9 @@ export interface GenerateOptions {
   purpose?: string;
   system?: string;
   cacheKey?: string;
+  cacheSystem?: string;
   cacheMessages?: ModelMessage[];
+  cacheFallbackMessages?: boolean;
   cacheTtlSeconds?: number;
   messages: ModelMessage[];
   tools?: ToolSpec[];

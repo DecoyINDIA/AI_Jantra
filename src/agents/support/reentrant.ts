@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { config } from "../../config.js";
 import type {
   ModelContentPart,
@@ -41,6 +43,14 @@ interface SupportStateData {
 const toolsByName = new Map<string, AnyTool>(
   supportAgentSpec.tools.map((tool) => [tool.name, tool]),
 );
+
+function supportCacheKey(): string {
+  const hash = createHash("sha256")
+    .update(supportAgentSpec.systemPrompt)
+    .digest("hex")
+    .slice(0, 16);
+  return `agent:${supportAgentSpec.name}:system:${hash}`;
+}
 
 function supportData(state: PersistedStageState): SupportStateData {
   return {
@@ -272,6 +282,9 @@ async function continueSupport(
       })),
       thinking: true,
       thinkingBudget: supportAgentSpec.thinkingBudget ?? config.thinkingBudget,
+      cacheKey: supportCacheKey(),
+      cacheSystem: supportAgentSpec.systemPrompt,
+      cacheFallbackMessages: false,
       maxOutputTokens: supportAgentSpec.maxOutputTokens ?? config.maxOutputTokens,
     });
     trackStageModelCall(ctx.audit, ctx.project, ctx.stageId, "agent_turn", result);

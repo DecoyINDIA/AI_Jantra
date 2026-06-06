@@ -356,6 +356,50 @@ async function verifyAgentOutputCap(): Promise<void> {
   );
 }
 
+async function verifyAgentSystemPromptCache(): Promise<void> {
+  const tool: AnyTool = {
+    name: "noop",
+    description: "No-op.",
+    inputSchema: {},
+    risk: "read",
+    run: () => ({ content: "ok" }),
+  };
+  const provider = new SequenceProvider([
+    result("", [{ id: "noop-1", name: "noop", args: {} }]),
+    result("done"),
+  ]);
+  const systemPrompt = "Stable system instruction. ".repeat(600);
+  const agent = new Agent({
+    spec: {
+      name: "cache-regression",
+      systemPrompt,
+      tools: [tool],
+    },
+    provider,
+  });
+  await agent.run("please use the no-op");
+  assert(provider.requests.length === 2, "Agent cache regression did not force two turns.");
+  const first = provider.requests[0];
+  const second = provider.requests[1];
+  assert(first?.cacheKey && first.cacheKey === second?.cacheKey, "Agent cache key was not stable.");
+  assert(
+    first.cacheSystem === systemPrompt && second?.cacheSystem === systemPrompt,
+    "Agent did not send the stable system prompt as cacheSystem.",
+  );
+  assert(
+    first.cacheFallbackMessages === false && second.cacheFallbackMessages === false,
+    "Agent cache fallback would mutate messages.",
+  );
+  assert(
+    second.messages.every(
+      (message) =>
+        typeof message.content !== "string" ||
+        !message.content.includes("Stable system instruction."),
+    ),
+    "Agent cache prompt leaked into conversational messages.",
+  );
+}
+
 async function verifyClientDailyIdeationBudget(): Promise<void> {
   const token = "daily-budget-regression-token";
   const day = intakeBudgetDayUtc();
@@ -519,6 +563,7 @@ export async function runRegressionEvals(): Promise<StageEvalResult[]> {
     await runRegression("reject-route-reason", verifyRejectRoutePersistsReason),
     await runRegression("agent-thinking-budget", verifyAgentThinkingBudget),
     await runRegression("agent-output-cap", verifyAgentOutputCap),
+    await runRegression("agent-system-cache", verifyAgentSystemPromptCache),
     await runRegression("intake-client-daily-budget", verifyClientDailyIdeationBudget),
     await runRegression("intake-session-budget", verifyIntakeSessionBudget),
   ];
