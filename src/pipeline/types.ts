@@ -64,6 +64,7 @@ export interface StageState {
   status: StageStatus;
   artifacts: Artifact[];
   evals: EvalScore[];
+  rejectionReason?: string;
   updatedAt: string;
 }
 

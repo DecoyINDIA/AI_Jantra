@@ -110,6 +110,14 @@ export function registerRunRoutes(app: FastifyInstance, deps: RunRouteDeps): voi
     const body = parseWith(rejectRunBodySchema, request.body);
     const project = loadScopedProject(request, deps.store, clientId, params.runId);
     rejectStage(project, body.reason);
+    const audit = new AuditLogger(project.id, config.auditDir);
+    audit.record("stage_gate", {
+      clientId: project.clientId,
+      projectId: project.id,
+      stage: project.currentStage,
+      status: "rejected",
+      reason: body.reason,
+    });
     deps.store.saveProject(project);
     return { run: project };
   });

@@ -12,6 +12,7 @@ import type {
 } from "../../model/provider.js";
 import { createProject } from "../../pipeline/orchestrator.js";
 import type { StageContext } from "../../pipeline/types.js";
+import { createServer } from "../../server/app.js";
 import { RuleBasedPolicy, type PolicyConfig } from "../../policy.js";
 import type { AnyTool, Policy } from "../../types.js";
 import type { StageEvalResult } from "./report.js";
@@ -196,6 +197,71 @@ function verifyDefaultPolicyBehavior(): void {
   );
 }
 
+async function verifyRejectRoutePersistsReason(): Promise<void> {
+  const token = "reject-regression-token";
+  const clientId = `eval-reject-${Date.now()}`;
+  const auth = { authorization: `Bearer ${token}`, host: "127.0.0.1:4317" };
+  const app = createServer({ loopbackToken: token, clientId });
+  try {
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/runs",
+      headers: { ...auth, "content-type": "application/json" },
+      payload: {
+        agentId: "planning-pipeline",
+        title: "Reject regression",
+      },
+    });
+    assert(created.statusCode === 200, `Run create failed: ${created.body}`);
+    const runId = created.json().run.id as string;
+    const reason = "Missing target customer evidence.";
+
+    const rejected = await app.inject({
+      method: "POST",
+      url: `/v1/runs/${runId}/reject`,
+      headers: { ...auth, "content-type": "application/json" },
+      payload: { reason },
+    });
+    assert(rejected.statusCode === 200, `Run reject failed: ${rejected.body}`);
+    assert(
+      rejected.json().run.stages.intake.rejectionReason === reason,
+      "Reject response did not include the persisted stage reason.",
+    );
+
+    const detail = await app.inject({
+      method: "GET",
+      url: `/v1/runs/${runId}`,
+      headers: auth,
+    });
+    assert(detail.statusCode === 200, `Run detail failed: ${detail.body}`);
+    assert(
+      detail.json().run.stages.intake.status === "rejected" &&
+        detail.json().run.stages.intake.rejectionReason === reason,
+      "Reloaded run did not preserve rejection status and reason.",
+    );
+
+    const audit = await app.inject({
+      method: "GET",
+      url: `/v1/runs/${runId}/audit`,
+      headers: auth,
+    });
+    assert(audit.statusCode === 200, `Audit read failed: ${audit.body}`);
+    const items = audit.json().items as Array<Record<string, unknown>>;
+    assert(
+      items.some(
+        (entry) =>
+          entry.type === "stage_gate" &&
+          entry.status === "rejected" &&
+          entry.stage === "intake" &&
+          entry.reason === reason,
+      ),
+      "Audit log did not record the rejection reason.",
+    );
+  } finally {
+    await app.close();
+  }
+}
+
 async function runRegression(
   fixtureId: string,
   fn: () => Promise<void> | void,
@@ -225,5 +291,6 @@ export async function runRegressionEvals(): Promise<StageEvalResult[]> {
     await runRegression("policy-defaults", verifyDefaultPolicyBehavior),
     await runRegression("policy-agent-args", verifyAgentPolicyArgs),
     await runRegression("policy-reentrant-args", verifyReentrantPolicyArgs),
+    await runRegression("reject-route-reason", verifyRejectRoutePersistsReason),
   ];
 }
