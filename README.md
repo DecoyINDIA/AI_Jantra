@@ -55,6 +55,7 @@ JANTRA_INTAKE_RUN_CEILING_USD=0.25  # tune to your cost profile; 0 disables
 JANTRA_INTAKE_CLIENT_DAILY_CEILING_USD=0.50  # tune to your cost profile; 0 disables
 JANTRA_THINKING_BUDGET=4096  # tune to your cost profile; -1 enables dynamic thinking
 JANTRA_AUDIT_MAX_FIELD_BYTES=16384  # tune to your cost profile; 0 disables truncation
+JANTRA_MAX_USER_MESSAGE_CHARS=100000  # tune to your cost profile
 JANTRA_RESEARCH_CONCURRENCY=4
 JANTRA_SYNTHESIS_CONCURRENCY=3
 JANTRA_MAX_SOURCES=24
