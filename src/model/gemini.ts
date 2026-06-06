@@ -29,6 +29,7 @@ const CACHE_MIN_TOKENS: Record<GeminiModelId, number> = {
   "gemini-2.5-flash": 1024,
   "gemini-2.5-pro": 4096,
 };
+const DEFAULT_CACHE_TTL_SECONDS = 600;
 
 const PRICE_TABLE: Record<
   GeminiModelId,
@@ -329,6 +330,24 @@ export class GeminiProvider implements ModelProvider {
     this.ai = new GoogleGenAI({ apiKey });
   }
 
+  async clearCaches(): Promise<void> {
+    const handles = [...this.cacheHandles.values()];
+    this.cacheHandles.clear();
+    await Promise.all(
+      handles.map(async (name) => {
+        try {
+          await this.ai.caches.delete({ name });
+        } catch {
+          // Best effort only: server-side orphaned caches still expire by TTL.
+        }
+      }),
+    );
+  }
+
+  async dispose(): Promise<void> {
+    await this.clearCaches();
+  }
+
   private async resolveCache(opts: GenerateOptions): Promise<{
     messages: ModelMessage[];
     system?: string;
@@ -387,7 +406,7 @@ export class GeminiProvider implements ModelProvider {
           contents: opts.cacheMessages?.map(toGeminiContent),
           systemInstruction: opts.cacheSystem,
           displayName: opts.cacheKey,
-          ttl: `${opts.cacheTtlSeconds ?? 3600}s`,
+          ttl: `${opts.cacheTtlSeconds ?? DEFAULT_CACHE_TTL_SECONDS}s`,
         },
       });
       if (!cache.name) {

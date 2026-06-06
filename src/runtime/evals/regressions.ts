@@ -14,6 +14,7 @@ import type {
   ModelUsage,
   ToolCall,
 } from "../../model/provider.js";
+import { GeminiProvider } from "../../model/gemini.js";
 import { createProject } from "../../pipeline/orchestrator.js";
 import { JsonProjectStore } from "../../pipeline/store.js";
 import type { StageContext } from "../../pipeline/types.js";
@@ -510,6 +511,34 @@ async function verifyUserMessageLengthGuard(): Promise<void> {
   assert(run.finalText === "done", "Normal user message was affected by the length guard.");
 }
 
+async function verifyGeminiCacheDispose(): Promise<void> {
+  const deleted: string[] = [];
+  const provider = Object.create(GeminiProvider.prototype) as {
+    dispose: () => Promise<void>;
+    cacheHandles: Map<string, string>;
+    ai: { caches: { delete: (params: { name: string }) => Promise<void> } };
+  };
+  provider.cacheHandles = new Map([
+    ["first", "cachedContents/first"],
+    ["second", "cachedContents/second"],
+  ]);
+  provider.ai = {
+    caches: {
+      delete: async ({ name }) => {
+        deleted.push(name);
+        if (name.endsWith("second")) throw new Error("delete failed");
+      },
+    },
+  };
+
+  await provider.dispose();
+  assert(
+    deleted.includes("cachedContents/first") && deleted.includes("cachedContents/second"),
+    "Gemini cache dispose did not attempt every tracked delete.",
+  );
+  assert(provider.cacheHandles.size === 0, "Gemini cache handles were not cleared.");
+}
+
 async function verifyClientDailyIdeationBudget(): Promise<void> {
   const token = "daily-budget-regression-token";
   const day = intakeBudgetDayUtc();
@@ -676,6 +705,7 @@ export async function runRegressionEvals(): Promise<StageEvalResult[]> {
     await runRegression("agent-system-cache", verifyAgentSystemPromptCache),
     await runRegression("audit-redaction-truncation", verifyAuditRedactionAndTruncation),
     await runRegression("user-message-length", verifyUserMessageLengthGuard),
+    await runRegression("gemini-cache-dispose", verifyGeminiCacheDispose),
     await runRegression("intake-client-daily-budget", verifyClientDailyIdeationBudget),
     await runRegression("intake-session-budget", verifyIntakeSessionBudget),
   ];
