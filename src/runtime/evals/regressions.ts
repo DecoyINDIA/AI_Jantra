@@ -610,15 +610,17 @@ async function verifyClientDailyIdeationBudget(): Promise<void> {
         title: "Budget blocked intake",
       },
     });
-    assert(blocked.statusCode === 429, `Daily budget did not return 429: ${blocked.body}`);
-    const body = blocked.json() as Record<string, unknown>;
-    assert(
-      body.code === "client_daily_ideation_budget_exceeded" &&
-        body.spend === config.intakeClientDailyCeilingUsd &&
-        body.ceiling === config.intakeClientDailyCeilingUsd &&
-        body.day === day,
-      "Daily budget response did not include code, spend, ceiling, and day.",
-    );
+      assert(blocked.statusCode === 429, `Daily budget did not return 429: ${blocked.body}`);
+      const body = blocked.json() as Record<string, unknown>;
+      const error = body.error as Record<string, unknown> | undefined;
+      const details = error?.details as Record<string, unknown> | undefined;
+      assert(
+        error?.code === "client_daily_ideation_budget_exceeded" &&
+          details?.spend === config.intakeClientDailyCeilingUsd &&
+          details.ceiling === config.intakeClientDailyCeilingUsd &&
+          details.day === day,
+        "Daily budget response did not include the standard error envelope.",
+      );
     assert(
       store.listProjects({ clientId }).items.length === 0,
       "Daily budget preflight created a run despite being exhausted.",

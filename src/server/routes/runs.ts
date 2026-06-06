@@ -48,10 +48,15 @@ export function registerRunRoutes(app: FastifyInstance, deps: RunRouteDeps): voi
       if (budget.exceeded) {
         auditClientDailyIdeationBudgetExceeded(clientId, budget);
         return reply.status(429).send({
-          code: "client_daily_ideation_budget_exceeded",
-          spend: budget.spend,
-          ceiling: budget.ceiling,
-          day: budget.day,
+          error: {
+            code: "client_daily_ideation_budget_exceeded",
+            message: "Client daily ideation budget exceeded.",
+            details: {
+              spend: budget.spend,
+              ceiling: budget.ceiling,
+              day: budget.day,
+            },
+          },
         });
       }
     }
