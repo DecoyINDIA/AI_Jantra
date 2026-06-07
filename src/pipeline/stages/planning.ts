@@ -61,6 +61,7 @@ function documentPrompt(
   research: Artifact,
   prior: PlanningDocument | null,
   prdRequirements: PlanningDocument["requirements"],
+  framing: "conservative" | "balanced" | "ambitious",
 ): string {
   const docName =
     kind === "prd" ? "PRD" : kind === "trd" ? "TRD" : "phased build plan";
@@ -71,7 +72,18 @@ function documentPrompt(
       : `\n- Reference the PRD requirement IDs each section addresses in requirementIds. Cover every ID: ${prdRequirements
           .map((requirement) => requirement.id)
           .join(", ")}.`;
+
+  let framingInstruction = "";
+  if (framing === "conservative") {
+    framingInstruction = "\nFraming Directive: Focus on a conservative approach. Minimize scope, maximize confidence, and flag unknowns explicitly.";
+  } else if (framing === "ambitious") {
+    framingInstruction = "\nFraming Directive: Focus on an ambitious approach. Maximize opportunity surface, and flag risks separately.";
+  } else {
+    framingInstruction = "\nFraming Directive: Focus on a balanced approach (default product planning practice).";
+  }
+
   return `Create a ${docName} for this product idea.
+${framingInstruction}
 
 Confirmed idea:
 ${idea.content}
@@ -93,6 +105,7 @@ async function generateDocument(
   prior: PlanningDocument | null,
   prdRequirements: PlanningDocument["requirements"],
   purpose: string,
+  framing: "conservative" | "balanced" | "ambitious",
 ): Promise<PlanningDocument> {
   const result = await ctx.provider.generate({
     purpose,
@@ -106,7 +119,7 @@ async function generateDocument(
     system: `You are the Planning generator. Produce a build-ready planning document that is grounded in the provided research. Return only JSON.
 ${CONCISION_DIRECTIVE}`,
     messages: [
-      { role: "user", content: documentPrompt(kind, idea, research, prior, prdRequirements) },
+      { role: "user", content: documentPrompt(kind, idea, research, prior, prdRequirements, framing) },
     ],
     responseJsonSchema: z.toJSONSchema(planningDocumentSchema),
     thinking: true,
@@ -229,6 +242,61 @@ ${openQuestions}
 `;
 }
 
+async function synthesizeWinningDocument(
+  ctx: StageContext,
+  kind: PlanningKind,
+  idea: Artifact,
+  research: Artifact,
+  winner: { framing: "conservative" | "balanced" | "ambitious"; doc: PlanningDocument; critique: Critique<PlanningDocument> },
+  losers: Array<{ framing: "conservative" | "balanced" | "ambitious"; doc: PlanningDocument; critique: Critique<PlanningDocument> }>,
+  prdRequirements: PlanningDocument["requirements"],
+): Promise<PlanningDocument> {
+  const result = await ctx.provider.generate({
+    purpose: `${kind}_synthesis`,
+    cacheKey: `${ctx.project.id}:research_report:v${research.version}`,
+    cacheMessages: [
+      {
+        role: "user",
+        content: `Confirmed research report:\n${research.content.slice(0, 30_000)}`,
+      },
+    ],
+    system: `You are the Planning synthesizer. You will be given a winning planning document (the base) and two losing variants.
+Identify the 2 to 3 strongest and most valuable elements (such as requirements, sections, or risk coverage) from the losing variants and graft/incorporate them into the winning base planning document.
+Ensure that:
+1. The final output is cohesive and logically structured.
+2. There are no redundant or conflicting requirements.
+3. Every section and requirement references the correct source/requirement IDs.
+4. All text is strictly grounded in the research report and does not invent facts.
+Return only JSON matching the schema.
+${CONCISION_DIRECTIVE}`,
+    messages: [
+      {
+        role: "user",
+        content: `Confirmed idea:
+${idea.content}
+
+Winning Variant (Framing: ${winner.framing}):
+${renderDocument(winner.doc)}
+
+Losing Variant 1 (Framing: ${losers[0]?.framing}):
+${losers[0] ? renderDocument(losers[0].doc) : "(none)"}
+
+Losing Variant 2 (Framing: ${losers[1]?.framing}):
+${losers[1] ? renderDocument(losers[1].doc) : "(none)"}
+
+Ensure you output only JSON matching the schema.`,
+      },
+    ],
+    responseJsonSchema: z.toJSONSchema(planningDocumentSchema),
+    thinking: true,
+    temperature: 0,
+    maxOutputTokens: PLANNING_DOCUMENT_OUTPUT_TOKENS,
+  });
+
+  trackStageModelCall(ctx.audit, ctx.project, ctx.stageId, `${kind}_synthesis`, result);
+  return parseJson(planningDocumentSchema, result.text, `${kind} synthesis`);
+}
+
 async function buildDocument(
   ctx: StageContext,
   kind: PlanningKind,
@@ -237,20 +305,114 @@ async function buildDocument(
   prior: PlanningDocument | null,
   prdRequirements: PlanningDocument["requirements"] = [],
 ): Promise<{ doc: PlanningDocument; eval: EvalScore }> {
-  const result = await runEvaluatorLoop({
-    audit: ctx.audit,
-    project: ctx.project,
-    stage: ctx.stageId,
-    provider: ctx.provider,
-    rubric: planningRubric,
-    maxRounds: config.maxEvalRounds,
-    generate: () =>
-      generateDocument(ctx, kind, idea, research, prior, prdRequirements, `${kind}_generator`),
-    critique: (draft) => critiqueDocument(ctx, kind, draft),
-    refine: (draft, critique) =>
-      refineDocument(ctx, kind, draft, critique, idea, research, prior, prdRequirements),
-  });
-  return { doc: result.draft, eval: result.eval };
+  if (config.provider === "mock") {
+    const result = await runEvaluatorLoop({
+      audit: ctx.audit,
+      project: ctx.project,
+      stage: ctx.stageId,
+      provider: ctx.provider,
+      rubric: planningRubric,
+      maxRounds: config.maxEvalRounds,
+      generate: () =>
+        generateDocument(ctx, kind, idea, research, prior, prdRequirements, `${kind}_generator`, "balanced"),
+      critique: (draft) => critiqueDocument(ctx, kind, draft),
+      refine: (draft, critique) =>
+        refineDocument(ctx, kind, draft, critique, idea, research, prior, prdRequirements),
+    });
+    return { doc: result.draft, eval: result.eval };
+  }
+
+  const framings: Array<"conservative" | "balanced" | "ambitious"> = [
+    "conservative",
+    "balanced",
+    "ambitious",
+  ];
+
+  // 1. Generate 3 plan variants concurrently
+  const variants = await Promise.all(
+    framings.map(async (framing) => {
+      const doc = await generateDocument(
+        ctx,
+        kind,
+        idea,
+        research,
+        prior,
+        prdRequirements,
+        `${kind}_generator_${framing}`,
+        framing,
+      );
+      // 2. Run critique step independently
+      const critique = await critiqueDocument(ctx, kind, doc);
+      return { framing, doc, critique };
+    }),
+  );
+
+  // Record all scores in audit and stage evals
+  for (const variant of variants) {
+    ctx.audit.record("eval_score", {
+      clientId: ctx.project.clientId,
+      projectId: ctx.project.id,
+      stage: ctx.stageId,
+      rubric: variant.critique.eval.rubric,
+      scores: variant.critique.eval.scores,
+      passed: variant.critique.eval.passed,
+      notes: `[Framing: ${variant.framing}] ${variant.critique.eval.notes}`,
+    });
+    const stage = ctx.project.stages[ctx.stageId];
+    if (stage) stage.evals.push(variant.critique.eval);
+  }
+
+  // 3. Select the winner with the highest EvalScore
+  const getAverageScore = (evalScore: EvalScore): number => {
+    const values = Object.values(evalScore.scores);
+    if (!values.length) return 0;
+    return values.reduce((sum, val) => sum + val, 0) / values.length;
+  };
+
+  const firstVariant = variants[0];
+  if (!firstVariant) {
+    throw new StageFailedClosedError("No variants generated.");
+  }
+
+  let winner = firstVariant;
+  let winnerScore = getAverageScore(winner.critique.eval);
+
+  for (const variant of variants) {
+    const score = getAverageScore(variant.critique.eval);
+    const isBetter =
+      (variant.critique.eval.passed && !winner.critique.eval.passed) ||
+      (variant.critique.eval.passed === winner.critique.eval.passed && score > winnerScore);
+    if (isBetter) {
+      winner = variant;
+      winnerScore = score;
+    }
+  }
+
+  // If the winning variant did not pass the rubric, fail the stage closed
+  if (!winner.critique.eval.passed) {
+    throw new StageFailedClosedError("Draft failed its rubric within the stage budget.", {
+      projectId: ctx.project.id,
+      clientId: ctx.project.clientId,
+      stage: ctx.stageId,
+      rubric: planningRubric.id,
+      lastEval: winner.critique.eval,
+    });
+  }
+
+  // 4. Run final synthesis step
+  const winningVariant = winner;
+  const losers = variants.filter((v) => v !== winningVariant);
+  const synthesizedDoc = await synthesizeWinningDocument(
+    ctx,
+    kind,
+    idea,
+    research,
+    winningVariant,
+    losers,
+    prdRequirements,
+  );
+
+  return { doc: synthesizedDoc, eval: winningVariant.critique.eval };
 }
 
 export async function runPlanning(ctx: StageContext): Promise<Artifact[]> {

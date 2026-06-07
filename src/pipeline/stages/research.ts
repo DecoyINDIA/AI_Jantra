@@ -5,6 +5,11 @@ import type { GroundingCitation } from "../../model/provider.js";
 import { runArtifactOutputChecks } from "../../policy.js";
 import { makeEvalScore, runEvaluatorLoop, type Critique } from "../../runtime/evaluator.js";
 import { SchemaValidationError, StageFailedClosedError } from "../../runtime/errors.js";
+import {
+  createStageExecutionState,
+  loadStageExecutionState,
+  saveStageExecutionState,
+} from "../executionState.js";
 import { trackStageModelCall } from "../../runtime/telemetry.js";
 import { sourceAppendix, verifyClaims } from "../research/citationVerifier.js";
 import { researchRubric } from "../research/rubric.js";
@@ -349,9 +354,8 @@ ${CONCISION_DIRECTIVE}`,
   });
   trackStageModelCall(ctx.audit, ctx.project, ctx.stageId, "section_synthesis", result);
   const parsed = parseJson(sectionClaimsSchema, result.text, "Research section synthesis");
-  const claims = verifyClaims(
-    ctx.project,
-    ctx.audit,
+  const claims = await verifyClaims(
+    ctx,
     parsed.claims.map((claim) => ({
       text: claim.text,
       citations: claim.citations,
@@ -585,54 +589,101 @@ ${CONCISION_DIRECTIVE}`,
 export async function runResearch(ctx: StageContext): Promise<Artifact[]> {
   const idea = latestIdeaSummary(ctx);
   const anchors = readAnchors(idea);
-  const plan = await planResearch(ctx, idea, anchors);
 
-  const searchJobs = EVIDENCE_SECTIONS.flatMap((section) =>
-    plan[section.key].map((query) => ({ section, query })),
-  );
-  const searched = await mapWithConcurrency(
-    searchJobs,
-    config.researchConcurrency,
-    (job) => groundedSearch(ctx, job.section, job.query),
-  );
+  const state = loadStageExecutionState(ctx.project, ctx.stageId) ??
+    createStageExecutionState(ctx.stageId, ctx.stageDefinition.runnerKind);
 
-  const deduped = dedupeCitationCandidates(
-    searched.flatMap((result) =>
-      result.citations.map((citation) => ({
-        uri: citation.uri,
-        title: citation.title,
-        sectionTitle: result.sectionTitle,
-      })),
-    ),
-  );
-  const capped = rankAndCapCitationCandidates(deduped, config.maxSources);
-  if (capped.dropped.length) {
-    ctx.audit.record("source_cap_applied", {
-      clientId: ctx.project.clientId,
-      projectId: ctx.project.id,
-      stage: ctx.stageId,
-      maxSources: config.maxSources,
-      selected: capped.selected.length,
-      dropped: capped.dropped.length,
-      droppedUrls: capped.dropped.map((candidate) => candidate.uri),
-    });
+  let plan: ResearchPlan;
+  if (state.data.plan) {
+    plan = state.data.plan as ResearchPlan;
+  } else {
+    plan = await planResearch(ctx, idea, anchors);
+    state.data.plan = plan;
+    saveStageExecutionState(ctx.project, ctx.stageId, state);
   }
 
-  const fetched = await fetchSelectedSources(ctx, capped.selected);
-  const sectionInputs = EVIDENCE_SECTIONS.map((section) => {
-    const sources = sectionSources(section.title, capped.selected, fetched.sourceByUrl);
-    const sourceTexts = new Map(
-      sources
-        .map((source) => [source.id, fetched.sourceTexts.get(source.id)] as const)
-        .filter((entry): entry is readonly [string, string] => typeof entry[1] === "string"),
-    );
-    return { section, sources, sourceTexts };
-  });
+  const synthesized = await Promise.all(
+    EVIDENCE_SECTIONS.map(async (section) => {
+      const key = section.key;
 
-  const synthesized = await mapWithConcurrency(
-    sectionInputs,
-    config.synthesisConcurrency,
-    (input) => synthesizeSection(ctx, input.section, input.sources, input.sourceTexts),
+      if (state.data[key]) {
+        const persisted = state.data[key] as {
+          synthesized: SynthesizedSection;
+          sources: Source[];
+        };
+        for (const src of persisted.sources) {
+          if (!ctx.project.sources.some((s) => s.id === src.id)) {
+            ctx.project.sources.push(src);
+          }
+        }
+        return persisted.synthesized;
+      }
+
+      try {
+        const queries = plan[key] ?? [];
+
+        const searched = await mapWithConcurrency(
+          queries,
+          config.researchConcurrency,
+          (query) => groundedSearch(ctx, section, query),
+        );
+
+        const deduped = dedupeCitationCandidates(
+          searched.flatMap((result) =>
+            result.citations.map((citation) => ({
+              uri: citation.uri,
+              title: citation.title,
+              sectionTitle: result.sectionTitle,
+            })),
+          ),
+        );
+
+        const capped = rankAndCapCitationCandidates(deduped, config.maxSources);
+        if (capped.dropped.length) {
+          ctx.audit.record("source_cap_applied", {
+            clientId: ctx.project.clientId,
+            projectId: ctx.project.id,
+            stage: ctx.stageId,
+            maxSources: config.maxSources,
+            selected: capped.selected.length,
+            dropped: capped.dropped.length,
+            droppedUrls: capped.dropped.map((candidate) => candidate.uri),
+          });
+        }
+
+        const fetched = await fetchSelectedSources(ctx, capped.selected);
+        const sources = sectionSources(section.title, capped.selected, fetched.sourceByUrl);
+        const sourceTexts = new Map(
+          sources
+            .map((source) => [source.id, fetched.sourceTexts.get(source.id)] as const)
+            .filter((entry): entry is readonly [string, string] => typeof entry[1] === "string"),
+        );
+
+        const synthesizedSection = await synthesizeSection(ctx, section, sources, sourceTexts);
+
+        state.data[key] = {
+          synthesized: synthesizedSection,
+          sources,
+        };
+        saveStageExecutionState(ctx.project, ctx.stageId, state);
+
+        return synthesizedSection;
+      } catch (err) {
+        ctx.audit.record("error", {
+          clientId: ctx.project.clientId,
+          projectId: ctx.project.id,
+          stage: ctx.stageId,
+          error: `Research dimension ${section.title} failed: ${err instanceof Error ? err.message : String(err)}`,
+        });
+
+        return {
+          title: section.title,
+          summary: `Failed to compile research for this section due to an error.`,
+          claims: [],
+          risks: [`Research failed: ${err instanceof Error ? err.message : String(err)}`],
+        };
+      }
+    }),
   );
 
   const claims = synthesized.flatMap((section) => section.claims);
@@ -668,7 +719,7 @@ export async function runResearch(ctx: StageContext): Promise<Artifact[]> {
     ctx.audit.record("guardrail_block", {
       clientId: ctx.project.clientId,
       projectId: ctx.project.id,
-        stage: ctx.stageId,
+      stage: ctx.stageId,
       flags: outputCheck.flags,
       reason: outputCheck.reason,
       eval: evaluated.eval,
