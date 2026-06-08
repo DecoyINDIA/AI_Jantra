@@ -5,11 +5,13 @@ directories:
 files:
   - dist/**
   - package.json
+  - assets/**
   - ../dist/**
   - ../web/dist/**
 extraMetadata:
   main: dist/main.js
 win:
+  icon: assets/icon.png
   target:
     - nsis
 nsis:
