@@ -64,12 +64,14 @@ function webEntry(): string {
 }
 
 async function createMainWindow(api: ApiHandle): Promise<void> {
+  const iconPath = join(__dirname, "..", "assets", "icon.png");
   mainWindow = new BrowserWindow({
     width: 1240,
     height: 820,
     minWidth: 980,
     minHeight: 680,
     title: "Jantra",
+    icon: existsSync(iconPath) ? iconPath : undefined,
     webPreferences: {
       preload: join(__dirname, "preload.js"),
       contextIsolation: true,

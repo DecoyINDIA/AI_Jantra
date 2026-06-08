@@ -15,6 +15,7 @@ export default function App() {
     <div className="app-shell">
       <nav className="side-nav" aria-label="Main">
         <div className="brand">
+          <img src="/logo.png" alt="Jantra Logo" className="brand-logo" />
           <strong>Jantra</strong>
           <span>AI</span>
         </div>
