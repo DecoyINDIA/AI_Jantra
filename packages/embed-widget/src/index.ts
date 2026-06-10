@@ -315,7 +315,7 @@ export function mountJantraIntakeWidget(options: JantraIntakeOptions): JantraInt
         step.artifacts.find((a) => a.kind === "idea_summary") ?? step.artifacts[0];
       addMessage(
         "agent",
-        "Thanks, that's everything I need. I've written up a summary and our team will follow up.",
+        "I love where this landed. Here's your idea, written up the way I'll hand it to our team. They'll dig in and get back to you soon.",
       );
       if (summary) {
         renderSummary(summary);
