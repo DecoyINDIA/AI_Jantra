@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { AuditLogger } from "../../audit.js";
 import { config } from "../../config.js";
-import { resumeStageInteraction } from "../../pipeline/orchestrator.js";
+import { continueAutonomously, resumeStageInteraction, withRunLock } from "../../pipeline/orchestrator.js";
 import type { ProjectStore } from "../../pipeline/store.js";
 import { conflict, notFound } from "../errors.js";
 import { EFFECTIVE_PUBLIC_INPUT_MAX_CHARS, parseWith, runParamsSchema } from "../schemas.js";
@@ -48,48 +48,52 @@ export function registerInteractionRoutes(
     const clientId = requestClientId(request, deps.clientId);
     const params = parseWith(interactionParamsSchema, request.params);
     const body = parseWith(interactionBodySchema, request.body);
-    const project = deps.store.loadProject(clientId, params.runId);
-    if (!project) throw notFound(`Run ${params.runId} was not found.`);
-    assertProjectAccess(request.identity, project);
+    return withRunLock(params.runId, async () => {
+      const project = deps.store.loadProject(clientId, params.runId);
+      if (!project) throw notFound(`Run ${params.runId} was not found.`);
+      assertProjectAccess(request.identity, project);
 
-    // Guard against resubmitting an interaction that is no longer awaiting a
-    // response (double-submit, retry after the run advanced, or stale client
-    // state). Without this, resolvePendingInteraction throws a plain Error that
-    // surfaces as an opaque 500 internal_error.
-    const target = project.interactions.find(
-      (interaction) => interaction.id === params.interactionId,
-    );
-    if (!target) {
-      throw notFound(`Interaction ${params.interactionId} was not found.`);
-    }
-    if (target.status !== "pending") {
-      throw conflict(
-        "interaction_not_pending",
-        `Interaction ${params.interactionId} is no longer awaiting a response (status: ${target.status}).`,
-        { status: target.status },
+      // Guard against resubmitting an interaction that is no longer awaiting a
+      // response (double-submit, retry after the run advanced, or stale client
+      // state). Without this, resolvePendingInteraction throws a plain Error that
+      // surfaces as an opaque 500 internal_error.
+      const target = project.interactions.find(
+        (interaction) => interaction.id === params.interactionId,
       );
-    }
+      if (!target) {
+        throw notFound(`Interaction ${params.interactionId} was not found.`);
+      }
+      if (target.status !== "pending") {
+        throw conflict(
+          "interaction_not_pending",
+          `Interaction ${params.interactionId} is no longer awaiting a response (status: ${target.status}).`,
+          { status: target.status },
+        );
+      }
 
-    new AuditLogger(project.id, config.auditDir).record("interaction", {
-      clientId: project.clientId,
-      projectId: project.id,
-      stage: project.currentStage,
-      interactionId: params.interactionId,
-      textChars: body.text?.length ?? 0,
-      approved: body.approved,
-      subject: request.identity?.subject,
-    });
-    const step = await resumeStageInteraction(
-      project,
-      {
+      new AuditLogger(project.id, config.auditDir).record("interaction", {
+        clientId: project.clientId,
+        projectId: project.id,
+        stage: project.currentStage,
         interactionId: params.interactionId,
-        text: body.text,
+        textChars: body.text?.length ?? 0,
         approved: body.approved,
-      },
-      undefined,
-      deps.store,
-    );
-    deps.store.saveProject(project);
-    return { run: project, step };
+        subject: request.identity?.subject,
+      });
+      let step = await resumeStageInteraction(
+        project,
+        {
+          interactionId: params.interactionId,
+          text: body.text,
+          approved: body.approved,
+        },
+        undefined,
+        deps.store,
+      );
+      // If answering let an autonomous stage auto-confirm, keep driving.
+      step = (await continueAutonomously(project, undefined, deps.store)) ?? step;
+      deps.store.saveProject(project);
+      return { run: project, step };
+    });
   });
 }

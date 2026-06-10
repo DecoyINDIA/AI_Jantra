@@ -1,5 +1,3 @@
-import type { GeminiModelId } from "../config.js";
-
 export type ModelRole = "user" | "model";
 
 export type ModelContentPart =
@@ -76,8 +74,8 @@ export interface GenerateOptions {
 }
 
 export interface ModelResult {
-  provider: "gemini" | "mock";
-  modelId: GeminiModelId;
+  provider: "gemini" | "mock" | "openai-compatible";
+  modelId: string;
   text: string;
   message: ModelMessage;
   toolCalls: ToolCall[];
@@ -94,7 +92,7 @@ export interface ModelResult {
 }
 
 export interface ModelProvider {
-  readonly id: GeminiModelId;
+  readonly id: string;
   generate(opts: GenerateOptions): Promise<ModelResult>;
   dispose?(): Promise<void>;
 }

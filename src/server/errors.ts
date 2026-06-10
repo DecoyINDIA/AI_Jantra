@@ -1,6 +1,6 @@
 import type { FastifyReply } from "fastify";
 
-import { CostCeilingExceededError } from "../runtime/errors.js";
+import { CostCeilingExceededError, GateConflictError } from "../runtime/errors.js";
 
 export class HttpError extends Error {
   constructor(
@@ -32,6 +32,16 @@ export function conflict(code: string, message: string, details?: unknown): Http
 export function sendHttpError(reply: FastifyReply, err: unknown): void {
   if (err instanceof CostCeilingExceededError) {
     reply.status(429).send({
+      error: {
+        code: err.code,
+        message: err.message,
+        details: err.details,
+      },
+    });
+    return;
+  }
+  if (err instanceof GateConflictError) {
+    reply.status(409).send({
       error: {
         code: err.code,
         message: err.message,

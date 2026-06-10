@@ -29,6 +29,15 @@ export interface AgentDefinitionSummary {
   stageCount: number;
 }
 
+export interface ModelOption {
+  id: string;
+  label: string;
+  tier: "flash" | "pro";
+  provider: "gemini" | "openai-compatible";
+  supportsTools: boolean;
+  available: boolean;
+}
+
 export interface EvalScore {
   rubric: string;
   scores: Record<string, number>;
@@ -103,6 +112,8 @@ export interface RunDetail {
     activeStageOrder: string[];
     snapshotHash: string;
   };
+  modelId?: string;
+  autonomy?: "gated" | "auto";
   status: "active" | "completed" | "abandoned";
   currentStage: string;
   stages: Record<string, StageView>;
@@ -250,7 +261,14 @@ export async function adminFetch<T>(path: string, init: RequestInit = {}): Promi
 export const api = {
   listAgents: () => apiFetch<{ agents: AgentDefinitionSummary[] }>("/v1/agents"),
   getAgent: (agentId: string) => apiFetch<{ agent: AgentDefinitionView }>(`/v1/agents/${agentId}`),
-  createRun: (body: { agentId: string; title: string; input?: string }) =>
+  listModels: () => apiFetch<{ models: ModelOption[] }>("/v1/models"),
+  createRun: (body: {
+    agentId: string;
+    title: string;
+    input?: string;
+    modelId?: string;
+    autonomy?: "gated" | "auto";
+  }) =>
     apiFetch<{ run: RunDetail }>("/v1/runs", {
       method: "POST",
       body: JSON.stringify(body),

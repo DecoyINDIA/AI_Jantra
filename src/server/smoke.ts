@@ -48,6 +48,30 @@ const agents = await app.inject({
 assert(agents.statusCode === 200, "Agent catalog failed.");
 assert(agents.json().agents.length >= 2, "Agent catalog did not include registered agents.");
 
+const modelsResp = await app.inject({
+  method: "GET",
+  url: "/v1/models",
+  headers: auth,
+});
+assert(modelsResp.statusCode === 200, "Model catalog failed.");
+const modelList = modelsResp.json().models as Array<{ id: string; available: boolean }>;
+assert(
+  modelList.some((model) => model.id === "gemini-2.5-flash"),
+  "Model catalog did not include gemini-2.5-flash.",
+);
+
+const badModel = await app.inject({
+  method: "POST",
+  url: "/v1/runs",
+  headers: { ...auth, "content-type": "application/json" },
+  payload: {
+    agentId: "planning-pipeline",
+    title: "Bad model run",
+    modelId: "not-a-real-model",
+  },
+});
+assert(badModel.statusCode === 400, `Invalid modelId was not rejected: ${badModel.body}`);
+
 const created = await app.inject({
   method: "POST",
   url: "/v1/runs",
@@ -55,9 +79,14 @@ const created = await app.inject({
   payload: {
     agentId: "planning-pipeline",
     title: "Smoke API run",
+    modelId: "gemini-2.5-pro",
   },
 });
 assert(created.statusCode === 200, `Run create failed: ${created.body}`);
+assert(
+  created.json().run.modelId === "gemini-2.5-pro",
+  "Run did not persist the selected modelId.",
+);
 const runId = created.json().run.id as string;
 
 const listed = await app.inject({

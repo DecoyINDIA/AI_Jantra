@@ -4,7 +4,11 @@ import { config } from "../../config.js";
 import type { GroundingCitation } from "../../model/provider.js";
 import { runArtifactOutputChecks } from "../../policy.js";
 import { makeEvalScore, runEvaluatorLoop, type Critique } from "../../runtime/evaluator.js";
-import { SchemaValidationError, StageFailedClosedError } from "../../runtime/errors.js";
+import {
+  CostCeilingExceededError,
+  SchemaValidationError,
+  StageFailedClosedError,
+} from "../../runtime/errors.js";
 import {
   createStageExecutionState,
   loadStageExecutionState,
@@ -12,6 +16,7 @@ import {
 } from "../executionState.js";
 import { trackStageModelCall } from "../../runtime/telemetry.js";
 import { sourceAppendix, verifyClaims } from "../research/citationVerifier.js";
+import { mapWithConcurrency } from "../research/concurrency.js";
 import { researchRubric } from "../research/rubric.js";
 import {
   founderAnchorSchema,
@@ -149,6 +154,17 @@ function sectionDigest(sections: SynthesizedSection[]): string {
     .join("\n\n");
 }
 
+/**
+ * When the stage is being re-run after a human rejection, surface the
+ * reviewer's reason in the generation prompts so the rerun steers toward the
+ * concern instead of reproducing the same report.
+ */
+function reviewerFeedbackBlock(ctx: StageContext): string {
+  return ctx.rejectionReason
+    ? `\n\nReviewer feedback from the previous attempt (address this directly):\n${ctx.rejectionReason}`
+    : "";
+}
+
 function latestIdeaSummary(ctx: StageContext): Artifact {
   const artifact = Object.values(ctx.project.stages)
     .flatMap((stage) => stage.artifacts)
@@ -199,7 +215,7 @@ ${CONCISION_DIRECTIVE}`,
         role: "user",
         content: `Idea summary:\n${idea.content}\n\nFounder anchors:\n${anchorLegend(
           anchors,
-        )}\n\nFixed sections to plan queries for:\n${sectionBrief}`,
+        )}\n\nFixed sections to plan queries for:\n${sectionBrief}${reviewerFeedbackBlock(ctx)}`,
       },
     ],
     responseJsonSchema: z.toJSONSchema(researchPlanSchema),
@@ -209,28 +225,6 @@ ${CONCISION_DIRECTIVE}`,
   });
   trackStageModelCall(ctx.audit, ctx.project, ctx.stageId, "planner", result);
   return parseJson(researchPlanSchema, result.text, "Research plan");
-}
-
-async function mapWithConcurrency<T, R>(
-  values: T[],
-  concurrency: number,
-  run: (value: T) => Promise<R>,
-): Promise<R[]> {
-  const results: R[] = [];
-  let next = 0;
-  async function worker(): Promise<void> {
-    while (next < values.length) {
-      const index = next++;
-      const value = values[index];
-      if (value !== undefined) {
-        results[index] = await run(value);
-      }
-    }
-  }
-  await Promise.all(
-    Array.from({ length: Math.min(concurrency, values.length) }, () => worker()),
-  );
-  return results;
 }
 
 async function groundedSearch(
@@ -288,6 +282,8 @@ async function fetchSelectedSources(
         });
       }
     } catch (err) {
+      // Never swallow a budget error into a skipped source; let it abort the run.
+      if (err instanceof CostCeilingExceededError) throw err;
       ctx.audit.record("citation_rejected", {
         clientId: ctx.project.clientId,
         projectId: ctx.project.id,
@@ -344,7 +340,7 @@ ${CONCISION_DIRECTIVE}`,
     messages: [
       {
         role: "user",
-        content: `Section: ${section.title}\nQuestion: ${section.question}\nHow to approach this section: ${section.guidance}\n\nRegistered source excerpts:\n${sourceMaterial}`,
+        content: `Section: ${section.title}\nQuestion: ${section.question}\nHow to approach this section: ${section.guidance}\n\nRegistered source excerpts:\n${sourceMaterial}${reviewerFeedbackBlock(ctx)}`,
       },
     ],
     responseJsonSchema: z.toJSONSchema(sectionClaimsSchema),
@@ -515,8 +511,16 @@ async function critiqueReport(
   report: string,
   claims: Claim[],
 ): Promise<Critique<string>> {
+  // The report only presents quote-checked, verified claims under "Verified
+  // claims"; anything unverified is clearly labeled under "Unverified leads".
+  // So the deterministic citation-accuracy ceiling should reflect whether the
+  // *presented* claims are citation-backed, not whether every raw extracted
+  // claim survived verification. The old all-or-nothing rule meant a single
+  // unverified (or skeptic-refuted) claim capped the score at 2 forever and
+  // guaranteed a StageFailedClosedError; this makes unverified leads survivable.
+  const verifiedCount = claims.filter((claim) => claim.verified).length;
   const deterministic = {
-    citationAccuracy: claims.every((claim) => claim.verified) && claims.length > 0 ? 5 : 2,
+    citationAccuracy: verifiedCount > 0 ? 5 : 2,
   };
   const result = await ctx.provider.generate({
     purpose: "critic",
@@ -669,6 +673,10 @@ export async function runResearch(ctx: StageContext): Promise<Artifact[]> {
 
         return synthesizedSection;
       } catch (err) {
+        // Budget exhaustion must fail the whole stage closed — otherwise the
+        // remaining parallel branches keep spending until each independently
+        // trips the ceiling. Fail-open is only for ordinary section errors.
+        if (err instanceof CostCeilingExceededError) throw err;
         ctx.audit.record("error", {
           clientId: ctx.project.clientId,
           projectId: ctx.project.id,

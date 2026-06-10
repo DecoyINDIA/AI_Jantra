@@ -38,3 +38,15 @@ export class StageFailedClosedError extends JantraError {
     super(message, "stage_failed_closed", details);
   }
 }
+
+/**
+ * Raised when a gate transition is requested against a stage whose status does
+ * not permit it (e.g. confirming a stage that never reached the gate, or
+ * advancing a stage that is already awaiting confirmation). Maps to HTTP 409 so
+ * the human gate is enforced server-side, not just in the UI.
+ */
+export class GateConflictError extends JantraError {
+  constructor(message: string, details: Record<string, unknown> = {}) {
+    super(message, "gate_conflict", details);
+  }
+}
