@@ -45,10 +45,14 @@ function boundedIntegerFromEnv(
   return Math.min(max, Math.max(min, value));
 }
 
-function providerFromEnv(): "gemini" | "mock" {
+export type ProviderId = "gemini" | "mock" | "openai-compatible";
+
+function providerFromEnv(): ProviderId {
   const raw = process.env.JANTRA_PROVIDER ?? "gemini";
-  if (raw === "gemini" || raw === "mock") return raw;
-  throw new Error(`JANTRA_PROVIDER must be "gemini" or "mock". Received "${raw}".`);
+  if (raw === "gemini" || raw === "mock" || raw === "openai-compatible") return raw;
+  throw new Error(
+    `JANTRA_PROVIDER must be "gemini", "mock", or "openai-compatible". Received "${raw}".`,
+  );
 }
 
 function booleanFromEnv(name: string, fallback: boolean): boolean {
@@ -62,6 +66,14 @@ function booleanFromEnv(name: string, fallback: boolean): boolean {
 export const config = {
   provider: providerFromEnv(),
   geminiApiKey: process.env.GEMINI_API_KEY ?? "",
+  // OpenAI-compatible provider (OpenRouter by default). Used when
+  // JANTRA_PROVIDER=openai-compatible. Switch models with JANTRA_MODEL alone.
+  baseUrl: (process.env.JANTRA_BASE_URL ?? "https://openrouter.ai/api/v1").replace(/\/+$/, ""),
+  llmApiKey: process.env.JANTRA_API_KEY ?? "",
+  llmModelFlash: process.env.JANTRA_MODEL ?? "",
+  llmModelPro: process.env.JANTRA_MODEL_PRO ?? process.env.JANTRA_MODEL ?? "",
+  llmPriceInputPerMillion: numberFromEnv("JANTRA_PRICE_INPUT", 0),
+  llmPriceOutputPerMillion: numberFromEnv("JANTRA_PRICE_OUTPUT", 0),
   mockFixturePath:
     process.env.JANTRA_MOCK_FIXTURE ?? "src/runtime/evals/fixtures/transcript.json",
   explicitCache: booleanFromEnv("JANTRA_EXPLICIT_CACHE", true),
@@ -85,7 +97,40 @@ export const config = {
 };
 
 export function requireApiKey(): void {
-  if (config.provider !== "mock" && !config.geminiApiKey) {
+  if (config.provider === "mock") return;
+  if (config.provider === "openai-compatible") {
+    if (!config.llmApiKey) {
+      throw new Error(
+        "JANTRA_API_KEY is not set. Required when JANTRA_PROVIDER=openai-compatible.",
+      );
+    }
+    if (!config.llmModelFlash) {
+      throw new Error(
+        "JANTRA_MODEL is not set. Required when JANTRA_PROVIDER=openai-compatible.",
+      );
+    }
+    // Grounded research calls still run on Gemini (hybrid). Warn but do not block;
+    // the GeminiProvider will raise a clear error if a grounded call is attempted.
+    if (!config.geminiApiKey) {
+      console.warn(
+        "[jantra] GEMINI_API_KEY is not set; grounded research will fail until it is provided.",
+      );
+    }
+    // Cost ceilings depend on per-call cost. When no static pricing is set we
+    // rely on the endpoint returning usage.cost (OpenRouter does with accounting
+    // on). If it does not, every call would cost $0.00 and every ceiling (run,
+    // intake, daily) becomes a silent no-op. Warn loudly so this is not missed.
+    if (
+      config.llmPriceInputPerMillion === 0 &&
+      config.llmPriceOutputPerMillion === 0
+    ) {
+      console.warn(
+        "[jantra] JANTRA_PRICE_INPUT/JANTRA_PRICE_OUTPUT are both 0. Cost ceilings will only work if the endpoint returns per-call usage.cost; otherwise calls will be billed at $0.00 and ceilings will not trigger. Set explicit per-million pricing to be safe.",
+      );
+    }
+    return;
+  }
+  if (!config.geminiApiKey) {
     throw new Error(
       "GEMINI_API_KEY is not set. Copy .env.example to .env and add your key.",
     );

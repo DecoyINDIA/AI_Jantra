@@ -55,6 +55,27 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Best-effort HTTP status extraction from a GoogleGenAI error. The SDK surfaces
+ * either a numeric `.status`/`.code` or embeds the code in the message.
+ */
+function errorStatus(err: unknown): number | undefined {
+  const candidate = err as { status?: unknown; code?: unknown; message?: unknown };
+  for (const value of [candidate?.status, candidate?.code]) {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+  }
+  const message = typeof candidate?.message === "string" ? candidate.message : "";
+  const match = message.match(/\b(4\d\d|5\d\d)\b/);
+  return match ? Number(match[1]) : undefined;
+}
+
+/** 4xx other than 429 (rate limit) will not succeed on retry. */
+function isRetryableStatus(status: number | undefined): boolean {
+  if (status === undefined) return true; // unknown (e.g. network) → retry
+  if (status === 429) return true;
+  return status < 400 || status >= 500;
+}
+
 function assertSupportedCombination(opts: GenerateOptions): void {
   const hasTools = (opts.tools?.length ?? 0) > 0;
   if (opts.responseJsonSchema && (hasTools || opts.grounding)) {
@@ -458,6 +479,9 @@ export class GeminiProvider implements ModelProvider {
         break;
       } catch (err) {
         lastError = err;
+        // Do not waste retries (and latency) on non-retryable client errors such
+        // as 400/401/403/404; only retry rate limits, 5xx, and network failures.
+        if (!isRetryableStatus(errorStatus(err))) break;
         if (attempt < 3) await sleep(250 * attempt);
       }
     }

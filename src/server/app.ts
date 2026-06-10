@@ -1,8 +1,10 @@
 import fastify, { type FastifyInstance } from "fastify";
 
 import { setAuditPublisher } from "../audit.js";
+import { setGatePublisher } from "../runtime/gateEvents.js";
 import { defaultAgentRegistry, type AgentRegistry } from "../agents/registry.js";
 import { defaultStore, type ApiKeyStore, type ProjectStore } from "../pipeline/store.js";
+import { dispatchGateEvent } from "./webhooks/dispatcher.js";
 import { installApiKeyAuth, parseApiKeyRecords, type ApiKeyRecord } from "./auth/apiKeys.js";
 import { runEventBus } from "./events.js";
 import { sendHttpError } from "./errors.js";
@@ -13,7 +15,9 @@ import { registerArtifactRoutes } from "./routes/artifacts.js";
 import { registerAuditRoutes } from "./routes/audit.js";
 import { registerEventRoutes } from "./routes/events.js";
 import { registerInteractionRoutes } from "./routes/interactions.js";
+import { registerModelRoutes } from "./routes/models.js";
 import { registerRunRoutes } from "./routes/runs.js";
+import { registerWebhookRoutes } from "./routes/webhooks.js";
 
 export interface CreateServerOptions {
   loopbackToken: string;
@@ -69,6 +73,9 @@ export function createServer(options: CreateServerOptions): FastifyInstance {
   }
 
   setAuditPublisher((entry) => runEventBus.publishAuditEntry(entry));
+  // Fan human-gate transitions (awaiting_confirmation / awaiting_input) out to
+  // registered webhooks so operators learn a run is waiting without the UI open.
+  setGatePublisher((event) => dispatchGateEvent(event));
 
   if (options.adminToken) {
     if (!apiKeyStore) {
@@ -78,11 +85,13 @@ export function createServer(options: CreateServerOptions): FastifyInstance {
   }
 
   registerAgentRoutes(app, registry);
+  registerModelRoutes(app);
   registerRunRoutes(app, { clientId, registry, store });
   registerInteractionRoutes(app, { clientId, store });
   registerArtifactRoutes(app, { clientId, store });
   registerAuditRoutes(app, { clientId, store });
   registerEventRoutes(app, { clientId, store });
+  registerWebhookRoutes(app, { clientId });
 
   app.setErrorHandler((err, _request, reply) => {
     sendHttpError(reply, err);
@@ -90,6 +99,7 @@ export function createServer(options: CreateServerOptions): FastifyInstance {
 
   app.addHook("onClose", async () => {
     setAuditPublisher(null);
+    setGatePublisher(null);
   });
 
   return app;

@@ -22,6 +22,16 @@ const PLANNING_REFINE_OUTPUT_TOKENS = 7000;
 const CONCISION_DIRECTIVE =
   "Be specific and concise. No filler, no preamble, do not restate the prompt. Prefer structured bullets over prose. Every sentence must add information.";
 
+/**
+ * Surface a human rejection reason in the generation prompts when the stage is
+ * being re-run after rejection, so the rerun steers toward the concern.
+ */
+function reviewerFeedbackBlock(ctx: StageContext): string {
+  return ctx.rejectionReason
+    ? `\n\nReviewer feedback from the previous attempt (address this directly):\n${ctx.rejectionReason}`
+    : "";
+}
+
 function latestArtifact(ctx: StageContext, kind: ArtifactKind): Artifact {
   const artifact = Object.values(ctx.project.stages)
     .flatMap((stage) => stage.artifacts)
@@ -119,7 +129,12 @@ async function generateDocument(
     system: `You are the Planning generator. Produce a build-ready planning document that is grounded in the provided research. Return only JSON.
 ${CONCISION_DIRECTIVE}`,
     messages: [
-      { role: "user", content: documentPrompt(kind, idea, research, prior, prdRequirements, framing) },
+      {
+        role: "user",
+        content:
+          documentPrompt(kind, idea, research, prior, prdRequirements, framing) +
+          reviewerFeedbackBlock(ctx),
+      },
     ],
     responseJsonSchema: z.toJSONSchema(planningDocumentSchema),
     thinking: true,
@@ -388,31 +403,87 @@ async function buildDocument(
     }
   }
 
-  // If the winning variant did not pass the rubric, fail the stage closed
+  // Losers are the two framings that did not win the tournament. Capture this
+  // against the original top variant before any refine reassignment below.
+  const topVariant = winner;
+  const losers = variants.filter((v) => v !== topVariant);
+
+  // If no variant passed the rubric, give the best one a single refine round
+  // before failing closed. The tournament dropped the refine loop the
+  // single-variant path used to have; a near-miss winner should still get its
+  // one corrective pass rather than failing the stage outright.
   if (!winner.critique.eval.passed) {
-    throw new StageFailedClosedError("Draft failed its rubric within the stage budget.", {
-      projectId: ctx.project.id,
+    const refined = await refineDocument(
+      ctx,
+      kind,
+      winner.doc,
+      winner.critique,
+      idea,
+      research,
+      prior,
+      prdRequirements,
+    );
+    const refinedCritique = await critiqueDocument(ctx, kind, refined);
+    ctx.audit.record("eval_score", {
       clientId: ctx.project.clientId,
+      projectId: ctx.project.id,
       stage: ctx.stageId,
-      rubric: planningRubric.id,
-      lastEval: winner.critique.eval,
+      rubric: refinedCritique.eval.rubric,
+      scores: refinedCritique.eval.scores,
+      passed: refinedCritique.eval.passed,
+      notes: `[Framing: ${winner.framing}, refined] ${refinedCritique.eval.notes}`,
     });
+    ctx.project.stages[ctx.stageId]?.evals.push(refinedCritique.eval);
+    if (!refinedCritique.eval.passed) {
+      throw new StageFailedClosedError("Draft failed its rubric within the stage budget.", {
+        projectId: ctx.project.id,
+        clientId: ctx.project.clientId,
+        stage: ctx.stageId,
+        rubric: planningRubric.id,
+        lastEval: refinedCritique.eval,
+      });
+    }
+    winner = { framing: winner.framing, doc: refined, critique: refinedCritique };
+    winnerScore = getAverageScore(refinedCritique.eval);
   }
 
-  // 4. Run final synthesis step
-  const winningVariant = winner;
-  const losers = variants.filter((v) => v !== winningVariant);
+  // 4. Run final synthesis step, then re-validate it. Synthesis grafts elements
+  // from the losing variants and can introduce regressions the per-variant
+  // critique never saw. Critique the synthesized doc; if it fails or scores
+  // worse than the winner, fall back to the (validated) winning document.
   const synthesizedDoc = await synthesizeWinningDocument(
     ctx,
     kind,
     idea,
     research,
-    winningVariant,
+    winner,
     losers,
     prdRequirements,
   );
+  const synthesizedCritique = await critiqueDocument(ctx, kind, synthesizedDoc);
+  ctx.audit.record("eval_score", {
+    clientId: ctx.project.clientId,
+    projectId: ctx.project.id,
+    stage: ctx.stageId,
+    rubric: synthesizedCritique.eval.rubric,
+    scores: synthesizedCritique.eval.scores,
+    passed: synthesizedCritique.eval.passed,
+    notes: `[Synthesis] ${synthesizedCritique.eval.notes}`,
+  });
+  ctx.project.stages[ctx.stageId]?.evals.push(synthesizedCritique.eval);
 
-  return { doc: synthesizedDoc, eval: winningVariant.critique.eval };
+  if (!synthesizedCritique.eval.passed || getAverageScore(synthesizedCritique.eval) < winnerScore) {
+    ctx.audit.record("guardrail_block", {
+      clientId: ctx.project.clientId,
+      projectId: ctx.project.id,
+      stage: ctx.stageId,
+      flags: ["synthesis_regression"],
+      reason: "Synthesized document scored worse than the winning variant; using the winner.",
+    });
+    return { doc: winner.doc, eval: winner.critique.eval };
+  }
+
+  return { doc: synthesizedDoc, eval: synthesizedCritique.eval };
 }
 
 export async function runPlanning(ctx: StageContext): Promise<Artifact[]> {

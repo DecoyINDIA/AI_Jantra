@@ -89,6 +89,16 @@ export interface Project {
   agentId: string;
   agentVersion: number;
   agentDefinitionSnapshot: AgentDefinitionSnapshot;
+  /** Optional run-level model pin (catalog id) chosen in the UI. */
+  modelId?: string;
+  /**
+   * Run-level autonomy policy chosen at creation time.
+   * - "gated" (default): every human-gated stage stops for confirmation.
+   * - "auto": human gates may be auto-confirmed, but only when the stage's eval
+   *   passed and the run is under its cost ceiling (conditional autonomy). Any
+   *   stage that fails those guardrails downgrades back to a human gate.
+   */
+  autonomy?: "gated" | "auto";
   status: "active" | "completed" | "abandoned";
   currentStage: StageId;
   stages: Record<string, StageState>;
@@ -175,6 +185,12 @@ export interface StageContext {
   provider: ModelProvider;
   io: StageIO;
   store: ProjectStore;
+  /**
+   * When the current stage is being re-run after a human rejection, this holds
+   * the reviewer's reason so the runner can steer the regeneration instead of
+   * reproducing the same artifact. Cleared once the rerun starts.
+   */
+  rejectionReason?: string;
 }
 
 export type StageRunner = (ctx: StageContext) => Promise<Artifact[]>;

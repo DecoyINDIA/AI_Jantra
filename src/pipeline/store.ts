@@ -3,6 +3,7 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  renameSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
@@ -60,6 +61,21 @@ export interface ApiKeyStore {
   revokeApiKey(id: string, revokedAt: string): ApiKeyMetadata | null;
   touchApiKeyLastUsed(id: string, usedAt: string): void;
 }
+
+/**
+ * Atomic file write: write to a unique temp file in the same directory, then
+ * rename over the target. rename(2) is atomic on the same filesystem, so a
+ * crash mid-write leaves either the old file or the new one — never a truncated
+ * or partially-written file. (Plain writeFileSync can corrupt a project file if
+ * the process dies mid-write.)
+ */
+function atomicWriteFileSync(path: string, data: string): void {
+  const tmp = `${path}.${process.pid}.${atomicSeq++}.tmp`;
+  writeFileSync(tmp, data, "utf8");
+  renameSync(tmp, path);
+}
+
+let atomicSeq = 0;
 
 function clientDir(clientId: string): string {
   return join(config.projectDir, clientId);
@@ -197,10 +213,9 @@ export function pageProjects(projects: Project[], query: ProjectListQuery): Proj
 export class JsonProjectStore implements ProjectStore {
   saveProject(project: Project): void {
     mkdirSync(clientDir(project.clientId), { recursive: true });
-    writeFileSync(
+    atomicWriteFileSync(
       projectFile(project.clientId, project.id),
       JSON.stringify(normalizeProject(project), null, 2),
-      "utf8",
     );
   }
 
@@ -229,7 +244,7 @@ export class JsonProjectStore implements ProjectStore {
     // the public service moves fully to a transactional database.
     const spend = readSpend(clientId);
     spend[dayUtc] = (spend[dayUtc] ?? 0) + deltaUsd;
-    writeFileSync(spendFile(clientId), JSON.stringify(spend, null, 2), "utf8");
+    atomicWriteFileSync(spendFile(clientId), JSON.stringify(spend, null, 2));
   }
 
   writeArtifactFile(clientId: string, projectId: string, artifact: Artifact): string {

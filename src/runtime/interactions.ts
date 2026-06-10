@@ -65,6 +65,25 @@ export function pendingInteraction(
   );
 }
 
+/**
+ * Cancel any still-pending interactions, optionally limited to one stage. Used
+ * when a stage fails or is rejected with a question outstanding so the run does
+ * not keep surfacing a prompt that can never be answered. Returns the ids that
+ * were cancelled.
+ */
+export function cancelPendingInteractions(project: Project, stageId?: string): string[] {
+  const cancelled: string[] = [];
+  const now = new Date().toISOString();
+  for (const interaction of project.interactions) {
+    if (interaction.status !== "pending") continue;
+    if (stageId && interaction.stageId !== stageId) continue;
+    interaction.status = "cancelled";
+    interaction.answeredAt = now;
+    cancelled.push(interaction.id);
+  }
+  return cancelled;
+}
+
 export function resolvePendingInteraction(
   project: Project,
   response: InteractionResponse,

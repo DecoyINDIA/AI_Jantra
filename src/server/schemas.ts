@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { config } from "../config.js";
+import { resolveCatalog } from "../model/catalog.js";
 import { HttpError } from "./errors.js";
 
 export const RUN_ID_MAX_CHARS = 96;
@@ -29,10 +30,24 @@ export const artifactParamsSchema = runParamsSchema.extend({
   artifactId: z.string().min(1).max(160),
 });
 
+export const MODEL_ID_MAX_CHARS = 96;
+
 export const createRunBodySchema = z.object({
   agentId: z.string().min(1).max(AGENT_ID_MAX_CHARS).default("planning-pipeline"),
   title: z.string().min(1).max(RUN_TITLE_MAX_CHARS).default("Untitled run"),
   input: z.string().max(EFFECTIVE_PUBLIC_INPUT_MAX_CHARS).optional(),
+  // Optional run-level model pin, validated against the server-side catalog.
+  // Omitted → the env-configured default model is used.
+  modelId: z
+    .string()
+    .max(MODEL_ID_MAX_CHARS)
+    .refine((id) => Boolean(resolveCatalog(id)), {
+      message: "modelId is not in the model catalog.",
+    })
+    .optional(),
+  // Run-level autonomy policy. "gated" (default) stops at every human gate;
+  // "auto" auto-confirms gates that pass their eval and cost guardrails.
+  autonomy: z.enum(["gated", "auto"]).optional(),
 });
 
 export const listRunsQuerySchema = z.object({

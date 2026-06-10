@@ -3,7 +3,14 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { AuditLogger } from "../../audit.js";
 import { config } from "../../config.js";
 import type { AgentRegistry } from "../../agents/registry.js";
-import { advanceStage, confirmStage, createProject, rejectStage } from "../../pipeline/orchestrator.js";
+import {
+  advanceUntilGate,
+  confirmStage,
+  continueAutonomously,
+  createProject,
+  rejectStage,
+  withRunLock,
+} from "../../pipeline/orchestrator.js";
 import type { ProjectStore } from "../../pipeline/store.js";
 import {
   auditClientDailyIdeationBudgetExceeded,
@@ -64,6 +71,8 @@ export function registerRunRoutes(app: FastifyInstance, deps: RunRouteDeps): voi
       clientId,
       title: body.title,
       definition,
+      modelId: body.modelId,
+      autonomy: body.autonomy,
     });
     const audit = new AuditLogger(project.id, config.auditDir);
     audit.record("run_created", {
@@ -71,18 +80,31 @@ export function registerRunRoutes(app: FastifyInstance, deps: RunRouteDeps): voi
       projectId: project.id,
       agentId: project.agentId,
       agentVersion: project.agentVersion,
+      modelId: project.modelId ?? null,
+      autonomy: project.autonomy ?? "gated",
       titleChars: body.title.length,
       initialInputChars: body.input?.length ?? 0,
     });
     deps.store.saveProject(project);
     if (body.input) {
-      project.stages[project.currentStage]?.artifacts.push({
+      const artifact = {
         stage: project.currentStage,
         kind: "initial_input",
         title: "Initial input",
         content: body.input,
         version: 1,
         createdAt: new Date().toISOString(),
+      };
+      project.stages[project.currentStage]?.artifacts.push(artifact);
+      // Persist the artifact to disk and record it, like every other artifact —
+      // otherwise the initial input is the only one with no file or audit trail.
+      const path = deps.store.writeArtifactFile(project.clientId, project.id, artifact);
+      audit.record("agent_message", {
+        clientId: project.clientId,
+        projectId: project.id,
+        stage: project.currentStage,
+        artifactKind: artifact.kind,
+        artifactPath: path,
       });
       deps.store.saveProject(project);
     }
@@ -111,36 +133,47 @@ export function registerRunRoutes(app: FastifyInstance, deps: RunRouteDeps): voi
   app.post("/v1/runs/:runId/advance", async (request) => {
     const clientId = requestClientId(request, deps.clientId);
     const params = parseWith(runParamsSchema, request.params);
-    const project = loadScopedProject(request, deps.store, clientId, params.runId);
-    const step = await advanceStage(project, undefined, deps.store);
-    deps.store.saveProject(project);
-    return { run: project, step };
+    // Serialize per-run: load, drive, and save inside the lock so concurrent
+    // /advance calls cannot each run the stage on a stale copy and clobber.
+    return withRunLock(params.runId, async () => {
+      const project = loadScopedProject(request, deps.store, clientId, params.runId);
+      const step = await advanceUntilGate(project, undefined, deps.store);
+      deps.store.saveProject(project);
+      return { run: project, step };
+    });
   });
 
   app.post("/v1/runs/:runId/confirm", async (request) => {
     const clientId = requestClientId(request, deps.clientId);
     const params = parseWith(runParamsSchema, request.params);
-    const project = loadScopedProject(request, deps.store, clientId, params.runId);
-    const nextStage = confirmStage(project);
-    deps.store.saveProject(project);
-    return { run: project, nextStage };
+    return withRunLock(params.runId, async () => {
+      const project = loadScopedProject(request, deps.store, clientId, params.runId);
+      const nextStage = confirmStage(project, deps.store);
+      // For an autonomous run whose gate was downgraded to human, resume driving
+      // the remaining stages once the human has confirmed.
+      const step = await continueAutonomously(project, undefined, deps.store);
+      deps.store.saveProject(project);
+      return { run: project, nextStage, step };
+    });
   });
 
   app.post("/v1/runs/:runId/reject", async (request) => {
     const clientId = requestClientId(request, deps.clientId);
     const params = parseWith(runParamsSchema, request.params);
     const body = parseWith(rejectRunBodySchema, request.body);
-    const project = loadScopedProject(request, deps.store, clientId, params.runId);
-    rejectStage(project, body.reason);
-    const audit = new AuditLogger(project.id, config.auditDir);
-    audit.record("stage_gate", {
-      clientId: project.clientId,
-      projectId: project.id,
-      stage: project.currentStage,
-      status: "rejected",
-      reason: body.reason,
+    return withRunLock(params.runId, async () => {
+      const project = loadScopedProject(request, deps.store, clientId, params.runId);
+      rejectStage(project, body.reason, deps.store);
+      const audit = new AuditLogger(project.id, config.auditDir);
+      audit.record("stage_gate", {
+        clientId: project.clientId,
+        projectId: project.id,
+        stage: project.currentStage,
+        status: "rejected",
+        reason: body.reason,
+      });
+      deps.store.saveProject(project);
+      return { run: project };
     });
-    deps.store.saveProject(project);
-    return { run: project };
   });
 }

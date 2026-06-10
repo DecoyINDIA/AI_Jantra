@@ -2,8 +2,41 @@ import { z } from "zod";
 import { config } from "../../config.js";
 import type { AuditLogger } from "../../audit.js";
 import { createProviderForStage } from "../../model/index.js";
+import { CostCeilingExceededError } from "../../runtime/errors.js";
 import { trackStageModelCall } from "../../runtime/telemetry.js";
+import { mapWithConcurrency } from "./concurrency.js";
 import type { Claim, Project, Source, StageContext } from "../types.js";
+
+/** Characters of source text to show on each side of a cited quote. */
+const SKEPTIC_EXCERPT_RADIUS = 400;
+
+/**
+ * Build the source-text window around each cited quote so the skeptic can judge
+ * the claim against its actual context — catching quotes used out of context,
+ * not just claim-vs-quote mismatch.
+ */
+function citationExcerpts(claim: Claim, sourceTexts: Map<string, string>): string {
+  return claim.citations
+    .map((citation) => {
+      const source = sourceTexts.get(citation.sourceId) ?? "";
+      let excerpt = "";
+      if (source) {
+        const needle = citation.quote.trim().slice(0, 80).toLowerCase();
+        const idx = needle ? source.toLowerCase().indexOf(needle) : -1;
+        if (idx >= 0) {
+          const start = Math.max(0, idx - SKEPTIC_EXCERPT_RADIUS);
+          const end = Math.min(source.length, idx + citation.quote.length + SKEPTIC_EXCERPT_RADIUS);
+          excerpt = source.slice(start, end);
+        } else {
+          excerpt = source.slice(0, SKEPTIC_EXCERPT_RADIUS * 2);
+        }
+      }
+      return `Source [${citation.sourceId}] cited quote: "${citation.quote}"\nSurrounding source text:\n${
+        excerpt || "(source text unavailable)"
+      }`;
+    })
+    .join("\n\n");
+}
 
 export type CitationRejectionReason =
   | "unknown_source"
@@ -27,7 +60,12 @@ async function runSkepticCall(
   if (config.provider === "mock") {
     return { refuted: false };
   }
-  const skepticProvider = createProviderForStage(ctx.stageId, "flash", ctx.project.agentId);
+  const skepticProvider = createProviderForStage(
+    ctx.stageId,
+    "flash",
+    ctx.project.agentId,
+    ctx.project.modelId,
+  );
 
   const citationsInfo = claim.citations
     .map((citation) => {
@@ -36,8 +74,8 @@ async function runSkepticCall(
     .join("\n\n");
 
   const systemPrompt = `You are a skeptic researcher. Your task is to critique a market claim and its supporting citations to find any contradiction, misrepresentation, or unsupported extrapolation.
-Determine if the claim is refuted based on the cited quote.
-If the claim goes beyond what is explicitly supported by the quote, or contradicts it, set refuted to true and provide the reason. If the claim is fully supported by the quote, set refuted to false.
+Determine if the claim is refuted based on the cited quote and the surrounding source text provided.
+If the claim goes beyond what is explicitly supported by the quote, takes the quote out of context, or contradicts the source, set refuted to true and provide the reason. If the claim is fully supported, set refuted to false.
 Return only JSON.
 Be specific and concise. No filler, no preamble, do not restate the prompt.`;
 
@@ -48,7 +86,10 @@ Be specific and concise. No filler, no preamble, do not restate the prompt.`;
       messages: [
         {
           role: "user",
-          content: `Claim: "${claim.text}"\n\nCitations:\n${citationsInfo}`,
+          content: `Claim: "${claim.text}"\n\nCitations:\n${citationsInfo}\n\nEvidence excerpts:\n${citationExcerpts(
+            claim,
+            sourceTexts,
+          )}`,
         },
       ],
       responseJsonSchema: z.toJSONSchema(skepticSchema),
@@ -62,26 +103,35 @@ Be specific and concise. No filler, no preamble, do not restate the prompt.`;
     let parsed: unknown;
     try {
       parsed = JSON.parse(result.text);
-    } catch (err) {
-      return { refuted: true, reason: "Skeptic response was not valid JSON." };
+    } catch {
+      // A malformed skeptic response is a tooling failure, not evidence the
+      // claim is false — keep the deterministic verification (fail-open).
+      return { refuted: false, reason: "skeptic_unavailable: response was not valid JSON." };
     }
 
     const validated = skepticSchema.safeParse(parsed);
     if (!validated.success) {
-      return { refuted: true, reason: "Skeptic response failed schema validation." };
+      return { refuted: false, reason: "skeptic_unavailable: response failed schema validation." };
     }
 
     return validated.data;
   } catch (err) {
+    // Budget exhaustion must abort the whole stage, not silently pass the claim.
+    if (err instanceof CostCeilingExceededError) throw err;
+    // Transient provider errors (429s, timeouts) are not refutations. Treating
+    // them as refutations turned a single rate-limited call into a failed stage.
+    // Fall open: keep the deterministic verification and record the gap.
     ctx.audit.record("error", {
       clientId: ctx.project.clientId,
       projectId: ctx.project.id,
       stage: ctx.stageId,
-      error: `Skeptic call failed: ${err instanceof Error ? err.message : String(err)}`,
+      error: `Skeptic call failed (claim kept on deterministic verification): ${
+        err instanceof Error ? err.message : String(err)
+      }`,
     });
     return {
-      refuted: true,
-      reason: `Skeptic call failed: ${err instanceof Error ? err.message : String(err)}`,
+      refuted: false,
+      reason: `skeptic_unavailable: ${err instanceof Error ? err.message : String(err)}`,
     };
   }
 }
@@ -123,10 +173,14 @@ export async function verifyClaims(
     return next;
   });
 
-  // Second Pass: Adversarial Verification (Skeptic)
+  // Second Pass: Adversarial Verification (Skeptic). Bound concurrency — one
+  // call per verified claim can easily be 30+, and an unbounded burst turns
+  // provider rate limits into failures.
   const verifiedClaims = candidateClaims.filter((claim) => claim.verified);
-  const skepticResults = await Promise.all(
-    verifiedClaims.map((claim) => runSkepticCall(ctx, claim, sourceTexts)),
+  const skepticResults = await mapWithConcurrency(
+    verifiedClaims,
+    config.researchConcurrency,
+    (claim) => runSkepticCall(ctx, claim, sourceTexts),
   );
 
   let skepticIdx = 0;
