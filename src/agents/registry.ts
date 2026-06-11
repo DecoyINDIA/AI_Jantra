@@ -8,6 +8,9 @@ import { intakePublicDefinition } from "./intakePublic.js";
 import { planningPipelineDefinition } from "./planningPipeline.js";
 import { supportAgentDefinition } from "./supportDefinition.js";
 
+import { opsOnboardingDefinition } from "./opsOnboarding.js";
+import { opsReportingDefinition } from "./opsReporting.js";
+
 export interface AgentDefinitionSummary {
   id: string;
   name: string;
@@ -60,6 +63,8 @@ export const defaultAgentRegistry = new AgentRegistry([
   planningPipelineDefinition,
   intakePublicDefinition,
   supportAgentDefinition,
+  opsOnboardingDefinition,
+  opsReportingDefinition,
 ]);
 
 export function getDefaultAgentDefinition(): AgentDefinition {

@@ -10,6 +10,7 @@ import { runModelJudgeEvals } from "./modelJudge.js";
 import { runRegressionEvals } from "./regressions.js";
 import { renderEvalReport, type StageEvalResult } from "./report.js";
 import { rubrics } from "./rubrics.js";
+import { runOpsEvaluation } from "./opsEvals.js";
 
 function validateRubrics(): StageEvalResult[] {
   return Object.entries(rubrics).map(([stage, rubric]) => ({
@@ -32,6 +33,7 @@ export async function runEvalSuite(): Promise<StageEvalResult[]> {
   results.push(await judgeEvaluatorLoopRefinement());
   results.push(...(await runModelJudgeEvals(fixtures)));
   results.push(...(await runRegressionEvals()));
+  results.push(...runOpsEvaluation());
   return results;
 }
 

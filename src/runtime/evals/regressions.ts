@@ -224,7 +224,8 @@ async function verifyRejectRoutePersistsReason(): Promise<void> {
   const token = "reject-regression-token";
   const clientId = `eval-reject-${Date.now()}`;
   const auth = { authorization: `Bearer ${token}`, host: "127.0.0.1:4317" };
-  const app = createServer({ loopbackToken: token, clientId });
+  const store = new JsonProjectStore();
+  const app = createServer({ loopbackToken: token, clientId, store });
   try {
     const created = await app.inject({
       method: "POST",
@@ -237,6 +238,14 @@ async function verifyRejectRoutePersistsReason(): Promise<void> {
     });
     assert(created.statusCode === 200, `Run create failed: ${created.body}`);
     const runId = created.json().run.id as string;
+
+    const project = store.loadProject(clientId, runId);
+    assert(project, "Project was not found in store.");
+    const stage = project.stages.intake;
+    assert(stage, "Intake stage was not found on project.");
+    stage.status = "awaiting_confirmation";
+    store.saveProject(project);
+
     const reason = "Missing target customer evidence.";
 
     const rejected = await app.inject({

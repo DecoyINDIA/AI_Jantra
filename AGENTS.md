@@ -3,6 +3,7 @@
 You are building **Jantra AI**: a runtime + a 3-stage pipeline (Intake → Research → Planning) that turns a raw product idea into a researched, verified, build-ready plan. Read `docs/BUILD_SPEC.md` fully before writing code. It is the single source of truth. `docs/PRD.md` (business) and `docs/PIPELINE.md` (pipeline) are supporting context.
 
 ## Start here
+0. **Creating or modifying an agent?** Read `docs/agent-factory/README.md` first. The Agent Creation SOP (`docs/agent-factory/AGENT_CREATION_SOP.md`) is the mandatory procedure for any new agent; the Quality Playbook defines the bar; the Agent Builder plan (`docs/agent-factory/AGENT_BUILDER_PLAN.md`) is the roadmap for the meta-agent that automates this.
 1. Read `docs/BUILD_SPEC.md` end to end.
 2. Build in the milestone order in BUILD_SPEC §13. Do not jump ahead.
 3. Before using any Gemini API or SDK detail, **verify it against the official Google Gemini docs** (https://ai.google.dev/gemini-api/docs). Do not guess model IDs, function-calling shapes, grounding config, or pricing. Anything marked **VERIFY** in the spec must be confirmed first.
