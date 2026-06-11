@@ -196,5 +196,29 @@ assert(
   `Support approval did not reach the stage gate: ${supportApproval.body}`,
 );
 
+// Verify ops onboarding agent creation
+const opsOnboardCreated = await app.inject({
+  method: "POST",
+  url: "/v1/runs",
+  headers: { ...auth, "content-type": "application/json" },
+  payload: {
+    agentId: "ops-onboarding",
+    title: "Ops onboarding smoke",
+  },
+});
+assert(opsOnboardCreated.statusCode === 200, `Ops Onboarding run create failed: ${opsOnboardCreated.body}`);
+
+// Verify ops reporting agent creation
+const opsReportCreated = await app.inject({
+  method: "POST",
+  url: "/v1/runs",
+  headers: { ...auth, "content-type": "application/json" },
+  payload: {
+    agentId: "ops-reporting",
+    title: "Ops reporting smoke",
+  },
+});
+assert(opsReportCreated.statusCode === 200, `Ops Reporting run create failed: ${opsReportCreated.body}`);
+
 await app.close();
-console.log("Server smoke PASS: auth, Host/Origin checks, catalog, runs, and audit route work.");
+console.log("Server smoke PASS: auth, Host/Origin checks, catalog, runs, audit, and ops agents creation work.");

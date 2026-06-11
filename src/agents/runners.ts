@@ -9,6 +9,17 @@ import { runPlanning } from "../pipeline/stages/planning.js";
 import { runResearch } from "../pipeline/stages/research.js";
 import { supportAgentSpec } from "./support/index.js";
 import { runSupportReentrant } from "./support/reentrant.js";
+import {
+  runOpsProfileReentrant,
+  runOpsKpiDesign,
+  runOpsSourceBindingReentrant,
+} from "../pipeline/stages/opsOnboarding.js";
+import {
+  runOpsIngest,
+  runOpsAnalyze,
+  runOpsCompose,
+  runOpsDeliver,
+} from "../pipeline/stages/opsReporting.js";
 
 async function disabledBuild(): Promise<Artifact[]> {
   throw new StageFailedClosedError("Build stage is disabled and out of scope.");
@@ -57,11 +68,18 @@ const RUNNERS = new Map<string, StageRunner>([
   ["planning.planning", runPlanning],
   ["disabled.build", disabledBuild],
   ["support.toolLoop", supportToolLoop],
+  ["ops.kpiDesign", runOpsKpiDesign],
+  ["ops.ingest", runOpsIngest],
+  ["ops.analyze", runOpsAnalyze],
+  ["ops.compose", runOpsCompose],
+  ["ops.deliver", runOpsDeliver],
 ]);
 
 const REENTRANT_RUNNERS = new Map<string, ReentrantStageRunner>([
   ["planning.intake", runIntakeReentrant],
   ["support.toolLoop", runSupportReentrant],
+  ["ops.profile", runOpsProfileReentrant],
+  ["ops.sourceBinding", runOpsSourceBindingReentrant],
 ]);
 
 export function getStageRunner(kind: string): StageRunner {

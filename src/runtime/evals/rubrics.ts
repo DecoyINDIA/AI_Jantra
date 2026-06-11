@@ -8,8 +8,36 @@ export const intakeRubric: Rubric = {
   criteria: ["specificity", "researchability", "noInventedDetails", "philosophyCaptured"],
 };
 
+export const profileRubric: Rubric = {
+  id: "ops-profile",
+  passingScore: 4,
+  criteria: ["factualFidelity", "completeness", "honestGapsDiscipline", "actionability"],
+};
+
+export const kpiDesignRubric: Rubric = {
+  id: "ops-kpi-design",
+  passingScore: 4,
+  criteria: ["computability", "relevance", "formulaCorrectness", "noVanity"],
+};
+
+export const sourceBindingRubric: Rubric = {
+  id: "ops-source-binding",
+  passingScore: 4,
+  criteria: ["reconciliation", "computability", "duplicateHandling", "completeness"],
+};
+
+export const reportCompositionRubric: Rubric = {
+  id: "ops-report-composition",
+  passingScore: 4,
+  criteria: ["numericalFidelity", "faithfulness", "readiness", "audienceFit"],
+};
+
 export const rubrics = {
   intake: intakeRubric,
   research: researchRubric,
   planning: planningRubric,
+  "ops-profile": profileRubric,
+  "ops-kpi-design": kpiDesignRubric,
+  "ops-source-binding": sourceBindingRubric,
+  "ops-report-composition": reportCompositionRubric,
 };
