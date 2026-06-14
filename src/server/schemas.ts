@@ -50,6 +50,22 @@ export const createRunBodySchema = z.object({
   autonomy: z.enum(["gated", "auto"]).optional(),
 });
 
+export const completeBodySchema = z.object({
+  system: z.string().max(EFFECTIVE_PUBLIC_INPUT_MAX_CHARS),
+  user: z.string().max(EFFECTIVE_PUBLIC_INPUT_MAX_CHARS),
+  responseJsonSchema: z.record(z.string(), z.unknown()).optional(),
+  modelId: z
+    .string()
+    .max(MODEL_ID_MAX_CHARS)
+    .refine((id) => Boolean(resolveCatalog(id)), {
+      message: "modelId is not in the model catalog.",
+    })
+    .optional(),
+  maxOutputTokens: z.number().int().positive().max(2000).optional(),
+  temperature: z.number().min(0).max(2).optional(),
+  purpose: z.string().max(120).optional(),
+});
+
 export const listRunsQuerySchema = z.object({
   agentId: z.string().max(AGENT_ID_MAX_CHARS).optional(),
   status: z.enum(["active", "completed", "abandoned"]).optional(),
@@ -91,6 +107,23 @@ export const listAdminApiKeysQuerySchema = z.object({
     .regex(/^[A-Za-z0-9_.:-]+$/, "clientId must use slug-safe characters.")
     .optional(),
   includeRevoked: z.coerce.boolean().optional(),
+});
+
+export const LEAD_NAME_MAX_CHARS = 200;
+export const LEAD_EMAIL_MAX_CHARS = 320;
+export const LEAD_PHONE_MAX_CHARS = 32;
+export const LEAD_IDEA_MAX_CHARS = 4000;
+export const LEAD_SOURCE_MAX_CHARS = 64;
+
+// Public lead-capture payload. Posted by the marketing site's lead form, both
+// for anonymous visitors and logged-in users (identity is verified separately
+// from the Logto token, never trusted from the body).
+export const createLeadBodySchema = z.object({
+  name: z.string().trim().min(1).max(LEAD_NAME_MAX_CHARS),
+  email: z.string().trim().toLowerCase().email().max(LEAD_EMAIL_MAX_CHARS),
+  phone: z.string().trim().max(LEAD_PHONE_MAX_CHARS).optional(),
+  idea: z.string().trim().min(1).max(LEAD_IDEA_MAX_CHARS),
+  source: z.string().trim().max(LEAD_SOURCE_MAX_CHARS).optional(),
 });
 
 export function parseWith<T>(schema: z.ZodType<T>, value: unknown): T {

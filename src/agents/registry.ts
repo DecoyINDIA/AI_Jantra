@@ -7,6 +7,7 @@ import {
 import { intakePublicDefinition } from "./intakePublic.js";
 import { planningPipelineDefinition } from "./planningPipeline.js";
 import { supportAgentDefinition } from "./supportDefinition.js";
+import { firebnbConciergeDefinition } from "./firebnbConciergeDefinition.js";
 
 import { opsOnboardingDefinition } from "./opsOnboarding.js";
 import { opsReportingDefinition } from "./opsReporting.js";
@@ -63,6 +64,7 @@ export const defaultAgentRegistry = new AgentRegistry([
   planningPipelineDefinition,
   intakePublicDefinition,
   supportAgentDefinition,
+  firebnbConciergeDefinition,
   opsOnboardingDefinition,
   opsReportingDefinition,
 ]);
