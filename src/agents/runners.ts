@@ -9,6 +9,7 @@ import { runPlanning } from "../pipeline/stages/planning.js";
 import { runResearch } from "../pipeline/stages/research.js";
 import { supportAgentSpec } from "./support/index.js";
 import { runSupportReentrant } from "./support/reentrant.js";
+import { runFirebnbConciergeReentrant } from "./firebnb/reentrant.js";
 import {
   runOpsProfileReentrant,
   runOpsKpiDesign,
@@ -80,6 +81,7 @@ const REENTRANT_RUNNERS = new Map<string, ReentrantStageRunner>([
   ["support.toolLoop", runSupportReentrant],
   ["ops.profile", runOpsProfileReentrant],
   ["ops.sourceBinding", runOpsSourceBindingReentrant],
+  ["firebnb.concierge", runFirebnbConciergeReentrant],
 ]);
 
 export function getStageRunner(kind: string): StageRunner {

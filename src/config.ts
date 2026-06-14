@@ -55,6 +55,23 @@ function providerFromEnv(): ProviderId {
   );
 }
 
+export type DataCollectionPolicy = "deny" | "allow";
+
+/**
+ * Optional OpenRouter data-governance policy. When set, outgoing OpenAI-
+ * compatible calls restrict routing to providers honoring the policy:
+ * "deny" routes only to providers that do not store or train on inputs.
+ * Omitted by default so behavior is unchanged unless explicitly opted in.
+ */
+function dataCollectionFromEnv(): DataCollectionPolicy | undefined {
+  const raw = process.env.JANTRA_DATA_COLLECTION;
+  if (!raw) return undefined;
+  if (raw === "deny" || raw === "allow") return raw;
+  throw new Error(
+    `JANTRA_DATA_COLLECTION must be "deny" or "allow". Received "${raw}".`,
+  );
+}
+
 function booleanFromEnv(name: string, fallback: boolean): boolean {
   const raw = process.env[name];
   if (!raw) return fallback;
@@ -74,6 +91,10 @@ export const config = {
   llmModelPro: process.env.JANTRA_MODEL_PRO ?? process.env.JANTRA_MODEL ?? "",
   llmPriceInputPerMillion: numberFromEnv("JANTRA_PRICE_INPUT", 0),
   llmPriceOutputPerMillion: numberFromEnv("JANTRA_PRICE_OUTPUT", 0),
+  // OpenRouter data-governance policy. Undefined by default (no behavior
+  // change); set JANTRA_DATA_COLLECTION=deny to forbid providers that train
+  // on inputs. Ignored by non-OpenRouter endpoints.
+  dataCollection: dataCollectionFromEnv(),
   mockFixturePath:
     process.env.JANTRA_MOCK_FIXTURE ?? "src/runtime/evals/fixtures/transcript.json",
   explicitCache: booleanFromEnv("JANTRA_EXPLICIT_CACHE", true),
@@ -94,6 +115,7 @@ export const config = {
   opsOnboardCeilingUsd: numberFromEnv("JANTRA_OPS_ONBOARD_CEILING_USD", 2.00),
   opsReportCeilingUsd: numberFromEnv("JANTRA_OPS_REPORT_CEILING_USD", 1.50),
   opsClientDailyCeilingUsd: numberFromEnv("JANTRA_OPS_DAILY_CEILING_USD", 5.00),
+  gatewayRunCeilingUsd: numberFromEnv("JANTRA_GATEWAY_RUN_CEILING_USD", 0.05),
   researchConcurrency: boundedIntegerFromEnv("JANTRA_RESEARCH_CONCURRENCY", 4, 1, 8),
   synthesisConcurrency: boundedIntegerFromEnv("JANTRA_SYNTHESIS_CONCURRENCY", 3, 1, 6),
   maxSources: boundedIntegerFromEnv("JANTRA_MAX_SOURCES", 24, 1, 48),

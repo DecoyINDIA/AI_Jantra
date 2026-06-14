@@ -35,6 +35,8 @@ export type AuditType =
   | "key_created"
   | "key_revoked"
   | "resume"
+  | "gateway_completion"
+  | "gateway_cost_exceeded"
   | "error";
 
 export interface AuditEntry {

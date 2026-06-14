@@ -18,6 +18,8 @@ import { registerInteractionRoutes } from "./routes/interactions.js";
 import { registerModelRoutes } from "./routes/models.js";
 import { registerRunRoutes } from "./routes/runs.js";
 import { registerWebhookRoutes } from "./routes/webhooks.js";
+import { registerCompleteRoutes } from "./routes/complete.js";
+import { registerLeadRoutes } from "./routes/leads.js";
 
 export interface CreateServerOptions {
   loopbackToken: string;
@@ -92,6 +94,8 @@ export function createServer(options: CreateServerOptions): FastifyInstance {
   registerAuditRoutes(app, { clientId, store });
   registerEventRoutes(app, { clientId, store });
   registerWebhookRoutes(app, { clientId });
+  registerCompleteRoutes(app, { clientId });
+  registerLeadRoutes(app, { clientId });
 
   app.setErrorHandler((err, _request, reply) => {
     sendHttpError(reply, err);

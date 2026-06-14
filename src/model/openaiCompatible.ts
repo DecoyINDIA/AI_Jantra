@@ -255,6 +255,14 @@ export class OpenAICompatibleProvider implements ModelProvider {
       usage: { include: true },
     };
 
+    // Optional data-governance policy (OpenRouter). When configured, restrict
+    // routing to providers honoring the policy — "deny" excludes providers that
+    // store or train on inputs. Omitted by default; other OpenAI-compatible
+    // endpoints simply ignore the unknown field.
+    if (config.dataCollection) {
+      body.provider = { data_collection: config.dataCollection };
+    }
+
     if (opts.tools?.length) {
       body.tools = toOpenAITools(opts.tools);
       body.tool_choice =
