@@ -9,6 +9,8 @@ import { installApiKeyAuth, parseApiKeyRecords, type ApiKeyRecord } from "./auth
 import { runEventBus } from "./events.js";
 import { sendHttpError } from "./errors.js";
 import { installLocalSecurity } from "./security.js";
+import { installRateLimit } from "./rateLimit.js";
+import { config } from "../config.js";
 import { registerAgentRoutes } from "./routes/agents.js";
 import { registerAdminKeyRoutes } from "./routes/adminKeys.js";
 import { registerArtifactRoutes } from "./routes/artifacts.js";
@@ -52,16 +54,27 @@ function isApiKeyStore(store: ProjectStore): store is ProjectStore & ApiKeyStore
 }
 
 export function createServer(options: CreateServerOptions): FastifyInstance {
+  const mode = options.mode ?? "local";
   const app = fastify({
     logger: false,
     bodyLimit: 1024 * 1024,
+    // Behind Cloudflare/Railway in remote mode, trust the proxy so request.ip
+    // reflects the real client (X-Forwarded-For) — required for the per-IP rate
+    // limiter to throttle real clients rather than the shared proxy address.
+    trustProxy: mode === "remote",
   });
   const clientId = options.clientId ?? "xolver";
   const registry = options.registry ?? defaultAgentRegistry;
   const store = options.store ?? defaultStore;
   const apiKeyStore = options.apiKeyStore ?? (isApiKeyStore(store) ? store : undefined);
 
-  if ((options.mode ?? "local") === "remote") {
+  if (mode === "remote") {
+    // Throttle before auth so unauthenticated floods and API-key brute-force
+    // attempts are capped too. The loopback-only local API is not rate limited.
+    installRateLimit(app, {
+      windowMs: config.rateLimitWindowMs,
+      max: config.rateLimitMax,
+    });
     installApiKeyAuth(app, {
       apiKeyStore,
       envRecords: options.apiKeys ?? parseApiKeyRecords(),

@@ -1,6 +1,10 @@
 # Agent Factory
 
-This folder is the standard for creating agents on the Jantra runtime. Any builder, human or AI, who needs to create, modify, or review an agent starts here. Read these documents in order:
+This folder is the standard for creating agents on the Jantra runtime. Any builder, human or AI, who needs to create, modify, or review an agent starts here.
+
+> **Working in Claude Code?** The `agent-factory` skill (`.claude/skills/agent-factory/`) is the executable front door to this folder: it loads the condensed, code-grounded methodology plus exact-API and runner-shape references on demand. It triggers automatically when you set out to build or review an agent; these documents remain the source of truth it points back to.
+
+Read these documents in order:
 
 1. **[AGENT_CREATION_SOP.md](AGENT_CREATION_SOP.md)** - the step-by-step standard operating procedure for building a new agent. Follow it top to bottom; every step exists because skipping it has a known failure mode.
 2. **[AGENT_QUALITY_PLAYBOOK.md](AGENT_QUALITY_PLAYBOOK.md)** - what separates a world-class agent from a working one. Best practices, anti-patterns, and the quality bar every Jantra agent must meet.
