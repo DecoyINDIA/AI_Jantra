@@ -116,6 +116,11 @@ export const config = {
   opsReportCeilingUsd: numberFromEnv("JANTRA_OPS_REPORT_CEILING_USD", 1.50),
   opsClientDailyCeilingUsd: numberFromEnv("JANTRA_OPS_DAILY_CEILING_USD", 5.00),
   gatewayRunCeilingUsd: numberFromEnv("JANTRA_GATEWAY_RUN_CEILING_USD", 0.05),
+  // Remote-surface request rate limit (fixed window, per client IP). Applies
+  // only in remote mode; the loopback-only local API is not throttled. Defaults
+  // to 120 requests / 60s. Set max to 0 via env to effectively disable.
+  rateLimitWindowMs: Math.trunc(numberFromEnv("JANTRA_RATE_LIMIT_WINDOW_MS", 60_000)),
+  rateLimitMax: Math.trunc(numberFromEnv("JANTRA_RATE_LIMIT_MAX", 120)),
   researchConcurrency: boundedIntegerFromEnv("JANTRA_RESEARCH_CONCURRENCY", 4, 1, 8),
   synthesisConcurrency: boundedIntegerFromEnv("JANTRA_SYNTHESIS_CONCURRENCY", 3, 1, 6),
   maxSources: boundedIntegerFromEnv("JANTRA_MAX_SOURCES", 24, 1, 48),

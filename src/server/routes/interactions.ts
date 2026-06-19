@@ -10,7 +10,13 @@ import { EFFECTIVE_PUBLIC_INPUT_MAX_CHARS, parseWith, runParamsSchema } from "..
 import { assertProjectAccess, requestClientId } from "../tenancy.js";
 
 const interactionParamsSchema = runParamsSchema.extend({
-  interactionId: z.string().min(1),
+  // Interaction ids are server-generated UUIDs, matched in memory. Bounded and
+  // charset-constrained for consistency with runId/artifactId.
+  interactionId: z
+    .string()
+    .min(1)
+    .max(96)
+    .regex(/^[A-Za-z0-9_-]+$/, "interactionId must use slug-safe characters."),
 });
 
 const interactionBodySchema = z

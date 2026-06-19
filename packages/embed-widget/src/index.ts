@@ -131,7 +131,7 @@ function delay(ms: number): Promise<void> {
 export function mountJantraIntakeWidget(options: JantraIntakeOptions): JantraIntakeHandle {
   const baseUrl = options.baseUrl.replace(/\/$/, "");
   const agentId = options.agentId ?? "intake-public";
-  const theme = { ...DEFAULT_THEME, ...(options.theme ?? {}) };
+  const theme = sanitizeTheme({ ...DEFAULT_THEME, ...(options.theme ?? {}) });
   const requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
   const maxMessageChars = options.maxMessageChars ?? DEFAULT_MAX_MESSAGE_CHARS;
   const maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
@@ -476,6 +476,23 @@ function css(scope: string, t: Required<JantraThemeTokens>, reduceMotion: boolea
 .${scope}__send:disabled { opacity: 0.5; cursor: default; }
 ${dotAnim}
 `;
+}
+
+function sanitizeCssToken(value: string): string {
+  // Theme tokens are interpolated into a <style> block. Strip characters that
+  // could break out of a CSS value/declaration context (rule/declaration
+  // terminators, tag delimiters that could close </style>, CSS escapes, and
+  // newlines) so a host that forwards untrusted theme values cannot inject CSS
+  // or markup. Legitimate colors, fonts, sizes, and radii use none of these.
+  return value.replace(/[{}<>;@\\]/g, "").replace(/[\r\n]+/g, " ");
+}
+
+function sanitizeTheme(theme: Required<JantraThemeTokens>): Required<JantraThemeTokens> {
+  const out = {} as Required<JantraThemeTokens>;
+  for (const key of Object.keys(theme) as Array<keyof JantraThemeTokens>) {
+    out[key] = sanitizeCssToken(theme[key]);
+  }
+  return out;
 }
 
 function escapeHtml(value: string): string {

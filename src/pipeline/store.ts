@@ -77,12 +77,33 @@ function atomicWriteFileSync(path: string, data: string): void {
 
 let atomicSeq = 0;
 
+/**
+ * Defense-in-depth path guard. clientId/projectId are validated at the request
+ * schema layer, but these ids are also turned into filesystem paths here, so we
+ * reject anything containing a path separator, whitespace, or a "."/".."
+ * segment before it ever reaches join(). A bad value should never get this far;
+ * if it does, fail loudly rather than read/write outside the project tree.
+ */
+function assertSafePathSegment(value: string, label: string): string {
+  if (
+    !value ||
+    value.includes("/") ||
+    value.includes("\\") ||
+    value.includes("\0") ||
+    value === "." ||
+    value === ".."
+  ) {
+    throw new Error(`Unsafe ${label} for filesystem path: ${JSON.stringify(value)}`);
+  }
+  return value;
+}
+
 function clientDir(clientId: string): string {
-  return join(config.projectDir, clientId);
+  return join(config.projectDir, assertSafePathSegment(clientId, "clientId"));
 }
 
 function projectFile(clientId: string, projectId: string): string {
-  return join(clientDir(clientId), `${projectId}.json`);
+  return join(clientDir(clientId), `${assertSafePathSegment(projectId, "projectId")}.json`);
 }
 
 function spendFile(clientId: string): string {
@@ -90,7 +111,7 @@ function spendFile(clientId: string): string {
 }
 
 function projectDir(clientId: string, projectId: string): string {
-  return join(clientDir(clientId), projectId);
+  return join(clientDir(clientId), assertSafePathSegment(projectId, "projectId"));
 }
 
 function artifactDir(clientId: string, projectId: string): string {

@@ -22,12 +22,28 @@ export const agentParamsSchema = z.object({
   agentId: z.string().min(1).max(AGENT_ID_MAX_CHARS),
 });
 
+// Run ids are server-generated UUIDs (randomUUID). They are also used to build
+// filesystem paths in the JSON store (projects/<clientId>/<runId>.json), so the
+// charset is constrained here to slug-safe characters — no path separators or
+// "." segments — to prevent path traversal (e.g. runId="../../secret"). This is
+// the primary guard; the store also rejects unsafe segments as defense in depth.
 export const runParamsSchema = z.object({
-  runId: z.string().min(1).max(RUN_ID_MAX_CHARS),
+  runId: z
+    .string()
+    .min(1)
+    .max(RUN_ID_MAX_CHARS)
+    .regex(/^[A-Za-z0-9_-]+$/, "runId must use slug-safe characters."),
 });
 
+// Artifact ids are either a bare kind ("idea_summary") or a composite
+// "<stage>:<kind>:v<version>". They are matched in memory, never used as a path,
+// but are still constrained to a safe charset for consistency and hygiene.
 export const artifactParamsSchema = runParamsSchema.extend({
-  artifactId: z.string().min(1).max(160),
+  artifactId: z
+    .string()
+    .min(1)
+    .max(160)
+    .regex(/^[A-Za-z0-9_.:-]+$/, "artifactId must use slug-safe characters."),
 });
 
 export const MODEL_ID_MAX_CHARS = 96;
