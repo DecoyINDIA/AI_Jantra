@@ -1,3 +1,4 @@
+// Trigger Railway rebuild: force registration of firebnb-concierge agent definition
 import { requireApiKey } from "../config.js";
 import { SqliteProjectStore } from "../pipeline/store/sqlite.js";
 import { startRemoteApi } from "./app.js";
