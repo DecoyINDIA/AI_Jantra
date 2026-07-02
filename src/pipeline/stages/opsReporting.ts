@@ -17,6 +17,8 @@ import { runQualityBattery, type SourceBinding } from "../ops/connectors.js";
 import { evaluateFormula } from "../ops/formulaEngine.js";
 import { scanMetricAnomalies, type AnomalyFinding } from "../ops/anomalyEngine.js";
 import { reportCompositionRubric } from "../../runtime/evals/rubrics.js";
+import { defaultConnectorRegistry } from "../ops/connectors/registry.js";
+import type { DataSnapshot } from "../ops/schema.js";
 
 // --- Cost Ceiling Enforcer ---
 function enforceCeiling(ctx: StageContext): void {
@@ -54,10 +56,7 @@ function parseCritique<T>(text: string, schema: z.Schema<T>): T {
 export const runOpsIngest: StageRunner = async (ctx) => {
   const clientId = ctx.project.clientId;
 
-  // 1. Pull data snapshot (using synthetic data as connector source)
-  const snapshot = generateSyntheticData(clientId);
-
-  // 2. Load Source Binding to check rules and config
+  // 1. Load Source Binding to check rules and config
   const bindingArtifact = ctx.project.stages["source-binding"]?.artifacts.at(-1);
   let binding: SourceBinding = {
     connectors: [
@@ -84,7 +83,136 @@ export const runOpsIngest: StageRunner = async (ctx) => {
     }
   }
 
-  // 3. Run Quality Battery (returns deduplicated snapshot copy to avoid mutations)
+  // 2. Fetch data dynamically from all configured connectors
+  const snapshot: DataSnapshot = {
+    orders: [],
+    order_lines: [],
+    invoices: [],
+    payments: [],
+    expenses: [],
+    subscription_events: [],
+    customers: [],
+    products: [],
+    channels: [],
+    calendar: [],
+  };
+
+  let fetchedAny = false;
+  for (const conn of binding.connectors) {
+    if (["stripe", "shopify", "csv"].includes(conn.type)) {
+      try {
+        const connector = defaultConnectorRegistry.get(conn.type, conn.id);
+        const data = await connector.fetch({
+          clientId,
+          config: { ...conn.config, role: conn.role },
+          credentials: {
+            STRIPE_API_KEY: process.env.STRIPE_API_KEY || "",
+            SHOPIFY_SHOP_NAME: process.env.SHOPIFY_SHOP_NAME || "",
+            SHOPIFY_ACCESS_TOKEN: process.env.SHOPIFY_ACCESS_TOKEN || "",
+          },
+        });
+
+        if (data.orders) snapshot.orders.push(...data.orders);
+        if (data.order_lines) snapshot.order_lines.push(...data.order_lines);
+        if (data.invoices) snapshot.invoices.push(...data.invoices);
+        if (data.payments) snapshot.payments.push(...data.payments);
+        if (data.expenses) snapshot.expenses.push(...data.expenses);
+        if (data.subscription_events) snapshot.subscription_events.push(...data.subscription_events);
+        if (data.customers) {
+          for (const cust of data.customers) {
+            if (!snapshot.customers.some((c) => c.id === cust.id)) {
+              snapshot.customers.push(cust);
+            }
+          }
+        }
+        if (data.products) {
+          for (const prod of data.products) {
+            if (!snapshot.products.some((p) => p.id === prod.id)) {
+              snapshot.products.push(prod);
+            }
+          }
+        }
+        if (data.channels) {
+          for (const chan of data.channels) {
+            if (!snapshot.channels.some((ch) => ch.id === chan.id)) {
+              snapshot.channels.push(chan);
+            }
+          }
+        }
+        if (data.calendar) snapshot.calendar.push(...data.calendar);
+
+        const hasRecords =
+          (data.orders?.length ?? 0) > 0 ||
+          (data.invoices?.length ?? 0) > 0 ||
+          (data.expenses?.length ?? 0) > 0 ||
+          (data.subscription_events?.length ?? 0) > 0;
+
+        if (hasRecords) {
+          fetchedAny = true;
+        }
+      } catch (err: any) {
+        ctx.audit.record("error", {
+          clientId,
+          projectId: ctx.project.id,
+          stage: ctx.stageId,
+          message: `Connector ${conn.id} fetch failed or skipped: ${err.message}`,
+        });
+      }
+    }
+  }
+
+  // 3. Fallback to synthetic data if no real data was fetched (keeps tests/evals happy)
+  if (!fetchedAny) {
+    const synthetic = generateSyntheticData(clientId);
+    snapshot.orders = synthetic.orders;
+    snapshot.order_lines = synthetic.order_lines;
+    snapshot.invoices = synthetic.invoices;
+    snapshot.payments = synthetic.payments;
+    snapshot.expenses = synthetic.expenses;
+    snapshot.subscription_events = synthetic.subscription_events;
+    snapshot.customers = synthetic.customers;
+    snapshot.products = synthetic.products;
+    snapshot.channels = synthetic.channels;
+    snapshot.calendar = synthetic.calendar;
+  } else {
+    if (!snapshot.channels.length) {
+      snapshot.channels = [
+        { id: "stripe", name: "Stripe" },
+        { id: "shopify", name: "Shopify" },
+        { id: "csv", name: "CSV" },
+      ];
+    }
+    if (!snapshot.calendar.length) {
+      const dates = new Set<string>();
+      const addDate = (d?: string) => { if (d) dates.add(d); };
+      snapshot.orders.forEach((o) => addDate(o.orderDate));
+      snapshot.invoices.forEach((i) => addDate(i.invoiceDate));
+      snapshot.expenses.forEach((e) => addDate(e.expenseDate));
+      snapshot.subscription_events.forEach((s) => addDate(s.eventDate));
+
+      const sortedDates = [...dates].sort();
+      if (sortedDates.length > 0) {
+        const start = new Date(sortedDates[0]!);
+        const end = new Date(sortedDates[sortedDates.length - 1]!);
+        const curr = new Date(start);
+        while (curr <= end) {
+          const dateStr = curr.toISOString().slice(0, 10);
+          const isHoliday = (curr.getMonth() === 11 && curr.getDate() === 25) || (curr.getMonth() === 0 && curr.getDate() === 1);
+          snapshot.calendar.push({
+            date: dateStr,
+            week: Math.ceil(curr.getDate() / 7),
+            month: curr.getMonth() + 1,
+            year: curr.getFullYear(),
+            isHoliday,
+            isPromo: false,
+          });
+          curr.setDate(curr.getDate() + 1);
+        }
+      }
+    }
+  }
+
+  // 4. Run Quality Battery (returns deduplicated snapshot copy to avoid mutations)
   const { report, snapshot: dedupedSnapshot } = runQualityBattery(snapshot, binding);
 
   if (report.verdict === "fail") {

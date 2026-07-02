@@ -18,9 +18,31 @@ const modelJudgeSchema = z.object({
 type JudgeStage = "research" | "planning";
 
 function parseJudge(text: string): z.infer<typeof modelJudgeSchema> {
-  const parsed = modelJudgeSchema.safeParse(JSON.parse(text));
+  let cleaned = text.trim();
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  if (start !== -1 && end !== -1) {
+    cleaned = cleaned.slice(start, end + 1);
+  }
+  
+  const rawObj = JSON.parse(cleaned);
+  if (rawObj && typeof rawObj === "object" && !rawObj.scores) {
+    if (
+      (typeof rawObj.completeness === "number" || typeof rawObj.completeness === "string") &&
+      (typeof rawObj.balance === "number" || typeof rawObj.balance === "string") &&
+      (typeof rawObj.entailment === "number" || typeof rawObj.entailment === "string")
+    ) {
+      rawObj.scores = {
+        completeness: Number(rawObj.completeness),
+        balance: Number(rawObj.balance),
+        entailment: Number(rawObj.entailment),
+      };
+    }
+  }
+
+  const parsed = modelJudgeSchema.safeParse(rawObj);
   if (!parsed.success) {
-    throw new SchemaValidationError("Model judge output failed schema validation.", {
+    throw new SchemaValidationError(`Model judge output failed schema validation. Raw response: ${text}`, {
       issues: parsed.error.issues,
     });
   }
