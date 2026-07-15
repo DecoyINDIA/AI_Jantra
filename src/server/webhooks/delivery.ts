@@ -1,6 +1,8 @@
 import { createHmac } from "node:crypto";
 
 import type { WebhookEvent, WebhookSubscription } from "./types.js";
+import { assertPublicWebhookUrl } from "./urlGuard.js";
+import { fetchWithTimeout } from "../../util/fetchWithTimeout.js";
 
 function signature(secret: string, body: string): string {
   return createHmac("sha256", secret).update(body).digest("hex");
@@ -27,11 +29,12 @@ export async function deliverWebhook(
   event: WebhookEvent,
   attempts = 3,
 ): Promise<void> {
+  await assertPublicWebhookUrl(subscription.url);
   const body = JSON.stringify(event);
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
-      const response = await fetch(subscription.url, {
+      const response = await fetchWithTimeout(subscription.url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -41,7 +44,7 @@ export async function deliverWebhook(
             : {}),
         },
         body,
-      });
+      }, 10_000);
       if (response.ok) return;
       if (isNonRetryableStatus(response.status)) {
         throw new Error(`Webhook delivery failed with non-retryable ${response.status}.`);

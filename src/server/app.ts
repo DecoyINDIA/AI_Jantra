@@ -61,7 +61,13 @@ export function createServer(options: CreateServerOptions): FastifyInstance {
     // Behind Cloudflare/Railway in remote mode, trust the proxy so request.ip
     // reflects the real client (X-Forwarded-For) — required for the per-IP rate
     // limiter to throttle real clients rather than the shared proxy address.
-    trustProxy: mode === "remote",
+    // Trust exactly one hop: the platform's own reverse proxy. A boolean `true`
+    // trusts an unbounded X-Forwarded-For chain and Fastify resolves request.ip
+    // to the LEFTMOST entry, which is fully client-controlled — a spoofed header
+    // lets a client rotate "IP" every request and bypass the rate limiter below.
+    // A numeric trustProxy trusts N hops counted from the socket, i.e. only the
+    // value appended by the immediately-connected, trusted proxy.
+    trustProxy: mode === "remote" ? 1 : false,
   });
   const clientId = options.clientId ?? "xolver";
   const registry = options.registry ?? defaultAgentRegistry;
@@ -107,7 +113,7 @@ export function createServer(options: CreateServerOptions): FastifyInstance {
   registerAuditRoutes(app, { clientId, store });
   registerEventRoutes(app, { clientId, store });
   registerWebhookRoutes(app, { clientId });
-  registerCompleteRoutes(app, { clientId });
+  registerCompleteRoutes(app, { clientId, store });
   registerLeadRoutes(app, { clientId });
 
   app.setErrorHandler((err, _request, reply) => {

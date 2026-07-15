@@ -5,15 +5,40 @@ import { config } from "../../config.js";
 import { createProviderForStage } from "../../model/index.js";
 import { completeBodySchema, parseWith } from "../schemas.js";
 import { requestClientId } from "../tenancy.js";
+import { defaultStore, type ProjectStore } from "../../pipeline/store.js";
+import {
+  clientDailyGatewayBudgetStatus,
+  recordGatewaySpend,
+  auditClientDailyGatewayBudgetExceeded,
+} from "../../runtime/gatewayBudget.js";
 
 interface CompleteRouteDeps {
   clientId: string;
+  store?: ProjectStore;
 }
 
 export function registerCompleteRoutes(app: FastifyInstance, deps: CompleteRouteDeps): void {
+  const store = deps.store ?? defaultStore;
+
   app.post("/v1/complete", async (request, reply) => {
     const clientId = requestClientId(request, deps.clientId);
     const body = parseWith(completeBodySchema, request.body);
+
+    const budget = clientDailyGatewayBudgetStatus(store, clientId);
+    if (budget.exceeded) {
+      auditClientDailyGatewayBudgetExceeded(clientId, budget);
+      return reply.status(429).send({
+        error: {
+          code: "gateway_daily_budget_exceeded",
+          message: "Gateway daily budget exceeded.",
+          details: {
+            spend: budget.spend,
+            ceiling: budget.ceiling,
+            day: budget.day,
+          },
+        },
+      });
+    }
 
     const provider = createProviderForStage("complete", "flash", "gateway", body.modelId);
     
@@ -44,6 +69,9 @@ export function registerCompleteRoutes(app: FastifyInstance, deps: CompleteRoute
       latencyMs,
       textChars: result.text.length,
     });
+
+    // Record spend in the database
+    recordGatewaySpend(store, clientId, result.costUsd);
 
     if (result.costUsd > config.gatewayRunCeilingUsd) {
       audit.record("gateway_cost_exceeded", {

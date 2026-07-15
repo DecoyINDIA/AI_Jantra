@@ -89,6 +89,14 @@ export class SqliteProjectStore implements ProjectStore, ApiKeyStore {
         primary key (client_id, day_utc)
       )
     `);
+    this.db.exec(`
+      create table if not exists client_daily_gateway_spend (
+        client_id text not null,
+        day_utc text not null,
+        usd real not null,
+        primary key (client_id, day_utc)
+      )
+    `);
   }
 
   saveProject(project: Project): void {
@@ -139,6 +147,26 @@ export class SqliteProjectStore implements ProjectStore, ApiKeyStore {
     this.db
       .prepare(
         `insert into client_daily_ideation_spend (client_id, day_utc, usd)
+         values (?, ?, ?)
+         on conflict(client_id, day_utc)
+         do update set usd = usd + excluded.usd`,
+      )
+      .run(clientId, dayUtc, deltaUsd);
+  }
+
+  getClientDailyGatewaySpend(clientId: string, dayUtc: string): number {
+    const row = this.db
+      .prepare(
+        "select usd from client_daily_gateway_spend where client_id = ? and day_utc = ?",
+      )
+      .get(clientId, dayUtc) as { usd?: number } | undefined;
+    return row?.usd ?? 0;
+  }
+
+  addClientDailyGatewaySpend(clientId: string, dayUtc: string, deltaUsd: number): void {
+    this.db
+      .prepare(
+        `insert into client_daily_gateway_spend (client_id, day_utc, usd)
          values (?, ?, ?)
          on conflict(client_id, day_utc)
          do update set usd = usd + excluded.usd`,

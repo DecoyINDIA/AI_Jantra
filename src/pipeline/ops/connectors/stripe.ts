@@ -1,5 +1,6 @@
 import type { OpsConnector, ConnectorConfig } from "./base.js";
 import type { DataSnapshot } from "../schema.js";
+import { fetchWithTimeout } from "../../../util/fetchWithTimeout.js";
 
 export class StripeConnector implements OpsConnector {
   constructor(readonly id: string) {}
@@ -13,9 +14,9 @@ export class StripeConnector implements OpsConnector {
     const authHeader = "Basic " + Buffer.from(apiKey + ":").toString("base64");
 
     const get = async (path: string) => {
-      const res = await fetch(`https://api.stripe.com${path}`, {
+      const res = await fetchWithTimeout(`https://api.stripe.com${path}`, {
         headers: { Authorization: authHeader },
-      });
+      }, 15_000);
       if (!res.ok) {
         const text = await res.text();
         throw new Error(`Stripe API error GET ${path}: HTTP ${res.status} - ${text}`);

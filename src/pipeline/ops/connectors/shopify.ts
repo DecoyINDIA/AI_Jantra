@@ -1,5 +1,6 @@
 import type { OpsConnector, ConnectorConfig } from "./base.js";
 import type { DataSnapshot } from "../schema.js";
+import { fetchWithTimeout } from "../../../util/fetchWithTimeout.js";
 
 export class ShopifyConnector implements OpsConnector {
   constructor(readonly id: string) {}
@@ -13,12 +14,12 @@ export class ShopifyConnector implements OpsConnector {
     }
 
     const get = async (path: string) => {
-      const res = await fetch(`https://${shopName}.myshopify.com${path}`, {
+      const res = await fetchWithTimeout(`https://${shopName}.myshopify.com${path}`, {
         headers: {
           "X-Shopify-Access-Token": accessToken,
           "Content-Type": "application/json",
         },
-      });
+      }, 15_000);
       if (!res.ok) {
         const text = await res.text();
         throw new Error(`Shopify API error GET ${path}: HTTP ${res.status} - ${text}`);
