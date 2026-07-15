@@ -474,11 +474,31 @@ export class GeminiProvider implements ModelProvider {
     let response: GenerateContentResponse | null = null;
     let lastError: unknown;
     for (let attempt = 1; attempt <= 3; attempt++) {
+      let timer: NodeJS.Timeout | undefined;
       try {
-        response = await this.ai.models.generateContent(request);
+        // Since @google/genai SDK does not natively support AbortSignal/timeout in
+        // generateContent, we use Promise.race to enforce a 60s client-side timeout.
+        // Note: this bounds our wait time, but does not cancel the server-side SDK fetch request.
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            reject(new Error("Timeout: Gemini call timed out after 60s"));
+          }, 60_000);
+        });
+        response = await Promise.race([
+          this.ai.models.generateContent(request).then((res) => {
+            if (timer) clearTimeout(timer);
+            return res;
+          }),
+          timeoutPromise,
+        ]);
         break;
       } catch (err) {
+        if (timer) clearTimeout(timer);
         lastError = err;
+        const message = err instanceof Error ? err.message : String(err);
+        if (message.includes("Timeout")) {
+          break; // Do not retry on timeout
+        }
         // Do not waste retries (and latency) on non-retryable client errors such
         // as 400/401/403/404; only retry rate limits, 5xx, and network failures.
         if (!isRetryableStatus(errorStatus(err))) break;

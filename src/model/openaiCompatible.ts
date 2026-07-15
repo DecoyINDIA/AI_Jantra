@@ -1,6 +1,7 @@
 import type { GeminiModelId } from "../config.js";
 import { config } from "../config.js";
 import { ModelProviderError } from "../runtime/errors.js";
+import { fetchWithTimeout } from "../util/fetchWithTimeout.js";
 import { GeminiProvider } from "./gemini.js";
 import type {
   GenerateOptions,
@@ -291,11 +292,11 @@ export class OpenAICompatibleProvider implements ModelProvider {
     let lastError: unknown;
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        const response = await fetch(url, {
+        const response = await fetchWithTimeout(url, {
           method: "POST",
           headers,
           body: JSON.stringify(body),
-        });
+        }, 60_000);
         if (!response.ok) {
           const text = await response.text();
           const error = new Error(`HTTP ${response.status}: ${text.slice(0, 500)}`);

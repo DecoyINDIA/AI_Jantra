@@ -126,6 +126,20 @@ function autoMapHeaders(headers: string[], targetTable: string): Record<string, 
   return mapping;
 }
 
+const OPS_DATA_ROOT = path.resolve("data", "ops");
+
+export function resolveClientDataDir(clientId: string, requested?: string): string {
+  const base = path.resolve(OPS_DATA_ROOT, clientId);
+  if (!requested) return base;
+  const resolved = path.resolve(base, requested);
+  if (resolved !== base && !resolved.startsWith(base + path.sep)) {
+    throw new Error(
+      `Ops CSV connector directory escapes the client's data root: "${requested}".`,
+    );
+  }
+  return resolved;
+}
+
 export class CsvConnector implements OpsConnector {
   constructor(readonly id: string) {}
 
@@ -133,8 +147,7 @@ export class CsvConnector implements OpsConnector {
     const role = cfg.config.role;
     const clientId = cfg.clientId;
     
-    // Default directory: data/ops/<clientId>/
-    const dir = cfg.config.directory || path.join("data", "ops", clientId);
+    const dir = resolveClientDataDir(clientId, cfg.config.directory);
     const snapshot: Partial<DataSnapshot> = {};
 
     const loadTable = async (fileName: string, targetTable: keyof DataSnapshot) => {

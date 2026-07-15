@@ -3,13 +3,14 @@ import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 
-import { notFound } from "../errors.js";
+import { notFound, HttpError } from "../errors.js";
 import { parseWith } from "../schemas.js";
 import { requestClientId } from "../tenancy.js";
 import {
   defaultWebhookStore,
   type WebhookSubscriptionStore,
 } from "../webhooks/store.js";
+import { assertPublicWebhookUrl } from "../webhooks/urlGuard.js";
 
 const GATE_EVENT_TYPES = ["run.awaiting_confirmation", "run.awaiting_input"] as const;
 
@@ -35,6 +36,11 @@ export function registerWebhookRoutes(app: FastifyInstance, deps: WebhookRouteDe
   app.post("/v1/webhooks", async (request) => {
     const clientId = requestClientId(request, deps.clientId);
     const body = parseWith(createWebhookBodySchema, request.body);
+    try {
+      await assertPublicWebhookUrl(body.url);
+    } catch (err) {
+      throw new HttpError(400, "invalid_webhook_url", err instanceof Error ? err.message : String(err));
+    }
     const subscription = store.create({
       id: randomUUID(),
       clientId,

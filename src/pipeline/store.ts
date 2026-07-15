@@ -30,6 +30,8 @@ export interface ProjectStore {
   listProjects(query: ProjectListQuery): ProjectPage;
   getClientDailyIdeationSpend(clientId: string, dayUtc: string): number;
   addClientDailyIdeationSpend(clientId: string, dayUtc: string, deltaUsd: number): void;
+  getClientDailyGatewaySpend(clientId: string, dayUtc: string): number;
+  addClientDailyGatewaySpend(clientId: string, dayUtc: string, deltaUsd: number): void;
   writeArtifactFile(clientId: string, projectId: string, artifact: Artifact): string;
   writeSourceContentFile(
     clientId: string,
@@ -106,8 +108,8 @@ function projectFile(clientId: string, projectId: string): string {
   return join(clientDir(clientId), `${assertSafePathSegment(projectId, "projectId")}.json`);
 }
 
-function spendFile(clientId: string): string {
-  return join(clientDir(clientId), "spend.json");
+function namedSpendFile(clientId: string, filename: string): string {
+  return join(clientDir(clientId), filename);
 }
 
 function projectDir(clientId: string, projectId: string): string {
@@ -162,8 +164,8 @@ export function normalizeProject(project: Project): Project {
   return project;
 }
 
-function readSpend(clientId: string): Record<string, number> {
-  const file = spendFile(clientId);
+function readNamedSpend(clientId: string, filename: string): Record<string, number> {
+  const file = namedSpendFile(clientId, filename);
   if (!existsSync(file)) return {};
   const parsed = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
   return Object.fromEntries(
@@ -171,6 +173,10 @@ function readSpend(clientId: string): Record<string, number> {
       (entry): entry is [string, number] => typeof entry[1] === "number",
     ),
   );
+}
+
+function writeNamedSpend(clientId: string, filename: string, spend: Record<string, number>): void {
+  atomicWriteFileSync(namedSpendFile(clientId, filename), JSON.stringify(spend, null, 2));
 }
 
 function encodeCursor(project: ProjectSummary): string {
@@ -250,22 +256,33 @@ export class JsonProjectStore implements ProjectStore {
     const dir = clientDir(query.clientId);
     if (!existsSync(dir)) return { items: [] };
     const projects = readdirSync(dir)
-      .filter((f) => f.endsWith(".json") && f !== "spend.json")
+      .filter((f) => f.endsWith(".json") && f !== "spend.json" && f !== "gateway-spend.json")
       .map((f) => normalizeProject(JSON.parse(readFileSync(join(dir, f), "utf8")) as Project));
     return pageProjects(projects, query);
   }
 
   getClientDailyIdeationSpend(clientId: string, dayUtc: string): number {
-    return readSpend(clientId)[dayUtc] ?? 0;
+    return readNamedSpend(clientId, "spend.json")[dayUtc] ?? 0;
   }
 
   addClientDailyIdeationSpend(clientId: string, dayUtc: string, deltaUsd: number): void {
     mkdirSync(clientDir(clientId), { recursive: true });
     // JSON storage is single-process today; read-modify-write is acceptable until
     // the public service moves fully to a transactional database.
-    const spend = readSpend(clientId);
+    const spend = readNamedSpend(clientId, "spend.json");
     spend[dayUtc] = (spend[dayUtc] ?? 0) + deltaUsd;
-    atomicWriteFileSync(spendFile(clientId), JSON.stringify(spend, null, 2));
+    writeNamedSpend(clientId, "spend.json", spend);
+  }
+
+  getClientDailyGatewaySpend(clientId: string, dayUtc: string): number {
+    return readNamedSpend(clientId, "gateway-spend.json")[dayUtc] ?? 0;
+  }
+
+  addClientDailyGatewaySpend(clientId: string, dayUtc: string, deltaUsd: number): void {
+    mkdirSync(clientDir(clientId), { recursive: true });
+    const spend = readNamedSpend(clientId, "gateway-spend.json");
+    spend[dayUtc] = (spend[dayUtc] ?? 0) + deltaUsd;
+    writeNamedSpend(clientId, "gateway-spend.json", spend);
   }
 
   writeArtifactFile(clientId: string, projectId: string, artifact: Artifact): string {
@@ -316,6 +333,18 @@ export function addClientDailyIdeationSpend(
   deltaUsd: number,
 ): void {
   defaultStore.addClientDailyIdeationSpend(clientId, dayUtc, deltaUsd);
+}
+
+export function getClientDailyGatewaySpend(clientId: string, dayUtc: string): number {
+  return defaultStore.getClientDailyGatewaySpend(clientId, dayUtc);
+}
+
+export function addClientDailyGatewaySpend(
+  clientId: string,
+  dayUtc: string,
+  deltaUsd: number,
+): void {
+  defaultStore.addClientDailyGatewaySpend(clientId, dayUtc, deltaUsd);
 }
 
 export function writeArtifactFile(
