@@ -11,51 +11,37 @@ Jantra is an AI-pipeline backend (TypeScript / Fastify) that orchestrates multi-
 
 Core runtime path: `POST /v1/runs` → `createProject` (orchestrator) → `advanceStage` → `StageRunner` (per-stage handler) → `ModelProvider.generate` → artifacts saved to project store → server-sent events to UI.
 
-## Uncommitted changes as of 2026-06-10
+## Completed Features & Recent Milestones
 
-All changes below are local, NOT yet committed to `main`.
+All features below are committed to `main`.
 
-### Layer 1 — OpenAI-compatible provider
+### Layer 1 — OpenAI-compatible provider (Shipped 2026-06-10)
+- `src/model/openaiCompatible.ts` — `OpenAICompatibleProvider` supporting generic `/chat/completions` endpoints (OpenRouter, OpenAI, DeepSeek, Groq, Ollama, etc.). Handles message mapping, tool calls, JSON-schema responses, reasoning, and hybrid Google Search grounding via Gemini.
+- Configuration options: `JANTRA_PROVIDER`, `JANTRA_BASE_URL`, `JANTRA_API_KEY`, etc.
 
-**Files changed:**
-- `src/model/openaiCompatible.ts` *(new)* — `OpenAICompatibleProvider` using `fetch` against any `/chat/completions` endpoint (OpenRouter, OpenAI, DeepSeek, Groq, Ollama etc). Handles message mapping, tool calls, JSON-schema response format, reasoning capture, grounded-call delegation to Gemini.
-- `src/model/index.ts` — factory branch for `provider === "openai-compatible"`.
-- `src/model/provider.ts` — loosened types (`provider` union, `modelId: string`).
-- `src/config.ts` — `providerFromEnv()` accepts `"openai-compatible"`; new fields `baseUrl`, `llmApiKey`, `llmModelFlash`, `llmModelPro`, `llmPriceInputPerMillion`, `llmPriceOutputPerMillion`.
-- `.env.example` — documents `JANTRA_PROVIDER`, `JANTRA_BASE_URL`, `JANTRA_API_KEY`, `JANTRA_MODEL`, `JANTRA_MODEL_PRO`, `JANTRA_PRICE_INPUT`, `JANTRA_PRICE_OUTPUT`.
+### Layer 2 — Per-run model switcher (Shipped 2026-06-10)
+- `src/model/catalog.ts` — Server-controlled `MODEL_CATALOG` returned via `GET /v1/models`.
+- Added model selection dropdown per agent in UI, validated against catalog on run creation.
 
-**How to activate:** set `JANTRA_PROVIDER=openai-compatible` + `JANTRA_BASE_URL=https://openrouter.ai/api/v1` + `JANTRA_API_KEY=sk-or-...` + `JANTRA_MODEL=anthropic/claude-sonnet-4`. Keep `GEMINI_API_KEY` set for the hybrid grounded-research fallback.
-
-### Layer 2 — Per-run model switcher (in-app catalog)
-
-**Files changed / new:**
-- `src/model/catalog.ts` *(new)* — `MODEL_CATALOG` with 8 entries (Gemini Flash/Pro, Claude Sonnet/Opus 4, GPT-4.1, DeepSeek V3, Llama 3.3 70B, Perplexity Sonar). `resolveCatalog(id)` and `isCatalogModelAvailable(model)`.
-- `src/model/index.ts` — `createProviderForStage(stage, choice, agentId, runModelId?)` — when `runModelId` is set and resolves in the catalog, that model is used for every stage.
-- `src/server/routes/models.ts` *(new)* — `GET /v1/models` → returns catalog for the UI.
-- `src/server/app.ts` — registers `registerModelRoutes(app)`.
-- `src/server/schemas.ts` — optional `modelId` on `createRunBodySchema`, validated against catalog (invalid → 400).
-- `src/pipeline/types.ts` — `Project.modelId?: string`.
-- `src/pipeline/orchestrator.ts` — `CreateProjectOptions.modelId`; persisted; threaded into `createProviderForStage`.
-- `src/server/routes/runs.ts` — forwards `body.modelId` to `createProject`, records in audit.
-- `src/pipeline/research/citationVerifier.ts` — skeptic provider also passes `ctx.project.modelId`.
-- `web/src/api/client.ts` — `ModelOption` type, `listModels()`, `modelId?` on `createRun` + `RunDetail`.
-- `web/src/routes/AgentCatalog.tsx` — `<select>` picker per agent tile (default = server env model, otherwise catalog pick).
-- `web/src/styles.css` — `select` added to input/font-inherit rule; `.start-row select` sized reasonably.
-- `src/server/smoke.ts` — extended to cover `/v1/models`, `modelId` persistence, invalid-id rejection.
-
-**All workspace typechecks, server smoke, and mock pipeline smoke pass.**
+### Security & Reliability Fixes (Shipped 2026-07-15)
+- **Fix 1 (High):** Bounded Fastify `trustProxy` to trust exactly `1` hop in remote mode, preventing `X-Forwarded-For` rate-limiting bypass.
+- **Fix 2 (High):** Implemented `assertPublicWebhookUrl` ([urlGuard.ts](file:///D:/XOLVER/Jantra/src/server/webhooks/urlGuard.ts)) checking schemes, private IPs, and resolving host DNS to prevent blind SSRF in webhook delivery and subscription.
+- **Fix 3 (Medium):** Added a parallel `behavioral-eval` job to the CI workflow ([ci.yml](file:///D:/XOLVER/Jantra/.github/workflows/ci.yml)) to run evaluation and smoke suites on every branch push or pull request.
+- **Fix 4 (Medium):** Introduced a generic `fetchWithTimeout` utility and wired it to page fetches, webhooks, Stripe/Shopify connectors, and Gemini model calls.
+- **Fix 5 (Medium):** Implemented daily spending ceiling enforce checks (default $2.00) for the completion gateway, backed by `gateway-spend.json` and SQLite table `client_daily_gateway_spend`.
+- **Fix 6 (Medium):** Confined the CSV ops connector directory to resolve relative to the client's data root `data/ops/<clientId>` and prevent directory traversal.
 
 ## Verified test coverage
 
-- `npm run typecheck` — root + web + desktop + client + embed-widget workspaces: ✓ clean
-- `npm run server:smoke` — auth, host/origin guards, agent catalog, model catalog, runs (with modelId), audit: ✓ pass
-- `npm run smoke` — mock pipeline (Intake → Research → Planning artifacts, verified claims, Build disabled): ✓ pass
+- `npm run typecheck` — workspaces root + web + desktop + client + embed-widget: ✓ clean
+- `npm run eval` — guardrails, regressions, policy checks: ✓ **45/45 checks pass** (including new rate limit, webhook URL guard, completion gateway budget, and CSV path resolve regressions)
+- `npm run smoke` — pipeline mock run produces artifacts and verified claims: ✓ pass
+- `npm run server:smoke` — auth, host checks, runs creation, complete gateway, catalog: ✓ pass
 
-## What's next (not yet planned/started)
+## What's next
 
-- **Commit the work tree** — neither Layer 1 nor Layer 2 is committed. All changes are unstaged.
-- **Per-stage model override** — the factory already takes a `stage` arg; a future per-stage picker is reachable by passing different catalog ids per stage. Not needed now.
-- **Key-availability guard at run creation** — currently a run created with an OpenRouter modelId but no `JANTRA_API_KEY` fails at `advance` time, not at `POST /v1/runs`. Could add a server-side available check in the schema refine to fail fast.
-- **Global setting (Settings page)** — a single preferred-model default in the Settings route, simpler than per-run if that's all that's needed.
+- **Per-stage model override** — support configuring catalog ids per individual pipeline stage instead of per run.
+- **Key-availability validation at run creation** — validate keys/settings before starting the run instead of failing during the run.
+- **Global Settings interface** — allow users to configure default preferred models globally in the UI.
 
 **Why:** [[multi-llm-provider-plan]]
