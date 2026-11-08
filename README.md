@@ -71,3 +71,11 @@ Gemini key.
 ## Status
 
 This is the Jantra planning pipeline implementation target from `docs/BUILD_SPEC.md`. The eval harness runs without a Gemini key; live model-judge evals are skipped unless a key is present. Live pipeline runs require `GEMINI_API_KEY`.
+
+## Render deployment
+
+`render.yaml` defines the Singapore starter web service and a 1 GB persistent disk mounted at `/data/jantra`. The service exposes the unauthenticated, side-effect-free `/health` readiness route; all `/v1` application routes keep their existing authentication.
+
+Keep `JANTRA_PROJECT_DIR=/data/jantra/projects` and `JANTRA_AUDIT_DIR=/data/jantra/audit`. Configure the provider, model, API-key, admin-token, service-token, and cost-ceiling variable names declared in the Blueprint through Render without committing their values.
+
+Before cutover, copy the current Railway `/data/jantra` volume into the Render disk during a brief write pause. Validate SQLite files with `PRAGMA integrity_check`, compare file counts/checksums, then test `/health`, an authenticated agent listing, an existing read-only run lookup, and an intake request. Keep Railway and its volume intact until the rollback window closes. Roll back by directing the intake proxy to the Railway origin; reconcile any writes made on Render before reopening Railway for writes.

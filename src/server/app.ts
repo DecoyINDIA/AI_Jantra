@@ -74,6 +74,8 @@ export function createServer(options: CreateServerOptions): FastifyInstance {
   const store = options.store ?? defaultStore;
   const apiKeyStore = options.apiKeyStore ?? (isApiKeyStore(store) ? store : undefined);
 
+  app.get("/health", async () => ({ status: "healthy" }));
+
   if (mode === "remote") {
     // Throttle before auth so unauthenticated floods and API-key brute-force
     // attempts are capped too. The loopback-only local API is not rate limited.

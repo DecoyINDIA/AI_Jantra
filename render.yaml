@@ -1,0 +1,42 @@
+services:
+  - type: web
+    name: jantra
+    runtime: docker
+    plan: starter
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    numInstances: 1
+    disk:
+      name: jantra-data
+      mountPath: /data/jantra
+      sizeGB: 1
+    envVars:
+      - key: JANTRA_SERVER_PORT
+        value: 10000
+      - key: JANTRA_PROJECT_DIR
+        value: /data/jantra/projects
+      - key: JANTRA_AUDIT_DIR
+        value: /data/jantra/audit
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: JANTRA_API_KEY
+        sync: false
+      - key: JANTRA_ADMIN_TOKEN
+        sync: false
+      - key: JANTRA_FIREBNB_SERVICE_TOKEN
+        sync: false
+      - key: JANTRA_PROVIDER
+        sync: false
+      - key: JANTRA_BASE_URL
+        sync: false
+      - key: JANTRA_MODEL
+        sync: false
+      - key: JANTRA_MODEL_PRO
+        sync: false
+      - key: JANTRA_COST_CEILING_USD
+        sync: false
+      - key: JANTRA_INTAKE_CLIENT_DAILY_CEILING_USD
+        sync: false
+      - key: JANTRA_INTAKE_RUN_CEILING_USD
+        sync: false
