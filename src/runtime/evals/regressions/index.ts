@@ -42,6 +42,7 @@ import {
 import {
   verifyErrorEnvelopeNoLeak,
   verifyLeadRunLinkAndWebhooks,
+  verifyPromoteIntakeToPlan,
   verifyRateLimiterFixedWindow,
   verifyRateLimiterProxyTrust,
   verifyRejectRoutePersistsReason,
@@ -91,5 +92,6 @@ export async function runRegressionEvals(): Promise<StageEvalResult[]> {
     await runRegression("gateway-reserve-settle", verifyGatewayReserveSettle),
     await runRegression("unknown-model-cost", verifyUnknownModelCost),
     await runRegression("lead-run-link-and-webhooks", verifyLeadRunLinkAndWebhooks),
+    await runRegression("promote-intake-to-plan", verifyPromoteIntakeToPlan),
   ];
 }

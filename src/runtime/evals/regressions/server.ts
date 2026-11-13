@@ -1,10 +1,11 @@
 import fastify, { type FastifyRequest } from "fastify";
+import { createProject } from "../../../pipeline/orchestrator.js";
 import { JsonProjectStore, type ProjectStore } from "../../../pipeline/store.js";
 import { createServer } from "../../../server/app.js";
 import { createFixedWindowLimiter, installIdentityRateLimit } from "../../../server/rateLimit.js";
 import { runParamsSchema } from "../../../server/schemas.js";
 import { visitorAddress } from "../../../server/visitor.js";
-import { assert } from "./common.js";
+import { assert, readAuditJsonl } from "./common.js";
 
 export async function verifyRejectRoutePersistsReason(): Promise<void> {
   const token = "reject-regression-token";
@@ -321,6 +322,118 @@ export async function verifyLeadRunLinkAndWebhooks(): Promise<void> {
       assert(crossTenantLead.statusCode === 404, `Expected 404 for cross-tenant runId, got ${crossTenantLead.statusCode}`);
     } finally {
       await appBeta.close();
+    }
+  } finally {
+    await app.close();
+  }
+}
+
+export async function verifyPromoteIntakeToPlan(): Promise<void> {
+  const token = "promote-token";
+  const auth = { authorization: `Bearer ${token}`, host: "127.0.0.1:4317" };
+  const store = new JsonProjectStore();
+  const clientId = `eval-promote-${Date.now()}`;
+  const app = createServer({
+    loopbackToken: token,
+    clientId,
+    store,
+  });
+
+  try {
+    // 1. Create a public intake run without summary to test missing summary guard
+    const emptySource = createProject({
+      clientId,
+      title: "Incomplete Intake Run",
+      agentId: "intake-public",
+    });
+    store.saveProject(emptySource);
+
+    const earlyPromote = await app.inject({
+      method: "POST",
+      url: `/v1/runs/${emptySource.id}/promote`,
+      headers: { ...auth },
+    });
+    assert(earlyPromote.statusCode === 400, `Expected 400 for early promote, got ${earlyPromote.statusCode}`);
+
+    // 2. Create a completed intake run with idea_summary artifact
+    const sourceProject = createProject({
+      clientId,
+      title: "Completed Intake Run",
+      agentId: "intake-public",
+    });
+    const now = new Date().toISOString();
+    const ideaSummaryArtifact = {
+      stage: "intake",
+      kind: "idea_summary",
+      title: "Completed Intake Idea Summary",
+      content: "# Idea Summary\n\nA reconciliation tool for small ecommerce finance teams.",
+      version: 1,
+      createdAt: now,
+    };
+    const intakeStage = sourceProject.stages.intake;
+    assert(intakeStage, "Expected intake stage on source project");
+    intakeStage.status = "awaiting_confirmation";
+    intakeStage.artifacts = [ideaSummaryArtifact];
+    store.saveProject(sourceProject);
+    store.writeArtifactFile(clientId, sourceProject.id, ideaSummaryArtifact);
+
+    // 3. Promote the intake run
+    const promoteRes = await app.inject({
+      method: "POST",
+      url: `/v1/runs/${sourceProject.id}/promote`,
+      headers: { ...auth },
+    });
+    assert(promoteRes.statusCode === 201, `Promote failed: ${promoteRes.statusCode}: ${promoteRes.body}`);
+    const promotedRun = promoteRes.json().run;
+    assert(promotedRun.agentId === "planning-pipeline", "Expected planning-pipeline agent");
+    assert(promotedRun.currentStage === "research", `Expected currentStage === research, got ${promotedRun.currentStage}`);
+    assert(promotedRun.stages.intake.status === "confirmed", "Expected confirmed intake stage");
+    assert(promotedRun.stages.intake.artifacts.length === 1, "Expected copied artifact in intake stage");
+    assert(promotedRun.stages.intake.artifacts[0].kind === "idea_summary", "Expected idea_summary");
+    assert(promotedRun.stages.research.status === "pending", "Expected research pending");
+
+    // 4. Verify the artifact can be loaded via artifact route for the promoted run
+    const artifactRes = await app.inject({
+      method: "GET",
+      url: `/v1/runs/${promotedRun.id}/artifacts/idea_summary`,
+      headers: { ...auth },
+    });
+    assert(artifactRes.statusCode === 200, `Expected 200 for artifact fetch, got ${artifactRes.statusCode}`);
+    assert(artifactRes.json().artifact.kind === "idea_summary", "Expected idea_summary artifact");
+
+    // 5. Verify source run is unchanged
+    const sourceCheck = await app.inject({
+      method: "GET",
+      url: `/v1/runs/${sourceProject.id}`,
+      headers: { ...auth },
+    });
+    const sourceFinal = sourceCheck.json().run;
+    assert(sourceFinal.agentId === "intake-public", "Source run agent changed");
+    assert(sourceFinal.currentStage === "intake", "Source run stage changed");
+    assert(sourceFinal.stages.intake.status === "awaiting_confirmation", "Source run status changed");
+    assert(sourceFinal.stages.intake.artifacts.length === 1, "Source run artifacts changed");
+
+    // 6. Verify audit records promotedFrom
+    const auditEntries = readAuditJsonl(promotedRun.id);
+    const runCreated = auditEntries.find((e) => e.type === "run_created");
+    assert(runCreated?.promotedFrom === sourceProject.id, `Audit missing promotedFrom: ${JSON.stringify(runCreated)}`);
+
+    // 7. Verify public key cannot promote
+    const remoteApp = createServer({
+      mode: "remote",
+      loopbackToken: "",
+      apiKeys: [{ key: "pub-key", clientId, subject: "web" }],
+      store,
+    });
+    try {
+      const publicPromote = await remoteApp.inject({
+        method: "POST",
+        url: `/v1/runs/${sourceProject.id}/promote`,
+        headers: { authorization: "Bearer pub-key" },
+      });
+      assert(publicPromote.statusCode === 403, `Expected 403 for public key promote, got ${publicPromote.statusCode}`);
+    } finally {
+      await remoteApp.close();
     }
   } finally {
     await app.close();

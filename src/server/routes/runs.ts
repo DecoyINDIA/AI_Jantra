@@ -18,8 +18,9 @@ import {
   PUBLIC_INTAKE_AGENT_ID,
   visitorDailyBudgetStatus,
 } from "../../runtime/intakeBudget.js";
+import type { Artifact } from "../../pipeline/types.js";
 import { visitorKey } from "../visitor.js";
-import { HttpError, notFound } from "../errors.js";
+import { forbidden, HttpError, notFound } from "../errors.js";
 import { assertAgentAllowed } from "../scope.js";
 import {
   createRunBodySchema,
@@ -212,5 +213,88 @@ export function registerRunRoutes(app: FastifyInstance, deps: RunRouteDeps): voi
       deps.store.saveProject(project);
       return { run: project };
     });
+  });
+
+  // Promote a completed intake run into a full planning pipeline run.
+  // Full scope only: creates a planning-pipeline run with intake pre-confirmed
+  // using the source run's idea_summary artifact.
+  app.post("/v1/runs/:runId/promote", async (request, reply) => {
+    const clientId = requestClientId(request, deps.clientId);
+    const params = parseWith(runParamsSchema, request.params);
+
+    if (request.identity?.scope === "public") {
+      throw forbidden("Public keys cannot promote runs.");
+    }
+
+    const sourceProject = loadScopedProject(request, deps.store, clientId, params.runId);
+
+    const ideaSummary = Object.values(sourceProject.stages)
+      .flatMap((s) => s.artifacts)
+      .filter((a) => a.kind === "idea_summary")
+      .at(-1);
+
+    if (!ideaSummary) {
+      throw new HttpError(400, "missing_idea_summary", "Source run does not contain an idea summary.");
+    }
+
+    const definition = deps.registry.get("planning-pipeline");
+    const newProject = createProject({
+      clientId,
+      title: sourceProject.title,
+      definition,
+      autonomy: sourceProject.autonomy ?? "gated",
+    });
+
+    const now = new Date().toISOString();
+    const copiedArtifact: Artifact = {
+      ...ideaSummary,
+      stage: "intake",
+      version: 1,
+      createdAt: now,
+    };
+
+    const intakeStage = newProject.stages.intake;
+    if (intakeStage) {
+      intakeStage.status = "confirmed";
+      intakeStage.artifacts = [copiedArtifact];
+      intakeStage.updatedAt = now;
+    }
+
+    const path = deps.store.writeArtifactFile(newProject.clientId, newProject.id, copiedArtifact);
+
+    newProject.currentStage = "research";
+    newProject.updatedAt = now;
+
+    deps.store.saveProject(newProject);
+
+    const audit = new AuditLogger(newProject.id, config.auditDir);
+    audit.record("run_created", {
+      clientId: newProject.clientId,
+      projectId: newProject.id,
+      agentId: newProject.agentId,
+      agentVersion: newProject.agentVersion,
+      modelId: newProject.modelId ?? null,
+      autonomy: newProject.autonomy ?? "gated",
+      titleChars: newProject.title.length,
+      promotedFrom: sourceProject.id,
+    });
+    audit.record("agent_message", {
+      clientId: newProject.clientId,
+      projectId: newProject.id,
+      stage: "intake",
+      artifactKind: copiedArtifact.kind,
+      artifactPath: path,
+    });
+    audit.record("stage_gate", {
+      clientId: newProject.clientId,
+      projectId: newProject.id,
+      stage: "intake",
+      status: "confirmed",
+      gate: "human",
+      autonomy: newProject.autonomy ?? "gated",
+    });
+
+    reply.code(201);
+    return { run: newProject };
   });
 }

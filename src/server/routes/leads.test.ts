@@ -96,8 +96,8 @@ describe("leads & webhooks (T-021)", () => {
       (s) => s.events.length === 0 || s.events.includes(event.type),
     );
     assert.equal(matching.length, 2);
-    assert.equal(matching[0].id, "sub-all");
-    assert.equal(matching[1].id, "sub-lead");
+    assert.equal(matching[0]?.id, "sub-all");
+    assert.equal(matching[1]?.id, "sub-lead");
 
     // Verify payload contains only IDs and timestamp, never personal fields
     assert.equal(event.payload.leadId, "lead-99");

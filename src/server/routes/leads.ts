@@ -79,10 +79,27 @@ export function registerLeadRoutes(app: FastifyInstance, deps: LeadRouteDeps): v
     return { id: lead.id, createdAt: lead.createdAt, runId: lead.runId };
   });
 
-  // List the calling user's own leads for the account section. Requires a valid
-  // user token — anonymous callers get nothing they could correlate to a person.
+  // List leads. Full-scope callers (operators / local mode) receive all leads for
+  // the client tenant. Public callers require a valid user token and only see their
+  // own leads. Anonymous callers get nothing.
   app.get("/v1/leads", async (request) => {
     const clientId = requestClientId(request, deps.clientId);
+    const identity = request.identity;
+
+    if (identity?.scope === "full") {
+      const items = leadStore.listLeads(clientId).map((lead) => ({
+        id: lead.id,
+        name: lead.name,
+        email: lead.email,
+        phone: lead.phone,
+        idea: lead.idea,
+        source: lead.source,
+        runId: lead.runId,
+        createdAt: lead.createdAt,
+      }));
+      return { items };
+    }
+
     const user = await resolveUser(request);
     if (!user) {
       throw unauthorized("A user token is required to list leads.");
@@ -92,6 +109,7 @@ export function registerLeadRoutes(app: FastifyInstance, deps: LeadRouteDeps): v
       id: lead.id,
       name: lead.name,
       email: lead.email,
+      phone: lead.phone,
       idea: lead.idea,
       source: lead.source,
       runId: lead.runId,

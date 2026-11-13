@@ -44,7 +44,7 @@ Status: In Progress
 | **T-016** | P2 | Completed | 3239b8a | Yes | G1 + Docker smoke (/health 200, healthy) | Production container |
 | **T-017** | P2 | Completed | f57df4d | Yes | G1 + npm test (37 unit tests, 61/61 eval) | Unit tests & split regressions |
 | **T-021** | P2 | Completed | a4231dc | Yes | G1 + npm test (40 unit tests, 62/62 eval) | Lead notification & lead↔run link |
-| **T-020** | P2 | Pending | - | - | - | Promote intake to plan & gate queue UI |
+| **T-020** | P2 | Completed | 563ec96 | Yes | G1 + npm test (40 unit tests, 63/63 eval) | Promote intake to plan & gate queue UI |
 | **T-022** | P2 | Pending | - | - | - | Client-ready export |
 | **T-015** | P2 | Pending | - | - | - | One SQLite database with migrations |
 | **T-014** | P2 | Pending | - | - | - | Asynchronous stage execution |
