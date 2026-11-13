@@ -35,8 +35,8 @@ Status: In Progress
 - **Recommendation:** **CONFIRM** the T-006 design. `worker.js` must delete incoming `X-Jantra-Client-IP` and set it from `request.headers.get("CF-Connecting-IP")`. The origin must trust `X-Jantra-Client-IP` only when authenticated with `public` key scope.
 | **T-007** | P1 | Completed | 0107546 | Yes | G1 (51/51 eval, typecheck, smoke, server:smoke) | Clean error envelope |
 | **T-008** | P1 | Completed | 0f8fc48 | Yes | G1 (53/53 eval, typecheck, smoke, server:smoke) | Store defects |
-| **T-009** | P1 | Completed | pending | pending | G1 (53/53 eval, typecheck, smoke, server:smoke) | Cross-platform scripts & CI typecheck |
-| **T-010** | P1 | Pending | - | - | - | Persist research checkpoints |
+| **T-009** | P1 | Completed | 1c8a17a | Yes | G1 (53/53 eval, typecheck, smoke, server:smoke) | Cross-platform scripts & CI typecheck |
+| **T-010** | P1 | Completed | pending | pending | G1 (54/54 eval, typecheck, smoke, server:smoke) | Persist research checkpoints |
 | **T-006** | P1 | Pending | - | - | - | Per-visitor limits |
 | **T-011** | P1 | Pending | - | - | - | Verify research report after refinement |
 | **T-012** | P1 | Pending | - | - | - | Budget reserve/settle & unknown price guard |
