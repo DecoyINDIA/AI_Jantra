@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import type { AuditLogger } from "../../audit.js";
 import { config } from "../../config.js";
 import type { GroundingCitation } from "../../model/provider.js";
 import { runArtifactOutputChecks } from "../../policy.js";
@@ -31,6 +32,7 @@ import {
 } from "../research/schemas.js";
 import { BUILD_PHILOSOPHY, FOUNDER_PHILOSOPHY } from "./intake.js";
 import { registerSource } from "../research/sourceRegistry.js";
+import { checkReportProvenance } from "../research/reportProvenance.js";
 import {
   dedupeCitationCandidates,
   rankAndCapCitationCandidates,
@@ -43,6 +45,38 @@ export function checkpointResearchState(ctx: StageContext, state: PersistedStage
   saveStageExecutionState(ctx.project, ctx.stageId, state);
   ctx.project.updatedAt = new Date().toISOString();
   ctx.store.saveProject(ctx.project);
+}
+
+export function finalizeResearchDraft(
+  baseline: string,
+  refined: string,
+  claims: Claim[],
+  sourceIds: string[],
+  audit: AuditLogger,
+  meta: { clientId: string; projectId: string; stageId: string },
+): string {
+  const provenance = checkReportProvenance({
+    finalReport: refined,
+    baselineReport: baseline,
+    verifiedClaims: claims.filter((c) => c.verified),
+    knownSourceIds: sourceIds,
+  });
+
+  if (!provenance.ok) {
+    audit.record("guardrail_block", {
+      clientId: meta.clientId,
+      projectId: meta.projectId,
+      stage: meta.stageId,
+      reason:
+        "Refined report introduced unverified figures or sources; reverted to verified draft.",
+      flags: ["post_refine_provenance"],
+      orphanNumbers: provenance.orphanNumbers.slice(0, 20),
+      unknownSourceRefs: provenance.unknownSourceRefs.slice(0, 20),
+    });
+    return baseline;
+  }
+
+  return refined;
 }
 
 interface SynthesizedSection {
@@ -706,6 +740,8 @@ export async function runResearch(ctx: StageContext): Promise<Artifact[]> {
   const anchorFit = await synthesizeFounderAnchorFit(ctx, anchors, synthesized);
   const viability = await summarizeViability(ctx, anchors, synthesized);
 
+  const baseline = renderReport(idea, viability, synthesized, anchorFit, ctx.project.sources);
+
   const evaluated = await runEvaluatorLoop({
     audit: ctx.audit,
     project: ctx.project,
@@ -713,19 +749,40 @@ export async function runResearch(ctx: StageContext): Promise<Artifact[]> {
     provider: ctx.provider,
     rubric: researchRubric,
     maxRounds: config.maxEvalRounds,
-    generate: async () => renderReport(idea, viability, synthesized, anchorFit, ctx.project.sources),
+    generate: async () => baseline,
     critique: (draft) => critiqueReport(ctx, draft, claims),
     refine: (draft, critique) => refineReport(ctx, draft, critique, claims),
   });
+
+  const finalDraft = finalizeResearchDraft(
+    baseline,
+    evaluated.draft,
+    claims,
+    ctx.project.sources.map((s) => s.id),
+    ctx.audit,
+    {
+      clientId: ctx.project.clientId,
+      projectId: ctx.project.id,
+      stageId: ctx.stageId,
+    },
+  );
+
+  const evalResult =
+    finalDraft !== evaluated.draft
+      ? {
+          ...evaluated.eval,
+          notes: `${evaluated.eval.notes} Reverted to verified draft after provenance check.`,
+        }
+      : evaluated.eval;
 
   const artifact: Artifact = {
     stage: ctx.stageId,
     kind: "research_report",
     title: `Market research - ${idea.title}`,
-    content: evaluated.draft,
+    content: finalDraft,
     version: 1,
     createdAt: new Date().toISOString(),
-    eval: evaluated.eval,
+    eval: evalResult,
   };
 
   const outputCheck = runArtifactOutputChecks(artifact, claims);
