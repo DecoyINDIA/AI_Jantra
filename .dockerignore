@@ -13,3 +13,4 @@ docs/
 *.log
 .github/
 .claude/
+.agents/
