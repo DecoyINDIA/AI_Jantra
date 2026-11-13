@@ -50,7 +50,7 @@ Status: In Progress
 | **T-014** | P2 | Completed | 67435a1 | Yes | G1 + npm test (54 unit tests, 66/66 eval) | Asynchronous stage execution with in-process worker, jobs table, 202 Prefer: respond-async, SSE events, and crash recovery |
 | **T-018** | P2 | Blocked | - | - | - | Blocked: Waiting on design partner real export for manual report X5 per D-3 |
 | **T-019** | P2 | Blocked | - | - | - | Blocked on T-018 and owner channel provider decision |
-| **T-023** | P2 | Completed | 4604a1e | Yes | G1 + npm test (61 unit tests, 68/68 eval) | Lead deletion route, store methods, 30-day retention sweep gated by JANTRA_ENABLE_LEAD_DELETION_SWEEP per D-6 |
-| **T-025** | P2 | Blocked | - | - | - | Requires licensing design pass with owner (D-5) |
+| **T-023** | P2 | Completed | c292fb9 | Yes | G1 + npm test (61 unit tests, 68/68 eval) | Lead deletion route, store methods, 30-day retention sweep gated by JANTRA_ENABLE_LEAD_DELETION_SWEEP per D-6 |
+| **T-025** | P2 | Partially Completed / Blocked | 58e6421 | Yes | G1 + npm test (61 unit tests, 68/68 eval) | Interim step completed: labeled status as unverified in UI & store; cryptographic signing blocked pending owner design pass (D-5) |
 | **T-024** | P3 | Completed | b32ce0d | Yes | G1 + npm test (54 unit tests, 66/66 eval) | Operator UI token handling: sessionStorage default, remember checkbox, never re-render admin token |
 | **T-026** | P3 | Completed | fc7b3bf | Yes | G1 + npm test (59 unit tests, 67/67 eval) | Model catalog from JANTRA_MODEL_CATALOG_PATH with Zod validation, endpoint model verification |

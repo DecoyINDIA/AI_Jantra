@@ -1,5 +1,5 @@
 import { Save, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { getApiConfig, isRememberEnabled, saveApiConfig } from "../api/client";
 
 export default function Settings() {
@@ -10,8 +10,17 @@ export default function Settings() {
   const [hasExistingAdmin, setHasExistingAdmin] = useState(Boolean(current.adminToken));
   const [rememberOnDevice, setRememberOnDevice] = useState(isRememberEnabled());
   const [desktopResult, setDesktopResult] = useState("");
+  const [licenseInfo, setLicenseInfo] = useState<{ active?: boolean; unverified?: boolean } | null>(null);
   const [saved, setSaved] = useState(false);
   const desktop = window.jantraDesktop;
+
+  useEffect(() => {
+    if (desktop?.licenseStatus) {
+      void desktop.licenseStatus().then((status) => {
+        setLicenseInfo(status as { active?: boolean; unverified?: boolean });
+      });
+    }
+  }, [desktop]);
 
   const handleSave = () => {
     saveApiConfig({
@@ -87,6 +96,11 @@ export default function Settings() {
       {desktop ? (
         <div className="desktop-tools">
           <h3>Desktop</h3>
+          <p className="empty">
+            Licence: <strong>{licenseInfo?.active ? "Active (unverified stub)" : "Unverified / inactive"}</strong>
+            <br />
+            <small>Cryptographic licence verification pending owner design pass (T-025).</small>
+          </p>
           <div className="button-row">
             <button
               onClick={async () => setDesktopResult(await desktop.createBackup())}
