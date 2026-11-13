@@ -252,6 +252,21 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   return (await response.json()) as T;
 }
 
+export async function apiFetchText(path: string, init: RequestInit = {}): Promise<string> {
+  const config = getApiConfig();
+  const headers = new Headers(init.headers);
+  if (config.token) headers.set("Authorization", `Bearer ${config.token}`);
+  const response = await fetch(`${config.baseUrl.replace(/\/$/, "")}${path}`, {
+    ...init,
+    headers,
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new ApiError(response.status, body || `${response.status} ${response.statusText}`);
+  }
+  return response.text();
+}
+
 export async function adminFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const config = getApiConfig();
   const headers = new Headers(init.headers);
@@ -329,4 +344,9 @@ export const api = {
     apiFetch<{ run: RunDetail }>(`/v1/runs/${runId}/promote`, {
       method: "POST",
     }),
+  exportReport: (runId: string) => apiFetchText(`/v1/runs/${encodeURIComponent(runId)}/export`),
+  getExportUrl: (runId: string) => {
+    const config = getApiConfig();
+    return `${config.baseUrl.replace(/\/$/, "")}/v1/runs/${encodeURIComponent(runId)}/export`;
+  },
 };

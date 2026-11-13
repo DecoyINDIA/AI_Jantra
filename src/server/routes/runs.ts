@@ -30,6 +30,7 @@ import {
   runParamsSchema,
 } from "../schemas.js";
 import { assertProjectAccess, requestClientId } from "../tenancy.js";
+import { renderClientReadyReport } from "../export/clientReport.js";
 
 interface RunRouteDeps {
   clientId: string;
@@ -166,6 +167,14 @@ export function registerRunRoutes(app: FastifyInstance, deps: RunRouteDeps): voi
     const clientId = requestClientId(request, deps.clientId);
     const params = parseWith(runParamsSchema, request.params);
     return { run: loadScopedProject(request, deps.store, clientId, params.runId) };
+  });
+
+  app.get("/v1/runs/:runId/export", async (request, reply) => {
+    const clientId = requestClientId(request, deps.clientId);
+    const params = parseWith(runParamsSchema, request.params);
+    const project = loadScopedProject(request, deps.store, clientId, params.runId);
+    const html = renderClientReadyReport(project);
+    reply.type("text/html; charset=utf-8").send(html);
   });
 
   app.post("/v1/runs/:runId/advance", async (request) => {

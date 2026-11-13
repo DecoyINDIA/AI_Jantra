@@ -1,4 +1,4 @@
-import { Check, FastForward, X } from "lucide-react";
+import { Check, FastForward, Printer, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type PendingInteractionView, type RunEvent } from "../api/client";
@@ -108,6 +108,22 @@ export default function RunDetail({ runId }: Props) {
           </button>
           <button disabled={busy || run.data.run.status !== "active"} onClick={() => reject.mutate()}>
             <X aria-hidden="true" /> Reject
+          </button>
+          <button
+            type="button"
+            title="Export client-ready HTML report"
+            onClick={async () => {
+              try {
+                const html = await api.exportReport(runId);
+                const blob = new Blob([html], { type: "text/html; charset=utf-8" });
+                const url = URL.createObjectURL(blob);
+                window.open(url, "_blank");
+              } catch (err) {
+                console.error("Export report failed", err);
+              }
+            }}
+          >
+            <Printer aria-hidden="true" /> Export Report
           </button>
         </div>
       </div>
