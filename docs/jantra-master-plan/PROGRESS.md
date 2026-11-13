@@ -37,8 +37,8 @@ Status: In Progress
 | **T-008** | P1 | Completed | 0f8fc48 | Yes | G1 (53/53 eval, typecheck, smoke, server:smoke) | Store defects |
 | **T-009** | P1 | Completed | 1c8a17a | Yes | G1 (53/53 eval, typecheck, smoke, server:smoke) | Cross-platform scripts & CI typecheck |
 | **T-010** | P1 | Completed | a233bb5 | Yes | G1 (54/54 eval, typecheck, smoke, server:smoke) | Persist research checkpoints |
-| **T-006** | P1 | Completed | pending | pending | G1 (57/57 eval, typecheck, smoke, server:smoke) | Per-visitor limits |
-| **T-011** | P1 | Pending | - | - | - | Verify research report after refinement |
+| **T-006** | P1 | Completed | 16636c8 | Yes | G1 (57/57 eval, typecheck, smoke, server:smoke) | Per-visitor limits |
+| **T-011** | P1 | Completed | pending | pending | G1 (59/59 eval, typecheck, smoke, server:smoke) | Verify research report after refinement |
 | **T-012** | P1 | Pending | - | - | - | Budget reserve/settle & unknown price guard |
 | **T-013** | P1 | Pending | - | - | - | Documentation truth pass |
 | **T-016** | P2 | Pending | - | - | - | Production container |

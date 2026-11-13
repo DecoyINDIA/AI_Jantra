@@ -18,7 +18,8 @@ import type {
 import { GeminiProvider } from "../../model/gemini.js";
 import { createProject } from "../../pipeline/orchestrator.js";
 import { createStageExecutionState } from "../../pipeline/executionState.js";
-import { checkpointResearchState } from "../../pipeline/stages/research.js";
+import { checkpointResearchState, finalizeResearchDraft } from "../../pipeline/stages/research.js";
+import { checkReportProvenance } from "../../pipeline/research/reportProvenance.js";
 import { JsonProjectStore, type ProjectStore } from "../../pipeline/store.js";
 import type { Artifact, Project, ProjectListQuery, ProjectPage, Source, StageContext } from "../../pipeline/types.js";
 import { createServer } from "../../server/app.js";
@@ -1481,6 +1482,105 @@ function verifyVisitorDailyBudget(): void {
   assert(!status2.exceeded, "Expected visitor 2 budget NOT to be exceeded");
 }
 
+function verifyReportProvenanceUnit(): void {
+  // Case 1: baseline "Market is $4.2 billion [S1]." + final "Market is $4.2B and grows 31% [S1]." → orphan ["31"]
+  const res1 = checkReportProvenance({
+    baselineReport: "Market is $4.2 billion [S1].",
+    finalReport: "Market is $4.2B and grows 31% [S1].",
+    verifiedClaims: [],
+    knownSourceIds: ["S1"],
+  });
+  assert(!res1.ok, "Expected res1.ok === false");
+  assert(
+    res1.orphanNumbers.length === 1 && res1.orphanNumbers[0] === "31",
+    `Expected orphan ["31"], got ${JSON.stringify(res1.orphanNumbers)}`,
+  );
+
+  // Case 2: final equal to baseline → ok
+  const res2 = checkReportProvenance({
+    baselineReport: "Market is $4.2 billion [S1].",
+    finalReport: "Market is $4.2 billion [S1].",
+    verifiedClaims: [],
+    knownSourceIds: ["S1"],
+  });
+  assert(res2.ok, "Expected res2.ok === true for identical reports");
+
+  // Case 3: final cites a source id not in knownSourceIds → unknownSourceRefs has it
+  const res3 = checkReportProvenance({
+    baselineReport: "Market is $4.2 billion [S1].",
+    finalReport: "Market is $4.2 billion [S1] [S99].",
+    verifiedClaims: [],
+    knownSourceIds: ["S1"],
+  });
+  assert(!res3.ok, "Expected res3.ok === false for unknown source ref");
+  assert(
+    res3.unknownSourceRefs.includes("S99"),
+    `Expected unknownSourceRefs to contain "S99", got ${JSON.stringify(res3.unknownSourceRefs)}`,
+  );
+
+  // Case 4: final "There are 3 key risks." with no 3 in baseline → ok (small integers ignored)
+  const res4 = checkReportProvenance({
+    baselineReport: "Market is growing fast.",
+    finalReport: "There are 3 key risks.",
+    verifiedClaims: [],
+    knownSourceIds: [],
+  });
+  assert(res4.ok, "Expected res4.ok === true for small integer 3");
+
+  // Case 5: final "In 2031 the market…" with 2031 absent from baseline → orphan ["2031"]
+  const res5 = checkReportProvenance({
+    baselineReport: "Market is growing fast.",
+    finalReport: "In 2031 the market will double.",
+    verifiedClaims: [],
+    knownSourceIds: [],
+  });
+  assert(!res5.ok, "Expected res5.ok === false for absent year 2031");
+  assert(
+    res5.orphanNumbers.includes("2031"),
+    `Expected orphan ["2031"], got ${JSON.stringify(res5.orphanNumbers)}`,
+  );
+
+  // Case 6: final "1,200 users" with baseline "1200 users" → ok
+  const res6 = checkReportProvenance({
+    baselineReport: "We observed 1200 users.",
+    finalReport: "We observed 1,200 users.",
+    verifiedClaims: [],
+    knownSourceIds: [],
+  });
+  assert(res6.ok, "Expected res6.ok === true for formatted 1,200 vs 1200");
+}
+
+function verifyReportProvenanceRevert(): void {
+  const runId = `test-provenance-${Date.now()}`;
+  const audit = new AuditLogger(runId, config.auditDir);
+  const baseline = "Market is valued at $5 billion [S1].";
+  const refined = "Market is valued at $5 billion and projected to hit $99 billion by next year [S1].";
+  const meta = {
+    clientId: "test-client",
+    projectId: runId,
+    stageId: "research",
+  };
+
+  const finalDraft = finalizeResearchDraft(
+    baseline,
+    refined,
+    [],
+    ["S1"],
+    audit,
+    meta,
+  );
+
+  assert(finalDraft === baseline, `Expected returned text to equal baseline, got: ${finalDraft}`);
+
+  const entries = readAuditJsonl(runId);
+  const block = entries.find((e) => e.type === "guardrail_block");
+  assert(block !== undefined, "Expected guardrail_block audit entry");
+  assert(
+    Array.isArray((block as any).flags) && (block as any).flags.includes("post_refine_provenance"),
+    `Expected post_refine_provenance flag in audit entry, got: ${JSON.stringify(block)}`,
+  );
+}
+
 async function runRegression(
   fixtureId: string,
   fn: () => Promise<void> | void,
@@ -1539,5 +1639,7 @@ export async function runRegressionEvals(): Promise<StageEvalResult[]> {
     await runRegression("visitor-rate-limit", verifyVisitorRateLimit),
     await runRegression("visitor-header-ignored-for-full-keys", verifyVisitorHeaderIgnoredForFullKeys),
     await runRegression("visitor-daily-budget", verifyVisitorDailyBudget),
+    await runRegression("report-provenance-unit", verifyReportProvenanceUnit),
+    await runRegression("report-provenance-revert", verifyReportProvenanceRevert),
   ];
 }
