@@ -44,6 +44,7 @@ import {
   verifyLeadRunLinkAndWebhooks,
   verifyPromoteIntakeToPlan,
   verifyClientReadyExport,
+  verifySqliteMigrationsAndStores,
   verifyRateLimiterFixedWindow,
   verifyRateLimiterProxyTrust,
   verifyRejectRoutePersistsReason,
@@ -95,5 +96,6 @@ export async function runRegressionEvals(): Promise<StageEvalResult[]> {
     await runRegression("lead-run-link-and-webhooks", verifyLeadRunLinkAndWebhooks),
     await runRegression("promote-intake-to-plan", verifyPromoteIntakeToPlan),
     await runRegression("client-ready-export", verifyClientReadyExport),
+    await runRegression("sqlite-migrations-and-stores", verifySqliteMigrationsAndStores),
   ];
 }

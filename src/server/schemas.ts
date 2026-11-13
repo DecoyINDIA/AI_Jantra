@@ -115,6 +115,8 @@ export const createAdminApiKeyBodySchema = z.object({
       "clientId must start with a letter or digit and use only letters, digits, underscore or hyphen.",
     ),
   subject: z.string().trim().min(1).max(API_KEY_SUBJECT_MAX_CHARS),
+  scope: z.enum(["full", "public"]).default("full"),
+  allowedAgents: z.array(z.string().min(1)).optional(),
 });
 
 export const listAdminApiKeysQuerySchema = z.object({

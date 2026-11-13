@@ -88,6 +88,8 @@ export function registerAdminKeyRoutes(app: FastifyInstance, deps: AdminKeyRoute
       createdAt: now,
       lastUsedAt: null,
       revokedAt: null,
+      scope: body.scope,
+      allowedAgents: body.allowedAgents,
     });
     auditKeyCreated(apiKey);
     return { key, apiKey };

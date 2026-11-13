@@ -1,6 +1,10 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import fastify, { type FastifyRequest } from "fastify";
 import { createProject } from "../../../pipeline/orchestrator.js";
 import { JsonProjectStore, type ProjectStore } from "../../../pipeline/store.js";
+import { SqliteProjectStore } from "../../../pipeline/store/sqlite.js";
 import { createServer } from "../../../server/app.js";
 import { createFixedWindowLimiter, installIdentityRateLimit } from "../../../server/rateLimit.js";
 import { runParamsSchema } from "../../../server/schemas.js";
@@ -589,5 +593,109 @@ export async function verifyClientReadyExport(): Promise<void> {
     assert(html.includes("https://example.com/supply-chain-2026"), "Missing source URL");
   } finally {
     await app.close();
+  }
+}
+
+export async function verifySqliteMigrationsAndStores(): Promise<void> {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "jantra-server-sqlite-"));
+  const adminToken = "test-admin-secret-token";
+  const clientId = `eval-sqlite-${Date.now()}`;
+  const dbPath = path.join(dir, "server.sqlite");
+  const store = new SqliteProjectStore(dbPath, { skipImport: true });
+
+  const app = createServer({
+    mode: "remote",
+    loopbackToken: "",
+    adminToken,
+    clientId,
+    store,
+  });
+
+  try {
+    // 1. Issue an API key via admin route with scope: "public" and allowedAgents: ["intake-public"]
+    const createKeyRes = await app.inject({
+      method: "POST",
+      url: "/v1/admin/keys",
+      headers: {
+        "x-jantra-admin-token": adminToken,
+        "content-type": "application/json",
+      },
+      payload: {
+        label: "Public Widget",
+        clientId,
+        subject: "web-user",
+        scope: "public",
+        allowedAgents: ["intake-public"],
+      },
+    });
+
+    assert(createKeyRes.statusCode === 200, `Key creation failed: ${createKeyRes.body}`);
+    const keyData = createKeyRes.json();
+    assert(keyData.apiKey.scope === "public", `Expected scope public, got ${keyData.apiKey.scope}`);
+    assert(
+      JSON.stringify(keyData.apiKey.allowedAgents) === JSON.stringify(["intake-public"]),
+      `Expected allowedAgents ["intake-public"], got ${JSON.stringify(keyData.apiKey.allowedAgents)}`,
+    );
+    const rawKey = keyData.key as string;
+
+    // 2. Use the created public key to call POST /v1/runs with planning-pipeline -> 403
+    const forbiddenRun = await app.inject({
+      method: "POST",
+      url: "/v1/runs",
+      headers: {
+        authorization: `Bearer ${rawKey}`,
+        "content-type": "application/json",
+      },
+      payload: {
+        agentId: "planning-pipeline",
+        title: "Disallowed planning run",
+      },
+    });
+    assert(forbiddenRun.statusCode === 403, `Expected 403, got ${forbiddenRun.statusCode}`);
+
+    // 3. Use the public key to create a public intake run -> 200
+    const allowedRun = await app.inject({
+      method: "POST",
+      url: "/v1/runs",
+      headers: {
+        authorization: `Bearer ${rawKey}`,
+        "content-type": "application/json",
+      },
+      payload: {
+        agentId: "intake-public",
+        title: "Allowed intake run",
+      },
+    });
+    assert(allowedRun.statusCode === 200, `Expected 200, got ${allowedRun.statusCode}`);
+    const runId = allowedRun.json().run.id as string;
+
+    // 4. Capture a lead via POST /v1/leads
+    const leadRes = await app.inject({
+      method: "POST",
+      url: "/v1/leads",
+      headers: {
+        authorization: `Bearer ${rawKey}`,
+        "content-type": "application/json",
+      },
+      payload: {
+        name: "Test User",
+        email: "test@example.com",
+        idea: "Automated logistics",
+        source: "eval",
+        runId,
+      },
+    });
+    assert(leadRes.statusCode === 201, `Lead creation failed: ${leadRes.body}`);
+    const leadId = leadRes.json().id as string;
+
+    // 5. Verify the lead is stored in SQLite
+    const leadInDb = store.listLeads(clientId).find((l) => l.id === leadId);
+    assert(leadInDb, "Lead was not found in SQLite store");
+    assert(leadInDb.email === "test@example.com", `Expected email test@example.com, got ${leadInDb.email}`);
+    assert(leadInDb.runId === runId, `Expected runId ${runId}, got ${leadInDb.runId}`);
+  } finally {
+    await app.close();
+    store.close();
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 }

@@ -50,6 +50,8 @@ export interface ApiKeyMetadata {
   createdAt: string;
   lastUsedAt: string | null;
   revokedAt: string | null;
+  scope?: "full" | "public";
+  allowedAgents?: string[] | null;
 }
 
 export interface StoredApiKeyRecord extends ApiKeyMetadata {
@@ -179,11 +181,11 @@ function writeNamedSpend(clientId: string, filename: string, spend: Record<strin
   atomicWriteFileSync(namedSpendFile(clientId, filename), JSON.stringify(spend, null, 2));
 }
 
-function encodeCursor(project: ProjectSummary): string {
+export function encodeCursor(project: ProjectSummary): string {
   return Buffer.from(`${project.updatedAt}\n${project.id}`, "utf8").toString("base64url");
 }
 
-function decodeCursor(cursor: string | undefined): { updatedAt: string; id: string } | null {
+export function decodeCursor(cursor: string | undefined): { updatedAt: string; id: string } | null {
   if (!cursor) return null;
   try {
     const [updatedAt, id] = Buffer.from(cursor, "base64url").toString("utf8").split("\n");

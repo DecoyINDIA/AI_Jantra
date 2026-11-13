@@ -6,6 +6,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import type Database from "better-sqlite3";
 
 import { config } from "../../config.js";
 import { assertSafePathSegment } from "../../pipeline/store.js";
@@ -64,6 +65,68 @@ export class JsonWebhookSubscriptionStore implements WebhookSubscriptionStore {
     if (next.length === existing.length) return false;
     writeAll(clientId, next);
     return true;
+  }
+}
+
+interface WebhookSubscriptionRow {
+  id: string;
+  client_id: string;
+  url: string;
+  secret: string | null;
+  events: string;
+  created_at: string;
+}
+
+function toWebhookSubscription(row: WebhookSubscriptionRow): WebhookSubscription {
+  let events: WebhookSubscription["events"] = [];
+  try {
+    const parsed = JSON.parse(row.events);
+    if (Array.isArray(parsed)) events = parsed;
+  } catch {}
+  return {
+    id: row.id,
+    clientId: row.client_id,
+    url: row.url,
+    secret: row.secret ?? undefined,
+    events,
+    createdAt: row.created_at,
+  };
+}
+
+export class SqliteWebhookSubscriptionStore implements WebhookSubscriptionStore {
+  constructor(private readonly db: Database.Database) {}
+
+  list(clientId: string): WebhookSubscription[] {
+    const rows = this.db
+      .prepare(
+        "select * from webhook_subscriptions where client_id = ? order by created_at asc",
+      )
+      .all(clientId) as WebhookSubscriptionRow[];
+    return rows.map(toWebhookSubscription);
+  }
+
+  create(subscription: WebhookSubscription): WebhookSubscription {
+    this.db
+      .prepare(
+        `insert into webhook_subscriptions (id, client_id, url, secret, events, created_at)
+         values (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        subscription.id,
+        subscription.clientId,
+        subscription.url,
+        subscription.secret ?? null,
+        JSON.stringify(subscription.events ?? []),
+        subscription.createdAt,
+      );
+    return subscription;
+  }
+
+  delete(clientId: string, id: string): boolean {
+    const result = this.db
+      .prepare("delete from webhook_subscriptions where client_id = ? and id = ?")
+      .run(clientId, id);
+    return result.changes > 0;
   }
 }
 

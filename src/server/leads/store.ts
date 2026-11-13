@@ -7,6 +7,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import type Database from "better-sqlite3";
 import { config } from "../../config.js";
 import { assertSafePathSegment } from "../../pipeline/store.js";
 
@@ -49,6 +50,90 @@ export interface LeadStore {
   createLead(record: LeadRecord): LeadRecord;
   listLeads(clientId: string): LeadRecord[];
   listLeadsByUser(clientId: string, userSub: string): LeadRecord[];
+  deleteLead?(clientId: string, id: string): boolean;
+}
+
+interface LeadRow {
+  id: string;
+  client_id: string;
+  user_sub: string | null;
+  name: string;
+  email: string;
+  phone: string | null;
+  idea: string;
+  source: string;
+  run_id: string | null;
+  created_at: string;
+  deleted_at: string | null;
+}
+
+function toLeadRecord(row: LeadRow): LeadRecord {
+  return {
+    id: row.id,
+    clientId: row.client_id,
+    userSub: row.user_sub,
+    name: row.name,
+    email: row.email,
+    phone: row.phone ?? undefined,
+    idea: row.idea,
+    source: row.source,
+    runId: row.run_id ?? undefined,
+    createdAt: row.created_at,
+  };
+}
+
+export class SqliteLeadStore implements LeadStore {
+  constructor(private readonly db: Database.Database) {}
+
+  createLead(record: LeadRecord): LeadRecord {
+    this.db
+      .prepare(
+        `insert into leads (
+          id, client_id, user_sub, name, email, phone, idea, source, run_id, created_at, deleted_at
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null)`,
+      )
+      .run(
+        record.id,
+        record.clientId,
+        record.userSub ?? null,
+        record.name,
+        record.email,
+        record.phone ?? null,
+        record.idea,
+        record.source,
+        record.runId ?? null,
+        record.createdAt,
+      );
+    return record;
+  }
+
+  listLeads(clientId: string): LeadRecord[] {
+    const rows = this.db
+      .prepare(
+        "select * from leads where client_id = ? and deleted_at is null order by created_at desc",
+      )
+      .all(clientId) as LeadRow[];
+    return rows.map(toLeadRecord);
+  }
+
+  listLeadsByUser(clientId: string, userSub: string): LeadRecord[] {
+    const rows = this.db
+      .prepare(
+        "select * from leads where client_id = ? and user_sub = ? and deleted_at is null order by created_at desc",
+      )
+      .all(clientId, userSub) as LeadRow[];
+    return rows.map(toLeadRecord);
+  }
+
+  deleteLead(clientId: string, id: string): boolean {
+    const now = new Date().toISOString();
+    const result = this.db
+      .prepare(
+        "update leads set deleted_at = ? where client_id = ? and id = ? and deleted_at is null",
+      )
+      .run(now, clientId, id);
+    return result.changes > 0;
+  }
 }
 
 export class JsonLeadStore implements LeadStore {
