@@ -175,6 +175,7 @@ export const config = {
   researchConcurrency: boundedIntegerFromEnv("JANTRA_RESEARCH_CONCURRENCY", 4, 1, 8),
   synthesisConcurrency: boundedIntegerFromEnv("JANTRA_SYNTHESIS_CONCURRENCY", 3, 1, 6),
   maxSources: boundedIntegerFromEnv("JANTRA_MAX_SOURCES", 24, 1, 48),
+  modelCatalogPath: process.env.JANTRA_MODEL_CATALOG_PATH || undefined,
 };
 
 export function requireApiKey(): void {

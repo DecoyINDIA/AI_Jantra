@@ -27,6 +27,7 @@ import { defaultLeadStore, type LeadStore } from "./leads/store.js";
 import { defaultWebhookStore, type WebhookSubscriptionStore } from "./webhooks/store.js";
 import { JobWorker } from "./jobs/worker.js";
 import type { JobStore } from "./jobs/types.js";
+import { checkCatalogModels } from "../model/catalog.js";
 
 export interface CreateServerOptions {
   loopbackToken: string;
@@ -160,6 +161,7 @@ export function createServer(options: CreateServerOptions): FastifyInstance {
 
   registerAgentRoutes(app, registry);
   registerModelRoutes(app);
+  void checkCatalogModels();
   registerRunRoutes(app, { clientId, registry, store, jobWorker });
   registerInteractionRoutes(app, { clientId, store, jobWorker });
   registerArtifactRoutes(app, { clientId, store });

@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import { z } from "zod";
 import { config, type GeminiModelId, type StageModelChoice } from "../config.js";
 
 /**
@@ -7,32 +9,30 @@ import { config, type GeminiModelId, type StageModelChoice } from "../config.js"
  * keys/costs) are allowed. A run stores a catalog `id`; `createProviderForStage`
  * resolves it back to a concrete provider.
  *
- * Adding a model = one entry here. No pipeline/agent code changes.
+ * Adding a model = one entry here or via JANTRA_MODEL_CATALOG_PATH. No pipeline/agent code changes.
  */
 
 export type CatalogProvider = "gemini" | "openai-compatible";
 
-export interface CatalogModel {
-  /** Stable id stored on the run and sent by the UI, e.g. "claude-sonnet-4". */
-  id: string;
-  /** Human label rendered on the button. */
-  label: string;
-  /** Which provider implementation serves this model. */
-  provider: CatalogProvider;
-  /** Provider-specific model string sent to the API. */
-  model: string;
-  /** Informational tier; also picks the Gemini tier used for grounded calls. */
-  tier: StageModelChoice;
-  /** Whether the model supports tool-calling (matters for agent/planning stages). */
-  supportsTools: boolean;
-}
+export const catalogModelSchema = z.object({
+  id: z.string().min(1).max(96),
+  label: z.string().min(1).max(96),
+  provider: z.enum(["gemini", "openai-compatible"]),
+  model: z.string().min(1).max(128),
+  tier: z.enum(["flash", "pro"]),
+  supportsTools: z.boolean(),
+});
+
+export const catalogSchema = z.array(catalogModelSchema).min(1);
+
+export type CatalogModel = z.infer<typeof catalogModelSchema>;
 
 /**
- * Curated list of selectable models. OpenAI-compatible entries assume the
+ * Curated built-in list of selectable models. OpenAI-compatible entries assume the
  * default OpenRouter route (`JANTRA_BASE_URL`); switch hosts by changing that
  * env var. Gemini entries run directly against the Gemini API.
  */
-export const MODEL_CATALOG: readonly CatalogModel[] = [
+export const BUILTIN_MODEL_CATALOG: readonly CatalogModel[] = [
   {
     id: "gemini-2.5-flash",
     label: "Gemini 2.5 Flash",
@@ -131,6 +131,32 @@ export const MODEL_CATALOG: readonly CatalogModel[] = [
   },
 ];
 
+export function loadModelCatalog(catalogPath?: string): CatalogModel[] {
+  if (!catalogPath) {
+    return [...BUILTIN_MODEL_CATALOG];
+  }
+  if (!fs.existsSync(catalogPath)) {
+    throw new Error(`Configured model catalog file was not found: ${catalogPath}`);
+  }
+  const raw = fs.readFileSync(catalogPath, "utf-8");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(
+      `Model catalog at ${catalogPath} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  return catalogSchema.parse(parsed);
+}
+
+export let MODEL_CATALOG: readonly CatalogModel[] = loadModelCatalog(config.modelCatalogPath);
+
+export function reloadModelCatalog(catalogPath?: string): readonly CatalogModel[] {
+  MODEL_CATALOG = loadModelCatalog(catalogPath ?? config.modelCatalogPath);
+  return MODEL_CATALOG;
+}
+
 export function resolveCatalog(id: string): CatalogModel | undefined {
   return MODEL_CATALOG.find((entry) => entry.id === id);
 }
@@ -149,4 +175,31 @@ export function isCatalogModelAvailable(model: CatalogModel): boolean {
   if (model.provider === "gemini") return Boolean(config.geminiApiKey);
   // openai-compatible
   return Boolean(config.llmApiKey && config.baseUrl);
+}
+
+export async function checkCatalogModels(
+  catalog: readonly CatalogModel[] = MODEL_CATALOG,
+): Promise<string[]> {
+  const unlisted: string[] = [];
+  if (config.provider === "openai-compatible" && config.baseUrl && config.llmApiKey) {
+    try {
+      const res = await fetch(`${config.baseUrl}/models`, {
+        headers: { Authorization: `Bearer ${config.llmApiKey}` },
+        signal: AbortSignal.timeout(4000),
+      });
+      if (res.ok) {
+        const body = (await res.json()) as { data?: Array<{ id: string }> };
+        const available = new Set(body.data?.map((m) => m.id) ?? []);
+        for (const item of catalog) {
+          if (item.provider === "openai-compatible" && !available.has(item.model)) {
+            unlisted.push(item.id);
+            console.warn(
+              `[jantra] Catalog model "${item.id}" (${item.model}) was not listed by ${config.baseUrl}`,
+            );
+          }
+        }
+      }
+    } catch {}
+  }
+  return unlisted;
 }

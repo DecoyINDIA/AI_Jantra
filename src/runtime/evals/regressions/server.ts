@@ -10,6 +10,7 @@ import { createFixedWindowLimiter, installIdentityRateLimit } from "../../../ser
 import { runParamsSchema } from "../../../server/schemas.js";
 import { visitorAddress } from "../../../server/visitor.js";
 import { hashApiKey } from "../../../server/auth/apiKeys.js";
+import { reloadModelCatalog } from "../../../model/catalog.js";
 import { assert, readAuditJsonl } from "./common.js";
 
 export async function verifyRejectRoutePersistsReason(): Promise<void> {
@@ -791,22 +792,15 @@ export async function verifyAsyncStageExecution(): Promise<void> {
       `Expected intake gate status, got ${run.stages.intake?.status}`,
     );
 
-    // 5. Test interaction or synchronous call without Prefer: respond-async
-    const interaction = run.interactions?.find((i: { status: string }) => i.status === "pending");
-    if (interaction) {
-      const answerRes = await app.inject({
-        method: "POST",
-        url: `/v1/runs/${runId}/interactions/${interaction.id}`,
-        headers: {
-          authorization: `Bearer ${rawKey}`,
-          "content-type": "application/json",
-        },
-        payload: {
-          text: "Testing synchronous interaction response.",
-        },
-      });
-      assert(answerRes.statusCode === 200, `Expected 200 synchronous interaction, got ${answerRes.statusCode}`);
-    }
+    // 5. Calling advance without Prefer: respond-async returns 200 synchronously
+    const syncRes = await app.inject({
+      method: "POST",
+      url: `/v1/runs/${runId}/advance`,
+      headers: {
+        authorization: `Bearer ${rawKey}`,
+      },
+    });
+    assert(syncRes.statusCode === 200, `Expected 200 synchronous advance, got ${syncRes.statusCode}`);
 
     // 6. Unknown job returns 404
     const notFoundJob = await app.inject({
@@ -820,6 +814,51 @@ export async function verifyAsyncStageExecution(): Promise<void> {
   } finally {
     await app.close();
     store.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+export async function verifyModelCatalogFromConfig(): Promise<void> {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "jantra-catalog-eval-"));
+  const catalogPath = path.join(dir, "custom-catalog.json");
+  const customModels = [
+    {
+      id: "custom-eval-model",
+      label: "Custom Eval Model",
+      provider: "openai-compatible",
+      model: "custom/eval-model-v1",
+      tier: "flash",
+      supportsTools: true,
+    },
+  ];
+
+  try {
+    fs.writeFileSync(catalogPath, JSON.stringify(customModels), "utf-8");
+    reloadModelCatalog(catalogPath);
+
+    const app = createServer({
+      mode: "local",
+      loopbackToken: "test-token",
+    });
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/v1/models",
+      headers: {
+        authorization: "Bearer test-token",
+        host: "127.0.0.1:4317",
+      },
+    });
+
+    assert(res.statusCode === 200, `GET /v1/models failed: ${res.body}`);
+    const data = res.json();
+    const found = data.models.find((m: { id: string }) => m.id === "custom-eval-model");
+    assert(found, "Custom model from configured catalog file was not found in /v1/models");
+    assert(found.label === "Custom Eval Model", `Expected label Custom Eval Model, got ${found.label}`);
+
+    await app.close();
+  } finally {
+    reloadModelCatalog("");
     fs.rmSync(dir, { recursive: true, force: true });
   }
 }
