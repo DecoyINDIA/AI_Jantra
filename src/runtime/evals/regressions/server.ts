@@ -439,3 +439,155 @@ export async function verifyPromoteIntakeToPlan(): Promise<void> {
     await app.close();
   }
 }
+
+export async function verifyClientReadyExport(): Promise<void> {
+  const token = "export-regression-token";
+  const clientId = `eval-export-${Date.now()}`;
+  const auth = { authorization: `Bearer ${token}`, host: "127.0.0.1:4317" };
+  const store = new JsonProjectStore();
+  const app = createServer({ loopbackToken: token, clientId, store });
+
+  try {
+    const project = createProject({
+      clientId,
+      title: "Export Regression Suite",
+      agentId: "planning-pipeline",
+    });
+
+    const now = new Date().toISOString();
+    project.stages.intake = {
+      id: "intake",
+      status: "confirmed",
+      artifacts: [
+        {
+          stage: "intake",
+          kind: "idea_summary",
+          title: "Executive Summary",
+          content: "# Idea Overview\n\nPlatform for automated supply chain verification.",
+          version: 1,
+          createdAt: now,
+        },
+      ],
+      evals: [],
+      updatedAt: now,
+    };
+
+    project.stages.research = {
+      id: "research",
+      status: "confirmed",
+      artifacts: [
+        {
+          stage: "research",
+          kind: "research_report",
+          title: "Market Analysis",
+          content: "## Findings\n\nMarket demand is accelerating in Q1.",
+          version: 1,
+          createdAt: now,
+        },
+      ],
+      evals: [],
+      updatedAt: now,
+    };
+
+    project.stages.planning = {
+      id: "planning",
+      status: "confirmed",
+      artifacts: [
+        {
+          stage: "planning",
+          kind: "prd",
+          title: "Product Requirements",
+          content: "## Requirements\n\nMust verify all suppliers deterministically.",
+          version: 1,
+          createdAt: now,
+        },
+        {
+          stage: "planning",
+          kind: "trd",
+          title: "Technical Requirements",
+          content: "## Specs\n\nNode.js and SQLite architecture.",
+          version: 1,
+          createdAt: now,
+        },
+        {
+          stage: "planning",
+          kind: "build_plan",
+          title: "Phased Execution Plan",
+          content: "## Roadmap\n\nPhase 1 deployment by end of month.",
+          version: 1,
+          createdAt: now,
+        },
+      ],
+      evals: [],
+      updatedAt: now,
+    };
+
+    project.sources = [
+      {
+        id: "src-supply-chain",
+        clientId,
+        title: "Global Supply Chain Index 2026",
+        url: "https://example.com/supply-chain-2026",
+        retrievedAt: now,
+        contentHash: "fedcba9876543210",
+        qualityScore: 0.92,
+      },
+    ];
+
+    project.claims = [
+      {
+        text: "Supplier verification errors cost mid-market firms $2.4M annually.",
+        verified: true,
+        support: "verified",
+        sourceIds: ["src-supply-chain"],
+        citations: [
+          {
+            sourceId: "src-supply-chain",
+            quote: "Mid-market logistics providers lose an average of $2.4M every year to manual verification latency.",
+          },
+        ],
+      },
+    ];
+
+    store.saveProject(project);
+
+    // 1. GET /v1/runs/:runId/export
+    const res = await app.inject({
+      method: "GET",
+      url: `/v1/runs/${project.id}/export`,
+      headers: { ...auth },
+    });
+
+    assert(res.statusCode === 200, `Expected 200, got ${res.statusCode}: ${res.body}`);
+    assert(
+      (res.headers["content-type"] as string)?.includes("text/html"),
+      `Expected text/html content-type, got ${res.headers["content-type"]}`,
+    );
+
+    const html = res.body;
+
+    // Verify title and metadata
+    assert(html.includes("Export Regression Suite"), "Missing project title");
+    assert(html.includes(clientId), "Missing client ID");
+    assert(html.includes(project.id), "Missing run ID");
+
+    // Verify print styling
+    assert(html.includes("@media print"), "Missing @media print stylesheet");
+    assert(html.includes("window.print()"), "Missing print trigger");
+
+    // Verify artifacts
+    assert(html.includes("Idea Overview"), "Missing idea summary content");
+    assert(html.includes("Market Analysis"), "Missing research report content");
+    assert(html.includes("Product Requirements"), "Missing PRD content");
+    assert(html.includes("Technical Requirements"), "Missing TRD content");
+    assert(html.includes("Phased Execution Plan"), "Missing build plan content");
+
+    // Verify claims, quotes, and sources
+    assert(html.includes("Supplier verification errors cost mid-market firms $2.4M annually."), "Missing claim text");
+    assert(html.includes("Mid-market logistics providers lose an average of $2.4M every year"), "Missing citation quote");
+    assert(html.includes("Global Supply Chain Index 2026"), "Missing source title");
+    assert(html.includes("https://example.com/supply-chain-2026"), "Missing source URL");
+  } finally {
+    await app.close();
+  }
+}
