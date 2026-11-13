@@ -19,8 +19,8 @@ Status: In Progress
 |---|---|---|---|---|---|---|
 | **T-003** | P0 | Completed | d0b561f | Yes | G1 (46/46 eval, typecheck, smoke, server:smoke) | Single data root on persistent disk |
 | **T-002** | P0 | Completed | 0736780 | Yes | G1 (48/48 eval, typecheck, smoke, server:smoke) | Ops pipeline honesty |
-| **T-001** | P0 | Completed | pending | pending | G1 (49/49 eval, typecheck, smoke, server:smoke) | Restrict public API keys |
-| **T-004** | P0 | Pending | - | - | - | Outbound request guard (safeFetch) |
+| **T-001** | P0 | Completed | 1644996 | Yes | G1 (49/49 eval, typecheck, smoke, server:smoke) | Restrict public API keys |
+| **T-004** | P0 | Completed | pending | pending | G1 (50/50 eval, typecheck, smoke, server:smoke) | Outbound request guard (safeFetch) |
 | **T-005** | P1 | Pending | - | - | - | Discovery: origin client address |
 | **T-007** | P1 | Pending | - | - | - | Clean error envelope |
 | **T-008** | P1 | Pending | - | - | - | Store defects |
