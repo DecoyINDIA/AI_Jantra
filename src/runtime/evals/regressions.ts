@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import * as path from "node:path";
 
 import { Agent } from "../../agent.js";
@@ -27,7 +27,9 @@ import {
   intakeBudgetDayUtc,
 } from "../intakeBudget.js";
 import { RuleBasedPolicy, sanitizeUntrustedWebContent, type PolicyConfig } from "../../policy.js";
-import { runParamsSchema } from "../../server/schemas.js";
+import { createAdminApiKeyBodySchema, parseWith, runParamsSchema } from "../../server/schemas.js";
+import { JsonWebhookSubscriptionStore } from "../../server/webhooks/store.js";
+import { JsonLeadStore } from "../../server/leads/store.js";
 import { createFixedWindowLimiter } from "../../server/rateLimit.js";
 import type { AnyTool, Policy } from "../../types.js";
 import type { StageEvalResult } from "./report.js";
@@ -1259,6 +1261,65 @@ async function verifyErrorEnvelopeNoLeak(): Promise<void> {
   }
 }
 
+function verifyJsonStoreIgnoresNonProjectFiles(): void {
+  const store = new JsonProjectStore();
+  const clientId = `test-client-${Date.now()}`;
+  const project = createProject({
+    clientId,
+    title: "T-008 Project",
+    agentId: "planning-pipeline",
+  });
+  store.saveProject(project);
+
+  const dir = path.join(config.projectDir, clientId);
+  writeFileSync(path.join(dir, "webhooks.json"), "[]", "utf8");
+  writeFileSync(path.join(dir, "garbage.json"), "{not json", "utf8");
+  writeFileSync(path.join(dir, "other.json"), "{\"a\":1}", "utf8");
+
+  const page = store.listProjects({ clientId });
+  assert(page.items.length === 1, `Expected exactly 1 project item, got ${page.items.length}`);
+  assert(page.items[0]?.id === project.id, `Expected project id ${project.id}, got ${page.items[0]?.id}`);
+}
+
+function verifyStorePathSegments(): void {
+  const webhookStore = new JsonWebhookSubscriptionStore();
+  let webhookThrew = false;
+  try {
+    webhookStore.list("..");
+  } catch {
+    webhookThrew = true;
+  }
+  assert(webhookThrew, "JsonWebhookSubscriptionStore.list did not throw for unsafe clientId '..'");
+
+  const leadStore = new JsonLeadStore();
+  let leadThrew = false;
+  try {
+    leadStore.listLeadsByUser("..", "u");
+  } catch {
+    leadThrew = true;
+  }
+  assert(leadThrew, "JsonLeadStore.listLeadsByUser did not throw for unsafe clientId '..'");
+
+  let parseThrew = false;
+  try {
+    parseWith(createAdminApiKeyBodySchema, {
+      label: "x",
+      clientId: "..",
+      subject: "s",
+    });
+  } catch {
+    parseThrew = true;
+  }
+  assert(parseThrew, "parseWith createAdminApiKeyBodySchema did not reject clientId '..'");
+
+  const parsed = parseWith(createAdminApiKeyBodySchema, {
+    label: "x",
+    clientId: "acme-1",
+    subject: "s",
+  });
+  assert(parsed.clientId === "acme-1", `Expected clientId 'acme-1', got ${parsed.clientId}`);
+}
+
 async function runRegression(
   fixtureId: string,
   fn: () => Promise<void> | void,
@@ -1311,5 +1372,7 @@ export async function runRegressionEvals(): Promise<StageEvalResult[]> {
     await runRegression("public-key-scope", verifyPublicKeyScope),
     await runRegression("safe-fetch-redirect", verifySafeFetchRedirect),
     await runRegression("error-envelope-no-leak", verifyErrorEnvelopeNoLeak),
+    await runRegression("json-store-ignores-non-project-files", verifyJsonStoreIgnoresNonProjectFiles),
+    await runRegression("store-path-segments", verifyStorePathSegments),
   ];
 }

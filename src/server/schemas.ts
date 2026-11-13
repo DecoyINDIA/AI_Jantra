@@ -110,7 +110,10 @@ export const createAdminApiKeyBodySchema = z.object({
     .trim()
     .min(1)
     .max(API_KEY_CLIENT_ID_MAX_CHARS)
-    .regex(/^[A-Za-z0-9_.:-]+$/, "clientId must use slug-safe characters."),
+    .regex(
+      /^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/,
+      "clientId must start with a letter or digit and use only letters, digits, underscore or hyphen.",
+    ),
   subject: z.string().trim().min(1).max(API_KEY_SUBJECT_MAX_CHARS),
 });
 
@@ -120,7 +123,10 @@ export const listAdminApiKeysQuerySchema = z.object({
     .trim()
     .min(1)
     .max(API_KEY_CLIENT_ID_MAX_CHARS)
-    .regex(/^[A-Za-z0-9_.:-]+$/, "clientId must use slug-safe characters.")
+    .regex(
+      /^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/,
+      "clientId must start with a letter or digit and use only letters, digits, underscore or hyphen.",
+    )
     .optional(),
   includeRevoked: z.coerce.boolean().optional(),
 });

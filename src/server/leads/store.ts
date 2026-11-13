@@ -8,6 +8,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { config } from "../../config.js";
+import { assertSafePathSegment } from "../../pipeline/store.js";
 
 // Lead capture is intentionally a small, self-contained JSON store rather than
 // part of the project ProjectStore: leads are low-volume marketing records with
@@ -23,11 +24,11 @@ function atomicWriteFileSync(path: string, data: string): void {
 }
 
 function clientLeadDir(clientId: string): string {
-  return join(config.leadDir, clientId);
+  return join(config.leadDir, assertSafePathSegment(clientId, "clientId"));
 }
 
 function leadFile(clientId: string, leadId: string): string {
-  return join(clientLeadDir(clientId), `${leadId}.json`);
+  return join(clientLeadDir(clientId), `${assertSafePathSegment(leadId, "leadId")}.json`);
 }
 
 export interface LeadRecord {
