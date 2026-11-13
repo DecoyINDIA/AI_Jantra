@@ -41,8 +41,8 @@ Status: In Progress
 | **T-011** | P1 | Completed | cfcf245 | Yes | G1 (59/59 eval, typecheck, smoke, server:smoke) | Verify research report after refinement |
 | **T-012** | P1 | Completed | 6ed82c6 | Yes | G1 (61/61 eval, typecheck, smoke, server:smoke) | Budget reserve/settle & unknown price guard |
 | **T-013** | P1 | Completed | 5f9e017 | Yes | G1 (61/61 eval, typecheck, smoke, server:smoke) | Documentation truth pass |
-| **T-016** | P2 | Completed | pending | Yes | G1 + Docker smoke (/health 200, healthy) | Production container |
-| **T-017** | P2 | Pending | - | - | - | Unit tests & split regressions |
+| **T-016** | P2 | Completed | 3239b8a | Yes | G1 + Docker smoke (/health 200, healthy) | Production container |
+| **T-017** | P2 | Completed | pending | Yes | G1 + npm test (37 unit tests, 61/61 eval) | Unit tests & split regressions |
 | **T-021** | P2 | Pending | - | - | - | Lead notification & lead<->run link |
 | **T-020** | P2 | Pending | - | - | - | Promote intake to plan & gate queue UI |
 | **T-022** | P2 | Pending | - | - | - | Client-ready export |
