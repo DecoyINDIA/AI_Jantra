@@ -17,7 +17,8 @@ import {
   clientDailyIdeationBudgetStatus,
   PUBLIC_INTAKE_AGENT_ID,
 } from "../../runtime/intakeBudget.js";
-import { notFound } from "../errors.js";
+import { HttpError, notFound } from "../errors.js";
+import { assertAgentAllowed } from "../scope.js";
 import {
   createRunBodySchema,
   listRunsQuerySchema,
@@ -42,6 +43,7 @@ function loadScopedProject(
   const project = store.loadProject(clientId, runId);
   if (!project) throw notFound(`Run ${runId} was not found.`);
   assertProjectAccess(request.identity, project);
+  assertAgentAllowed(request.identity, project.agentId);
   return project;
 }
 
@@ -49,6 +51,16 @@ export function registerRunRoutes(app: FastifyInstance, deps: RunRouteDeps): voi
   app.post("/v1/runs", async (request, reply) => {
     const clientId = requestClientId(request, deps.clientId);
     const body = parseWith(createRunBodySchema, request.body);
+    const identity = request.identity;
+    if (identity?.scope === "public") {
+      assertAgentAllowed(identity, body.agentId);
+      if (body.autonomy !== undefined && body.autonomy !== "gated") {
+        throw new HttpError(403, "autonomy_not_allowed", "This key cannot change run autonomy.");
+      }
+      if (body.modelId !== undefined) {
+        throw new HttpError(403, "model_pin_not_allowed", "This key cannot select a model.");
+      }
+    }
     const definition = deps.registry.get(body.agentId);
     if (definition.id === PUBLIC_INTAKE_AGENT_ID) {
       const budget = clientDailyIdeationBudgetStatus(deps.store, clientId);

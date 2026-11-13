@@ -3,10 +3,14 @@ import type { FastifyRequest } from "fastify";
 import type { Project } from "../pipeline/types.js";
 import { forbidden } from "./errors.js";
 
+export type KeyScope = "full" | "public";
+
 export interface Identity {
   subject: string;
   clientId: string;
   mode: "local" | "remote";
+  scope: KeyScope;
+  allowedAgentIds?: string[];
 }
 
 declare module "fastify" {

@@ -4,7 +4,8 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 
 import type { ApiKeyStore, StoredApiKeyRecord } from "../../pipeline/store.js";
 import { timingSafeStringEqual } from "../constantTime.js";
-import { unauthorized } from "../errors.js";
+import { forbidden, unauthorized } from "../errors.js";
+import { isPublicRouteAllowed, scopeForSubject } from "../scope.js";
 import type { Identity } from "../tenancy.js";
 
 export interface ApiKeyRecord {
@@ -86,6 +87,7 @@ export function resolveApiKeyIdentity(
         subject: dbRecord.subject,
         clientId: dbRecord.clientId,
         mode: "remote",
+        ...scopeForSubject(dbRecord.subject),
       };
       touchLastUsedBestEffort(options.apiKeyStore, dbRecord);
       return identity;
@@ -98,6 +100,7 @@ export function resolveApiKeyIdentity(
     subject: record.subject,
     clientId: record.clientId,
     mode: "remote",
+    ...scopeForSubject(record.subject),
   };
 }
 
@@ -112,5 +115,11 @@ export function installApiKeyAuth(app: FastifyInstance, optionsOrRecords: ApiKey
     if (!request.url.startsWith("/v1")) return;
     if (isAdminPath(request.url)) return;
     request.identity = resolveApiKeyIdentity(request, options);
+    if (
+      request.identity.scope === "public" &&
+      !isPublicRouteAllowed(request.method, request.url.split("?")[0] ?? "")
+    ) {
+      throw forbidden("This key is not permitted to call this endpoint.");
+    }
   });
 }
