@@ -214,6 +214,26 @@ declare global {
 const API_BASE_KEY = "jantra.api.baseUrl";
 const API_TOKEN_KEY = "jantra.api.loopbackToken";
 const API_ADMIN_TOKEN_KEY = "jantra.api.adminToken";
+const API_REMEMBER_KEY = "jantra.api.remember";
+
+export function isRememberEnabled(): boolean {
+  try {
+    return localStorage.getItem(API_REMEMBER_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function getStoredToken(key: string): string | null {
+  try {
+    const sessionVal = sessionStorage.getItem(key);
+    if (sessionVal) return sessionVal;
+    if (isRememberEnabled()) {
+      return localStorage.getItem(key);
+    }
+  } catch {}
+  return null;
+}
 
 function firstConfigured(...values: Array<string | undefined | null>): string {
   return values.find((value) => typeof value === "string" && value.length > 0) ?? "";
@@ -224,27 +244,49 @@ export function getApiConfig(): ApiConfig {
   return {
     baseUrl: firstConfigured(
       desktop.baseUrl,
-      localStorage.getItem(API_BASE_KEY),
+      getStoredToken(API_BASE_KEY),
       import.meta.env.VITE_JANTRA_API_BASE_URL,
       "http://127.0.0.1:4317",
     ),
     token: firstConfigured(
       desktop.token,
-      localStorage.getItem(API_TOKEN_KEY),
+      getStoredToken(API_TOKEN_KEY),
       import.meta.env.VITE_JANTRA_LOOPBACK_TOKEN,
     ),
     adminToken: firstConfigured(
       desktop.adminToken,
-      localStorage.getItem(API_ADMIN_TOKEN_KEY),
+      getStoredToken(API_ADMIN_TOKEN_KEY),
       import.meta.env.VITE_JANTRA_ADMIN_TOKEN,
     ),
   };
 }
 
-export function saveApiConfig(config: ApiConfig): void {
-  localStorage.setItem(API_BASE_KEY, config.baseUrl.replace(/\/$/, ""));
-  localStorage.setItem(API_TOKEN_KEY, config.token);
-  localStorage.setItem(API_ADMIN_TOKEN_KEY, config.adminToken);
+export function saveApiConfig(config: ApiConfig & { remember?: boolean }): void {
+  const remember = config.remember ?? isRememberEnabled();
+  try {
+    localStorage.setItem(API_REMEMBER_KEY, remember ? "true" : "false");
+    const targetStorage = remember ? localStorage : sessionStorage;
+    const alternateStorage = remember ? sessionStorage : localStorage;
+
+    targetStorage.setItem(API_BASE_KEY, config.baseUrl.replace(/\/$/, ""));
+    if (config.token) {
+      targetStorage.setItem(API_TOKEN_KEY, config.token);
+    } else {
+      targetStorage.removeItem(API_TOKEN_KEY);
+    }
+
+    if (config.adminToken) {
+      targetStorage.setItem(API_ADMIN_TOKEN_KEY, config.adminToken);
+    } else {
+      targetStorage.removeItem(API_ADMIN_TOKEN_KEY);
+    }
+
+    // Clean up alternate storage so tokens are not duplicated
+    alternateStorage.removeItem(API_TOKEN_KEY);
+    alternateStorage.removeItem(API_ADMIN_TOKEN_KEY);
+  } catch (err) {
+    console.error("Failed to save API config:", err);
+  }
 }
 
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
