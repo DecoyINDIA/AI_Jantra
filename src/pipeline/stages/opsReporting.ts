@@ -53,6 +53,10 @@ function parseCritique<T>(text: string, schema: z.Schema<T>): T {
 // STAGE 1: Data Ingest (Model-flow runner)
 // ==========================================
 
+export function syntheticDataAllowed(provider: string, optIn: boolean): boolean {
+  return provider === "mock" || optIn;
+}
+
 export const runOpsIngest: StageRunner = async (ctx) => {
   const clientId = ctx.project.clientId;
 
@@ -161,8 +165,25 @@ export const runOpsIngest: StageRunner = async (ctx) => {
     }
   }
 
+  let dataOrigin: "connectors" | "synthetic" = "connectors";
+
   // 3. Fallback to synthetic data if no real data was fetched (keeps tests/evals happy)
   if (!fetchedAny) {
+    const syntheticAllowed = syntheticDataAllowed(config.provider, config.opsAllowSynthetic);
+    if (!syntheticAllowed) {
+      throw new StageFailedClosedError(
+        "No operational data could be loaded from any configured source.",
+        { projectId: ctx.project.id, clientId, connectors: binding.connectors.map((c) => c.id) },
+      );
+    }
+    dataOrigin = "synthetic";
+    ctx.audit.record("guardrail_block", {
+      clientId,
+      projectId: ctx.project.id,
+      stage: ctx.stageId,
+      reason: "Synthetic demo data substituted because no source returned records.",
+      flags: ["synthetic_data"],
+    });
     const synthetic = generateSyntheticData(clientId);
     snapshot.orders = synthetic.orders;
     snapshot.order_lines = synthetic.order_lines;
@@ -234,8 +255,8 @@ export const runOpsIngest: StageRunner = async (ctx) => {
     {
       stage: ctx.stageId,
       kind: "data_quality_report",
-      title: "Data Quality Report",
-      content: JSON.stringify(report, null, 2),
+      title: dataOrigin === "synthetic" ? "Data Quality Report (SYNTHETIC DEMO DATA)" : "Data Quality Report",
+      content: JSON.stringify({ ...report, dataOrigin }, null, 2),
       version: 1,
       createdAt: new Date().toISOString(),
     },
@@ -720,26 +741,20 @@ export const runOpsDeliver: StageRunner = async (ctx) => {
   const reportArtifact = ctx.project.stages.compose?.artifacts.find((a) => a.kind === "ops_report");
   if (!reportArtifact) throw new StageFailedClosedError("Operations report is missing.");
 
-  // Resolve recipients dynamically from profile
-  let recipients = ["owner@example.com"];
-  const profileArtifact = ctx.project.stages.profile?.artifacts.at(-1);
-  if (profileArtifact) {
-    const jsonMatch = profileArtifact.content.match(/<!-- profile_json:\s*([\s\S]+?)\s*-->/);
-    if (jsonMatch) {
-      try {
-        const profileData = JSON.parse(jsonMatch[1]!);
-        if (profileData.recipients && Array.isArray(profileData.recipients)) {
-          recipients = profileData.recipients;
-        } else if (profileData.businessName) {
-          recipients = [`owner@${profileData.businessName.toLowerCase().replace(/[^a-z0-9]/g, "") || "example"}.com`];
-        }
-      } catch {
-        // ignore
+  ctx.io.say("Report delivery is not configured. The report is ready for manual sending.");
+
+  let dataOrigin: "synthetic" | "connectors" | "unknown" = "unknown";
+  const qualityArtifact = ctx.project.stages.ingest?.artifacts.find((a) => a.kind === "data_quality_report");
+  if (qualityArtifact) {
+    try {
+      const parsed = JSON.parse(qualityArtifact.content);
+      if (parsed.dataOrigin === "synthetic" || parsed.dataOrigin === "connectors") {
+        dataOrigin = parsed.dataOrigin;
       }
+    } catch {
+      // keep unknown
     }
   }
-
-  ctx.io.say(`Delivering operations report to ${recipients.join(", ")}...`);
 
   // Calculate actual SHA-256 hash of the report
   const hash = "sha256-" + createHash("sha256").update(reportArtifact.content).digest("hex");
@@ -748,11 +763,14 @@ export const runOpsDeliver: StageRunner = async (ctx) => {
     {
       stage: ctx.stageId,
       kind: "delivery_receipt",
-      title: "Delivery Receipt",
+      title: "Delivery Receipt (not sent)",
       content: JSON.stringify(
         {
-          channel: "email",
-          recipients,
+          status: "not_sent",
+          channel: "none",
+          recipients: [],
+          reason: "No delivery channel is configured.",
+          dataOrigin,
           timestamp: new Date().toISOString(),
           artifactHash: hash,
         },
