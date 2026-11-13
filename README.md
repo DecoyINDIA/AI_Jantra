@@ -72,10 +72,12 @@ Gemini key.
 
 This is the Jantra planning pipeline implementation target from `docs/BUILD_SPEC.md`. The eval harness runs without a Gemini key; live model-judge evals are skipped unless a key is present. Live pipeline runs require `GEMINI_API_KEY`.
 
+The [master planning package](docs/jantra-master-plan/README.md) contains the audit, roadmap, task packets, and owner decisions recorded on 2026-11-13.
+
 ## Render deployment
 
 `render.yaml` defines the Singapore starter web service and a 1 GB persistent disk mounted at `/data/jantra`. The service exposes the unauthenticated, side-effect-free `/health` readiness route; all `/v1` application routes keep their existing authentication.
 
-Keep `JANTRA_PROJECT_DIR=/data/jantra/projects` and `JANTRA_AUDIT_DIR=/data/jantra/audit`. Configure the provider, model, API-key, admin-token, service-token, and cost-ceiling variable names declared in the Blueprint through Render without committing their values.
+Keep `JANTRA_DATA_DIR=/data/jantra`, `JANTRA_PROJECT_DIR=/data/jantra/projects`, `JANTRA_AUDIT_DIR=/data/jantra/audit`, `JANTRA_LEAD_DIR=/data/jantra/leads`, and `JANTRA_OPS_DATA_DIR=/data/jantra/ops`. Captured leads, run state, audit logs, and ops CSV data are persisted under `/data/jantra` on the mounted disk. Note that existing local setups with CSVs under `data/ops` must set `JANTRA_OPS_DATA_DIR=data/ops` or move the folder to `.jantra/ops`. Configure the provider, model, API-key, admin-token, service-token, and cost-ceiling variable names declared in the Blueprint through Render without committing their values.
 
 Before cutover, copy the current Railway `/data/jantra` volume into the Render disk during a brief write pause. Validate SQLite files with `PRAGMA integrity_check`, compare file counts/checksums, then test `/health`, an authenticated agent listing, an existing read-only run lookup, and an intake request. Keep Railway and its volume intact until the rollback window closes. Roll back by directing the intake proxy to the Railway origin; reconcile any writes made on Render before reopening Railway for writes.

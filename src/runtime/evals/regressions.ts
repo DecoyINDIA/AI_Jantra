@@ -6,7 +6,7 @@ import { intakePublicDefinition } from "../../agents/intakePublic.js";
 import { supportAgentDefinition } from "../../agents/supportDefinition.js";
 import { createSupportReentrant } from "../../agents/support/reentrant.js";
 import { AuditLogger } from "../../audit.js";
-import { config, type GeminiModelId } from "../../config.js";
+import { config, resolveDataDirs, type GeminiModelId } from "../../config.js";
 import type {
   GenerateOptions,
   ModelMessage,
@@ -890,13 +890,13 @@ async function verifyGatewayDailyBudget(): Promise<void> {
 }
 
 function verifyCsvDirectoryResolve(): void {
-  // Safe relative subdirectory under data/ops/acme
+  // Safe relative subdirectory under <opsDataDir>/acme
   const safe = resolveClientDataDir("acme", "subdir");
-  assert(safe.endsWith(path.join("data", "ops", "acme", "subdir")), `Expected resolved safe path to contain subdirectory, got: ${safe}`);
+  assert(safe === path.resolve(config.opsDataDir, "acme", "subdir"), `Expected resolved safe path to match, got: ${safe}`);
 
-  // Safe empty/default path resolves to data/ops/acme
+  // Safe empty/default path resolves to <opsDataDir>/acme
   const def = resolveClientDataDir("acme");
-  assert(def.endsWith(path.join("data", "ops", "acme")), `Expected resolved default path to contain acme root, got: ${def}`);
+  assert(def === path.resolve(config.opsDataDir, "acme"), `Expected resolved default path to match, got: ${def}`);
 
   // Path traversal attempt should throw an error
   const unsafePaths = [
@@ -915,6 +915,26 @@ function verifyCsvDirectoryResolve(): void {
     }
     assert(threw, `resolveClientDataDir did not throw for unsafe path: ${p}`);
   }
+}
+
+function verifyDataRootDerivation(): void {
+  const def = resolveDataDirs({});
+  assert(def.dataDir === ".jantra", "Default dataDir should be .jantra");
+  assert(def.auditDir === ".jantra/audit", "Default auditDir should be .jantra/audit");
+  assert(def.projectDir === ".jantra/projects", "Default projectDir should be .jantra/projects");
+  assert(def.leadDir === ".jantra/leads", "Default leadDir should be .jantra/leads");
+  assert(def.opsDataDir === ".jantra/ops", "Default opsDataDir should be .jantra/ops");
+
+  const custom = resolveDataDirs({ JANTRA_DATA_DIR: "/data/jantra" });
+  assert(custom.dataDir === "/data/jantra", "custom dataDir mismatch");
+  assert(custom.auditDir === "/data/jantra/audit", "custom auditDir mismatch");
+  assert(custom.projectDir === "/data/jantra/projects", "custom projectDir mismatch");
+  assert(custom.leadDir === "/data/jantra/leads", "custom leadDir mismatch");
+  assert(custom.opsDataDir === "/data/jantra/ops", "custom opsDataDir mismatch");
+
+  const override = resolveDataDirs({ JANTRA_DATA_DIR: "/d/", JANTRA_LEAD_DIR: "/x" });
+  assert(override.leadDir === "/x", "Override leadDir mismatch");
+  assert(override.auditDir === "/d/audit", "Override auditDir mismatch with trailing slash handled");
 }
 
 function verifyInjectionContentNeutralized(): void {
@@ -984,6 +1004,7 @@ export async function runRegressionEvals(): Promise<StageEvalResult[]> {
     await runRegression("webhook-url-guard", verifyWebhookUrlGuard),
     await runRegression("gateway-daily-budget", verifyGatewayDailyBudget),
     await runRegression("csv-directory-resolve", verifyCsvDirectoryResolve),
+    await runRegression("data-root-derivation", verifyDataRootDerivation),
     await runRegression("injection-content-neutralized", verifyInjectionContentNeutralized),
   ];
 }

@@ -80,6 +80,29 @@ function booleanFromEnv(name: string, fallback: boolean): boolean {
   throw new Error(`${name} must be a boolean-like value. Received "${raw}".`);
 }
 
+export function resolveDataDirs(env: Record<string, string | undefined>): {
+  dataDir: string;
+  auditDir: string;
+  projectDir: string;
+  leadDir: string;
+  opsDataDir: string;
+} {
+  const dataDir = env.JANTRA_DATA_DIR || ".jantra";
+  const trimmed = dataDir.replace(/[\\/]+$/, "");
+  function dirFromEnv(name: string, sub: string): string {
+    return env[name] || `${trimmed}/${sub}`;
+  }
+  return {
+    dataDir,
+    auditDir: dirFromEnv("JANTRA_AUDIT_DIR", "audit"),
+    projectDir: dirFromEnv("JANTRA_PROJECT_DIR", "projects"),
+    leadDir: dirFromEnv("JANTRA_LEAD_DIR", "leads"),
+    opsDataDir: dirFromEnv("JANTRA_OPS_DATA_DIR", "ops"),
+  };
+}
+
+const dataDirs = resolveDataDirs(process.env);
+
 export const config = {
   provider: providerFromEnv(),
   geminiApiKey: process.env.GEMINI_API_KEY ?? "",
@@ -98,9 +121,12 @@ export const config = {
   mockFixturePath:
     process.env.JANTRA_MOCK_FIXTURE ?? "src/runtime/evals/fixtures/transcript.json",
   explicitCache: booleanFromEnv("JANTRA_EXPLICIT_CACHE", true),
-  auditDir: process.env.JANTRA_AUDIT_DIR ?? ".jantra/audit",
+  dataDir: dataDirs.dataDir,
+  auditDir: dataDirs.auditDir,
   auditMaxFieldBytes: Math.trunc(numberFromEnv("JANTRA_AUDIT_MAX_FIELD_BYTES", 16 * 1024)),
-  projectDir: process.env.JANTRA_PROJECT_DIR ?? ".jantra/projects",
+  projectDir: dataDirs.projectDir,
+  leadDir: dataDirs.leadDir,
+  opsDataDir: dataDirs.opsDataDir,
   maxSteps: Math.trunc(numberFromEnv("JANTRA_MAX_STEPS", 16)),
   maxUserMessageChars: Math.trunc(numberFromEnv("JANTRA_MAX_USER_MESSAGE_CHARS", 100_000)),
   maxEvalRounds: Math.trunc(numberFromEnv("JANTRA_MAX_EVAL_ROUNDS", 2)),
