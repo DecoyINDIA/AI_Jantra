@@ -5,7 +5,7 @@ metadata:
   type: project
 ---
 
-Both layers are implemented (uncommitted as of 2026-06-10). Full spec: `docs/MULTI_LLM_PROVIDER_PLAN.md`.
+Both layers are implemented (uncommitted as of 2026-06-10). Full spec: `docs/archive/MULTI_LLM_PROVIDER_PLAN.md`.
 
 ## Key decisions (locked)
 

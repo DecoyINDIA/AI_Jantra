@@ -13,18 +13,27 @@ Stage 4, Build, is registered for future extension and remains disabled.
 ```text
 src/
   agent.ts                 provider-backed runtime loop with policy, audit, tools, and handoff
-  model/                   Gemini 2.5 provider interface and Google Gen AI SDK adapter
+  model/                   provider interface with Gemini, OpenAI-compatible, and mock adapters
+  agents/                  agent definitions and registry (intake, planning, ops, support, concierge)
   policy.ts                guardrails, prompt-injection detection, and artifact checks
   audit.ts                 append-only JSONL audit trail
-  runtime/                 evaluator loop, telemetry, typed errors, and eval harness
-  pipeline/                project/store/orchestrator plus Intake, Research, and Planning stages
+  runtime/                 evaluator loop, telemetry, budgets, typed errors, and eval harness
+  pipeline/                project/store/orchestrator plus Intake, Research, Planning, and Ops stages
+  server/                  Fastify API server with auth, tenancy, rate limiting, and routes
   tools/                   reusable tool definitions for the support demo runtime
   cli.ts                   support demo runner
+web/                       React 19 + Vite operator web UI workspace
+desktop/                   Electron desktop application workspace
+packages/
+  client/                  typed API client SDK workspace
+  embed-widget/            public intake chat widget workspace
+deploy/
+  cloudflare-worker/       edge proxy worker script and configuration
 ```
 
 ## Design choices
 
-- Gemini 2.5 only: Flash or Pro is selected per stage through config. All model calls go through `src/model/provider.ts`.
+- Providers: Gemini, any OpenAI-compatible endpoint, and mock. Stages never import a vendor SDK. Grounded research runs on Gemini.
 - Generator and critic are separate passes: stages must satisfy their rubric before accepting an artifact.
 - Ground or abstain: Research registers retrieved sources and verifies claim citations deterministically.
 - Audit everything: model calls, thinking summaries, tokens, cost, tools, gates, guardrails, citations, eval scores, and handoffs are recorded.
@@ -34,7 +43,7 @@ src/
 ## Run it
 
 ```bash
-npm install
+npm ci
 cp .env.example .env          # add GEMINI_API_KEY
 npm run typecheck
 npm run eval
@@ -70,7 +79,14 @@ Gemini key.
 
 ## Status
 
-This is the Jantra planning pipeline implementation target from `docs/BUILD_SPEC.md`. The eval harness runs without a Gemini key; live model-judge evals are skipped unless a key is present. Live pipeline runs require `GEMINI_API_KEY`.
+Agent readiness:
+- **Production:** `intake-public` (anonymous visitor intake widget deployed on xolver.in capturing leads)
+- **Usable:** `planning-pipeline` (human-gated 3-stage intake -> research -> planning pipeline)
+- **Prototype:** `ops-onboarding`, `ops-reporting` (reporting does not send reports and needs real partner data)
+- **Demo:** `support-agent` (sample interactive support demo)
+- **Client-specific:** `firebnb-concierge` (hospitality concierge agent)
+
+The eval harness runs without a Gemini key; live model-judge evals are skipped unless a key is present. Live pipeline runs require `GEMINI_API_KEY`.
 
 The [master planning package](docs/jantra-master-plan/README.md) contains the audit, roadmap, task packets, and owner decisions recorded on 2026-11-13.
 
