@@ -17,8 +17,10 @@ import type {
 } from "../../model/provider.js";
 import { GeminiProvider } from "../../model/gemini.js";
 import { createProject } from "../../pipeline/orchestrator.js";
+import { createStageExecutionState } from "../../pipeline/executionState.js";
+import { checkpointResearchState } from "../../pipeline/stages/research.js";
 import { JsonProjectStore, type ProjectStore } from "../../pipeline/store.js";
-import type { StageContext } from "../../pipeline/types.js";
+import type { Artifact, Project, ProjectListQuery, ProjectPage, Source, StageContext } from "../../pipeline/types.js";
 import { createServer } from "../../server/app.js";
 import { readAuditEntries } from "../../server/events.js";
 import { runIntakeReentrant } from "../../pipeline/stages/intake.js";
@@ -1320,6 +1322,83 @@ function verifyStorePathSegments(): void {
   assert(parsed.clientId === "acme-1", `Expected clientId 'acme-1', got ${parsed.clientId}`);
 }
 
+class CountingProjectStore implements ProjectStore {
+  saves = 0;
+  constructor(private readonly base: ProjectStore) {}
+
+  saveProject(project: Project): void {
+    this.saves++;
+    this.base.saveProject(project);
+  }
+
+  loadProject(clientId: string, projectId: string): Project | null {
+    return this.base.loadProject(clientId, projectId);
+  }
+
+  listProjects(query: ProjectListQuery): ProjectPage {
+    return this.base.listProjects(query);
+  }
+
+  getClientDailyIdeationSpend(clientId: string, dayUtc: string): number {
+    return this.base.getClientDailyIdeationSpend(clientId, dayUtc);
+  }
+
+  addClientDailyIdeationSpend(clientId: string, dayUtc: string, deltaUsd: number): void {
+    this.base.addClientDailyIdeationSpend(clientId, dayUtc, deltaUsd);
+  }
+
+  getClientDailyGatewaySpend(clientId: string, dayUtc: string): number {
+    return this.base.getClientDailyGatewaySpend(clientId, dayUtc);
+  }
+
+  addClientDailyGatewaySpend(clientId: string, dayUtc: string, deltaUsd: number): void {
+    this.base.addClientDailyGatewaySpend(clientId, dayUtc, deltaUsd);
+  }
+
+  writeArtifactFile(clientId: string, projectId: string, artifact: Artifact): string {
+    return this.base.writeArtifactFile(clientId, projectId, artifact);
+  }
+
+  writeSourceContentFile(
+    clientId: string,
+    projectId: string,
+    source: Source,
+    content: string,
+  ): string {
+    return this.base.writeSourceContentFile(clientId, projectId, source, content);
+  }
+}
+
+function verifyResearchCheckpointPersisted(): void {
+  const base = new JsonProjectStore();
+  const store = new CountingProjectStore(base);
+  const clientId = `test-client-${Date.now()}`;
+  const project = createProject({
+    clientId,
+    title: "T-010 Checkpoint Project",
+    agentId: "planning-pipeline",
+  });
+  base.saveProject(project);
+
+  const state = createStageExecutionState("research", "planning.research", {
+    plan: { x: 1 },
+  });
+
+  const ctx = {
+    project,
+    stageId: "research",
+    store,
+  } as unknown as StageContext;
+
+  checkpointResearchState(ctx, state);
+
+  assert(store.saves === 1, `Expected exactly 1 save, got ${store.saves}`);
+  const loaded = base.loadProject(project.clientId, project.id);
+  assert(loaded !== null, "Failed to load project from base store");
+  const planData = (loaded.execution as any)?.research?.data?.plan as { x?: number } | undefined;
+  assert(planData?.x === 1, `Expected plan.x === 1, got ${JSON.stringify(planData)}`);
+}
+
 async function runRegression(
   fixtureId: string,
   fn: () => Promise<void> | void,
@@ -1374,5 +1453,6 @@ export async function runRegressionEvals(): Promise<StageEvalResult[]> {
     await runRegression("error-envelope-no-leak", verifyErrorEnvelopeNoLeak),
     await runRegression("json-store-ignores-non-project-files", verifyJsonStoreIgnoresNonProjectFiles),
     await runRegression("store-path-segments", verifyStorePathSegments),
+    await runRegression("research-checkpoint-persisted", verifyResearchCheckpointPersisted),
   ];
 }

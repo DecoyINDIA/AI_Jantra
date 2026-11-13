@@ -37,7 +37,13 @@ import {
   type CitationCandidate,
 } from "../research/sourceSelection.js";
 import { fetchPage } from "../research/webFetch.js";
-import type { Artifact, Claim, EvalScore, Source, StageContext } from "../types.js";
+import type { Artifact, Claim, EvalScore, PersistedStageState, Source, StageContext } from "../types.js";
+
+export function checkpointResearchState(ctx: StageContext, state: PersistedStageState): void {
+  saveStageExecutionState(ctx.project, ctx.stageId, state);
+  ctx.project.updatedAt = new Date().toISOString();
+  ctx.store.saveProject(ctx.project);
+}
 
 interface SynthesizedSection {
   title: string;
@@ -603,7 +609,7 @@ export async function runResearch(ctx: StageContext): Promise<Artifact[]> {
   } else {
     plan = await planResearch(ctx, idea, anchors);
     state.data.plan = plan;
-    saveStageExecutionState(ctx.project, ctx.stageId, state);
+    checkpointResearchState(ctx, state);
   }
 
   const synthesized = await Promise.all(
@@ -669,7 +675,7 @@ export async function runResearch(ctx: StageContext): Promise<Artifact[]> {
           synthesized: synthesizedSection,
           sources,
         };
-        saveStageExecutionState(ctx.project, ctx.stageId, state);
+        checkpointResearchState(ctx, state);
 
         return synthesizedSection;
       } catch (err) {
