@@ -32,6 +32,8 @@ import { createFixedWindowLimiter } from "../../server/rateLimit.js";
 import type { AnyTool, Policy } from "../../types.js";
 import type { StageEvalResult } from "./report.js";
 import { assertPublicWebhookUrl } from "../../server/webhooks/urlGuard.js";
+import { isBlockedAddress } from "../../util/netGuard.js";
+import { nextRequest, safeFetch, UnsafeUrlError } from "../../util/safeFetch.js";
 import { resolveClientDataDir } from "../../pipeline/ops/connectors/csv.js";
 import { runOpsIngest, runOpsDeliver, syntheticDataAllowed } from "../../pipeline/stages/opsReporting.js";
 import { opsReportingDefinition } from "../../agents/opsReporting.js";
@@ -829,6 +831,12 @@ async function verifyWebhookUrlGuard(): Promise<void> {
     "http://127.0.0.1:9999/",
     "ftp://example.com/",
     "http://[::1]/",
+    "http://[::ffff:127.0.0.1]/",
+    "http://[::ffff:7f00:1]/",
+    "http://100.64.0.1/",
+    "http://198.18.0.1/",
+    "http://[64:ff9b::7f00:1]/",
+    "http://foo.localhost/",
   ];
   for (const url of badUrls) {
     let rejected = false;
@@ -840,6 +848,27 @@ async function verifyWebhookUrlGuard(): Promise<void> {
     assert(rejected, `assertPublicWebhookUrl did not reject unsafe URL: ${url}`);
   }
 
+  // Unit assertions on isBlockedAddress
+  assert(isBlockedAddress("127.0.0.1") === true, "127.0.0.1 should be blocked");
+  assert(isBlockedAddress("10.1.2.3") === true, "10.1.2.3 should be blocked");
+  assert(isBlockedAddress("169.254.169.254") === true, "169.254.169.254 should be blocked");
+  assert(isBlockedAddress("::1") === true, "::1 should be blocked");
+  assert(isBlockedAddress("fd00::1") === true, "fd00::1 should be blocked");
+  assert(isBlockedAddress("::ffff:10.0.0.1") === true, "::ffff:10.0.0.1 should be blocked");
+
+  assert(isBlockedAddress("1.1.1.1") === false, "1.1.1.1 should be allowed");
+  assert(isBlockedAddress("8.8.8.8") === false, "8.8.8.8 should be allowed");
+  assert(isBlockedAddress("2606:4700:4700::1111") === false, "2606:4700:4700::1111 should be allowed");
+
+  // safeFetch rejects user:pass in URL
+  let userPassRejected = false;
+  try {
+    await safeFetch("http://user:pass@1.1.1.1/");
+  } catch (err) {
+    if (err instanceof UnsafeUrlError) userPassRejected = true;
+  }
+  assert(userPassRejected, "safeFetch did not reject user:pass in URL");
+
   // A public URL should resolve successfully without throwing.
   // We use 1.1.1.1 literal so no dns.lookup is called in offline runs.
   let allowed = false;
@@ -850,6 +879,39 @@ async function verifyWebhookUrlGuard(): Promise<void> {
     allowed = false;
   }
   assert(allowed, "assertPublicWebhookUrl rejected a valid public IP URL.");
+}
+
+async function verifySafeFetchRedirect(): Promise<void> {
+  const r1 = nextRequest("https://example.com/dir/page", 302, "other", "POST");
+  assert(r1.url === "https://example.com/dir/other", "Relative location did not resolve");
+  assert(r1.method === "GET", "302 on POST did not switch to GET");
+  assert(r1.dropBody === true, "302 on POST did not drop body");
+
+  const r2 = nextRequest("https://example.com/foo", 303, "/bar", "POST");
+  assert(r2.url === "https://example.com/bar", "303 relative location mismatch");
+  assert(r2.method === "GET", "303 should switch to GET");
+  assert(r2.dropBody === true, "303 should drop body");
+
+  const r3 = nextRequest("https://example.com/start", 307, "/next", "POST");
+  assert(r3.url === "https://example.com/next", "307 relative location mismatch");
+  assert(r3.method === "POST", "307 should preserve method");
+  assert(r3.dropBody === false, "307 should keep body");
+
+  let missingLocationThrew = false;
+  try {
+    nextRequest("https://example.com/", 302, null, "GET");
+  } catch (err) {
+    if (err instanceof UnsafeUrlError) missingLocationThrew = true;
+  }
+  assert(missingLocationThrew, "Missing location header did not throw UnsafeUrlError");
+
+  let loopbackRejected = false;
+  try {
+    await safeFetch("http://127.0.0.1:9/");
+  } catch (err) {
+    if (err instanceof UnsafeUrlError) loopbackRejected = true;
+  }
+  assert(loopbackRejected, "safeFetch did not reject loopback with UnsafeUrlError");
 }
 
 async function verifyGatewayDailyBudget(): Promise<void> {
@@ -1217,5 +1279,6 @@ export async function runRegressionEvals(): Promise<StageEvalResult[]> {
     await runRegression("ops-delivery-honest", verifyOpsDeliveryHonest),
     await runRegression("ops-no-silent-synthetic", verifyOpsNoSilentSynthetic),
     await runRegression("public-key-scope", verifyPublicKeyScope),
+    await runRegression("safe-fetch-redirect", verifySafeFetchRedirect),
   ];
 }

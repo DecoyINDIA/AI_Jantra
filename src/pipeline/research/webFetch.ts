@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { config } from "../../config.js";
 import { sanitizeUntrustedWebContent } from "../../policy.js";
-import { fetchWithTimeout } from "../../util/fetchWithTimeout.js";
+import { safeFetch } from "../../util/safeFetch.js";
 
 export interface FetchedPage {
   url: string;
@@ -61,11 +61,15 @@ export async function fetchPage(url: string, titleHint?: string): Promise<Fetche
     throw new Error(`Unsupported fetch URL scheme: ${parsedUrl.protocol}`);
   }
 
-  const response = await fetchWithTimeout(url, {
-    headers: {
-      "User-Agent": "JantraAIResearchBot/0.1 (+https://xolver.ai)",
+  const response = await safeFetch(
+    url,
+    {
+      headers: {
+        "User-Agent": "JantraAIResearchBot/0.1 (+https://xolver.ai)",
+      },
     },
-  }, 20_000);
+    { timeoutMs: 20_000, maxRedirects: 3, maxBytes: 3_000_000 },
+  );
   if (!response.ok) {
     throw new Error(`Fetch failed for ${url}: HTTP ${response.status}`);
   }

@@ -2,7 +2,7 @@ import { createHmac } from "node:crypto";
 
 import type { WebhookEvent, WebhookSubscription } from "./types.js";
 import { assertPublicWebhookUrl } from "./urlGuard.js";
-import { fetchWithTimeout } from "../../util/fetchWithTimeout.js";
+import { safeFetch, UnsafeUrlError } from "../../util/safeFetch.js";
 
 function signature(secret: string, body: string): string {
   return createHmac("sha256", secret).update(body).digest("hex");
@@ -34,17 +34,21 @@ export async function deliverWebhook(
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
-      const response = await fetchWithTimeout(subscription.url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Jantra-Event": event.type,
-          ...(subscription.secret
-            ? { "X-Jantra-Signature": signature(subscription.secret, body) }
-            : {}),
+      const response = await safeFetch(
+        subscription.url,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Jantra-Event": event.type,
+            ...(subscription.secret
+              ? { "X-Jantra-Signature": signature(subscription.secret, body) }
+              : {}),
+          },
+          body,
         },
-        body,
-      }, 10_000);
+        { timeoutMs: 10_000, maxRedirects: 0, maxBytes: 64_000 },
+      );
       if (response.ok) return;
       if (isNonRetryableStatus(response.status)) {
         throw new Error(`Webhook delivery failed with non-retryable ${response.status}.`);
@@ -54,10 +58,16 @@ export async function deliverWebhook(
       await new Promise((resolve) => setTimeout(resolve, retryDelayMs(response, attempt)));
     } catch (err) {
       // Network-level failure (DNS, connection reset). Retry transient errors;
-      // a thrown non-retryable status above re-throws here and stops.
+      // a thrown non-retryable status or UnsafeUrlError stops immediately.
       lastError = err;
       const message = err instanceof Error ? err.message : String(err);
-      if (message.includes("non-retryable") || attempt === attempts) throw err;
+      if (
+        err instanceof UnsafeUrlError ||
+        message.includes("non-retryable") ||
+        attempt === attempts
+      ) {
+        throw err;
+      }
       await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
     }
   }
