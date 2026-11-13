@@ -27,7 +27,9 @@ function parseCsvRow(row: string): string[] {
   return result;
 }
 
-export function parseCsv(content: string): string[][] {
+import { config } from "../../../config.js";
+
+function parseCsv(content: string): string[][] {
   const lines = content.split(/\r?\n/);
   return lines
     .map(line => line.trim())
@@ -126,10 +128,12 @@ function autoMapHeaders(headers: string[], targetTable: string): Record<string, 
   return mapping;
 }
 
-const OPS_DATA_ROOT = path.resolve("data", "ops");
+function opsDataRoot(): string {
+  return path.resolve(config.opsDataDir);
+}
 
 export function resolveClientDataDir(clientId: string, requested?: string): string {
-  const base = path.resolve(OPS_DATA_ROOT, clientId);
+  const base = path.resolve(opsDataRoot(), clientId);
   if (!requested) return base;
   const resolved = path.resolve(base, requested);
   if (resolved !== base && !resolved.startsWith(base + path.sep)) {

@@ -14,10 +14,16 @@ services:
     envVars:
       - key: JANTRA_SERVER_PORT
         value: 10000
+      - key: JANTRA_DATA_DIR
+        value: /data/jantra
       - key: JANTRA_PROJECT_DIR
         value: /data/jantra/projects
       - key: JANTRA_AUDIT_DIR
         value: /data/jantra/audit
+      - key: JANTRA_LEAD_DIR
+        value: /data/jantra/leads
+      - key: JANTRA_OPS_DATA_DIR
+        value: /data/jantra/ops
       - key: GEMINI_API_KEY
         sync: false
       - key: JANTRA_API_KEY
@@ -25,6 +31,18 @@ services:
       - key: JANTRA_ADMIN_TOKEN
         sync: false
       - key: JANTRA_FIREBNB_SERVICE_TOKEN
+        sync: false
+      - key: JANTRA_REMOTE_API_KEYS
+        sync: false
+      - key: JANTRA_PUBLIC_SUBJECTS
+        sync: false
+      - key: JANTRA_PUBLIC_AGENT_IDS
+        sync: false
+      - key: JANTRA_LOGTO_ISSUER
+        sync: false
+      - key: JANTRA_LOGTO_AUDIENCE
+        sync: false
+      - key: JANTRA_LOGTO_JWKS_URL
         sync: false
       - key: JANTRA_PROVIDER
         sync: false

@@ -7,13 +7,12 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { config } from "../../config.js";
 
 // Lead capture is intentionally a small, self-contained JSON store rather than
 // part of the project ProjectStore: leads are low-volume marketing records with
 // a different lifecycle (no stages, no cost, no tenancy beyond the owning user)
 // and we do not want to couple them to the planning-pipeline schema.
-
-const LEAD_DIR = process.env.JANTRA_LEAD_DIR ?? ".jantra/leads";
 
 let atomicSeq = 0;
 
@@ -24,7 +23,7 @@ function atomicWriteFileSync(path: string, data: string): void {
 }
 
 function clientLeadDir(clientId: string): string {
-  return join(LEAD_DIR, clientId);
+  return join(config.leadDir, clientId);
 }
 
 function leadFile(clientId: string, leadId: string): string {
