@@ -16,7 +16,9 @@ import {
   auditClientDailyIdeationBudgetExceeded,
   clientDailyIdeationBudgetStatus,
   PUBLIC_INTAKE_AGENT_ID,
+  visitorDailyBudgetStatus,
 } from "../../runtime/intakeBudget.js";
+import { visitorKey } from "../visitor.js";
 import { HttpError, notFound } from "../errors.js";
 import { assertAgentAllowed } from "../scope.js";
 import {
@@ -67,7 +69,8 @@ export function registerRunRoutes(app: FastifyInstance, deps: RunRouteDeps): voi
     } catch {
       throw notFound(`Agent ${body.agentId} was not found.`);
     }
-    if (definition.id === PUBLIC_INTAKE_AGENT_ID) {
+    const vKey = request.identity?.scope === "public" ? visitorKey(request) : undefined;
+    if (request.identity?.scope === "public" || definition.id === PUBLIC_INTAKE_AGENT_ID) {
       const budget = clientDailyIdeationBudgetStatus(deps.store, clientId);
       if (budget.exceeded) {
         auditClientDailyIdeationBudgetExceeded(clientId, budget);
@@ -83,6 +86,22 @@ export function registerRunRoutes(app: FastifyInstance, deps: RunRouteDeps): voi
           },
         });
       }
+      if (vKey) {
+        const vBudget = visitorDailyBudgetStatus(deps.store, clientId, vKey);
+        if (vBudget.exceeded) {
+          return reply.status(429).send({
+            error: {
+              code: "visitor_daily_budget_exceeded",
+              message: "Visitor daily budget exceeded.",
+              details: {
+                spend: vBudget.spend,
+                ceiling: vBudget.ceiling,
+                day: vBudget.day,
+              },
+            },
+          });
+        }
+      }
     }
     const project = createProject({
       clientId,
@@ -90,6 +109,7 @@ export function registerRunRoutes(app: FastifyInstance, deps: RunRouteDeps): voi
       definition,
       modelId: body.modelId,
       autonomy: body.autonomy,
+      visitorKey: vKey,
     });
     const audit = new AuditLogger(project.id, config.auditDir);
     audit.record("run_created", {

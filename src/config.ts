@@ -154,6 +154,10 @@ export const config = {
     "JANTRA_INTAKE_CLIENT_DAILY_CEILING_USD",
     0.5,
   ),
+  intakeVisitorDailyCeilingUsd: numberFromEnv(
+    "JANTRA_INTAKE_VISITOR_DAILY_CEILING_USD",
+    0.1,
+  ),
   opsOnboardCeilingUsd: numberFromEnv("JANTRA_OPS_ONBOARD_CEILING_USD", 2.00),
   opsReportCeilingUsd: numberFromEnv("JANTRA_OPS_REPORT_CEILING_USD", 1.50),
   opsClientDailyCeilingUsd: numberFromEnv("JANTRA_OPS_DAILY_CEILING_USD", 5.00),
@@ -164,6 +168,9 @@ export const config = {
   // to 120 requests / 60s. Set max to 0 via env to effectively disable.
   rateLimitWindowMs: Math.trunc(numberFromEnv("JANTRA_RATE_LIMIT_WINDOW_MS", 60_000)),
   rateLimitMax: Math.trunc(numberFromEnv("JANTRA_RATE_LIMIT_MAX", 120)),
+  publicVisitorRateLimitMax: Math.trunc(
+    numberFromEnv("JANTRA_PUBLIC_VISITOR_RATE_LIMIT_MAX", 30),
+  ),
   researchConcurrency: boundedIntegerFromEnv("JANTRA_RESEARCH_CONCURRENCY", 4, 1, 8),
   synthesisConcurrency: boundedIntegerFromEnv("JANTRA_SYNTHESIS_CONCURRENCY", 3, 1, 6),
   maxSources: boundedIntegerFromEnv("JANTRA_MAX_SOURCES", 24, 1, 48),

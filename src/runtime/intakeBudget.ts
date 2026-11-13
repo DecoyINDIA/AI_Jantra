@@ -23,6 +23,10 @@ function roundUsd(value: number): number {
   return Number(value.toFixed(6));
 }
 
+export function visitorSpendId(clientId: string, visitorKey: string): string {
+  return `${clientId}#${visitorKey}`;
+}
+
 export function recordIntakeSpend(
   store: ProjectStore,
   project: Project,
@@ -30,11 +34,20 @@ export function recordIntakeSpend(
   deltaUsd: number,
 ): void {
   if (stage !== "intake" || !isPublicIdeationProject(project) || deltaUsd <= 0) return;
+  const day = intakeBudgetDayUtc();
+  const rounded = roundUsd(deltaUsd);
   store.addClientDailyIdeationSpend(
     project.clientId,
-    intakeBudgetDayUtc(),
-    roundUsd(deltaUsd),
+    day,
+    rounded,
   );
+  if (project.visitorKey) {
+    store.addClientDailyIdeationSpend(
+      visitorSpendId(project.clientId, project.visitorKey),
+      day,
+      rounded,
+    );
+  }
 }
 
 export function enforceIntakeRunCeiling(
@@ -70,6 +83,25 @@ export function clientDailyIdeationBudgetStatus(
   const day = intakeBudgetDayUtc(now);
   const ceiling = config.intakeClientDailyCeilingUsd;
   const spend = roundUsd(store.getClientDailyIdeationSpend(clientId, day));
+  return {
+    exceeded: ceiling > 0 && spend >= ceiling,
+    spend,
+    ceiling,
+    day,
+  };
+}
+
+export function visitorDailyBudgetStatus(
+  store: ProjectStore,
+  clientId: string,
+  visitorKey: string,
+  now = new Date(),
+): { exceeded: boolean; spend: number; ceiling: number; day: string } {
+  const day = intakeBudgetDayUtc(now);
+  const ceiling = config.intakeVisitorDailyCeilingUsd;
+  const spend = roundUsd(
+    store.getClientDailyIdeationSpend(visitorSpendId(clientId, visitorKey), day),
+  );
   return {
     exceeded: ceiling > 0 && spend >= ceiling,
     spend,

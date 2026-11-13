@@ -107,6 +107,8 @@ export interface Project {
   interactions: PendingInteraction[];
   execution: Record<string, PersistedStageState>;
   cost: CostRollup;
+  /** Truncated SHA-256 hash of the visitor's IP address for public traffic throttling. */
+  visitorKey?: string;
   createdAt: string;
   updatedAt: string;
 }

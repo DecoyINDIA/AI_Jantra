@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
+import { visitorAddress } from "./visitor.js";
 
 /**
  * Dependency-free fixed-window rate limiter for the remote API surface.
@@ -85,6 +86,61 @@ export function installRateLimit(app: FastifyInstance, options: RateLimitOptions
   app.addHook("onRequest", async (request, reply) => {
     if (!request.url.startsWith("/v1")) return;
     const verdict = check(clientKey(request));
+    reply.header("X-RateLimit-Limit", String(max));
+    reply.header("X-RateLimit-Remaining", String(verdict.remaining));
+    if (!verdict.allowed) {
+      reply.header("Retry-After", String(verdict.retryAfterSec));
+      return reply.status(429).send({
+        error: {
+          code: "rate_limited",
+          message: "Too many requests. Slow down and retry shortly.",
+          details: { retryAfterSeconds: verdict.retryAfterSec },
+        },
+      });
+    }
+  });
+}
+
+export interface IdentityRateLimitOptions {
+  windowMs: number;
+  max?: number;
+  publicMax?: number;
+  fullMax?: number;
+  now?: () => number;
+}
+
+/**
+ * Install a per-identity rate limiter as an onRequest hook over the /v1 surface.
+ * Registered AFTER auth so request.identity is available.
+ * Skipped when request.identity is undefined.
+ */
+export function installIdentityRateLimit(
+  app: FastifyInstance,
+  options: IdentityRateLimitOptions,
+): void {
+  const publicMax = Math.max(1, Math.trunc(options.publicMax ?? options.max ?? 30));
+  const fullMax = Math.max(1, Math.trunc(options.fullMax ?? options.max ?? 120));
+  const publicCheck = createFixedWindowLimiter({
+    windowMs: options.windowMs,
+    max: publicMax,
+    now: options.now,
+  });
+  const fullCheck = createFixedWindowLimiter({
+    windowMs: options.windowMs,
+    max: fullMax,
+    now: options.now,
+  });
+
+  app.addHook("onRequest", async (request, reply) => {
+    if (!request.url.startsWith("/v1")) return;
+    if (!request.identity) return;
+
+    const isPublic = request.identity.scope === "public";
+    const max = isPublic ? publicMax : fullMax;
+    const check = isPublic ? publicCheck : fullCheck;
+    const key = `${request.identity.subject}|${visitorAddress(request)}`;
+    const verdict = check(key);
+
     reply.header("X-RateLimit-Limit", String(max));
     reply.header("X-RateLimit-Remaining", String(verdict.remaining));
     if (!verdict.allowed) {
