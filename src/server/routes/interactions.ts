@@ -1,14 +1,31 @@
-import type { FastifyInstance } from "fastify";
+import { randomUUID } from "node:crypto";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 
 import { AuditLogger } from "../../audit.js";
 import { config } from "../../config.js";
 import { continueAutonomously, resumeStageInteraction, withRunLock } from "../../pipeline/orchestrator.js";
 import type { ProjectStore } from "../../pipeline/store.js";
-import { conflict, notFound } from "../errors.js";
+import { conflict, notFound, HttpError } from "../errors.js";
 import { assertAgentAllowed } from "../scope.js";
 import { EFFECTIVE_PUBLIC_INPUT_MAX_CHARS, parseWith, runParamsSchema } from "../schemas.js";
 import { assertProjectAccess, requestClientId } from "../tenancy.js";
+import type { JobRecord, JobStore } from "../jobs/types.js";
+import type { JobWorker } from "../jobs/worker.js";
+
+function isAsyncPreferred(request: FastifyRequest): boolean {
+  const prefer = request.headers.prefer;
+  return typeof prefer === "string" && prefer.toLowerCase().includes("respond-async");
+}
+
+function isJobStore(store: unknown): store is JobStore {
+  const candidate = store as Partial<JobStore>;
+  return (
+    typeof candidate?.createJob === "function" &&
+    typeof candidate?.getJob === "function" &&
+    typeof candidate?.claimNextJob === "function"
+  );
+}
 
 const interactionParamsSchema = runParamsSchema.extend({
   // Interaction ids are server-generated UUIDs, matched in memory. Bounded and
@@ -32,6 +49,7 @@ const interactionBodySchema = z
 interface InteractionRouteDeps {
   clientId: string;
   store: ProjectStore;
+  jobWorker?: JobWorker;
 }
 
 export function registerInteractionRoutes(
@@ -52,10 +70,54 @@ export function registerInteractionRoutes(
     };
   });
 
-  app.post("/v1/runs/:runId/interactions/:interactionId", async (request) => {
+  app.post("/v1/runs/:runId/interactions/:interactionId", async (request, reply) => {
     const clientId = requestClientId(request, deps.clientId);
     const params = parseWith(interactionParamsSchema, request.params);
     const body = parseWith(interactionBodySchema, request.body);
+
+    if (isAsyncPreferred(request)) {
+      if (!isJobStore(deps.store)) {
+        throw new HttpError(400, "async_not_supported", "Asynchronous execution requires SQLite store.");
+      }
+      const project = deps.store.loadProject(clientId, params.runId);
+      if (!project) throw notFound(`Run ${params.runId} was not found.`);
+      assertProjectAccess(request.identity, project);
+      assertAgentAllowed(request.identity, project.agentId);
+
+      const target = project.interactions.find(
+        (interaction) => interaction.id === params.interactionId,
+      );
+      if (!target) {
+        throw notFound(`Interaction ${params.interactionId} was not found.`);
+      }
+      if (target.status !== "pending") {
+        throw conflict(
+          "interaction_not_pending",
+          `Interaction ${params.interactionId} is no longer awaiting a response (status: ${target.status}).`,
+          { status: target.status },
+        );
+      }
+
+      const job: JobRecord = {
+        id: randomUUID(),
+        clientId: project.clientId,
+        runId: project.id,
+        kind: "interaction",
+        payload: {
+          interactionId: params.interactionId,
+          text: body.text,
+          approved: body.approved,
+        },
+        status: "queued",
+        attempts: 0,
+        createdAt: new Date().toISOString(),
+      };
+      deps.store.createJob(job);
+      deps.jobWorker?.wake();
+      reply.code(202);
+      return { run: project, job: { id: job.id, status: "queued" } };
+    }
+
     return withRunLock(params.runId, async () => {
       const project = deps.store.loadProject(clientId, params.runId);
       if (!project) throw notFound(`Run ${params.runId} was not found.`);

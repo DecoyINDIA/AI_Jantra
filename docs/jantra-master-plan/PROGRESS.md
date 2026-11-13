@@ -47,7 +47,7 @@ Status: In Progress
 | **T-020** | P2 | Completed | 563ec96 | Yes | G1 + npm test (40 unit tests, 63/63 eval) | Promote intake to plan & gate queue UI |
 | **T-022** | P2 | Completed | 778341b | Yes | G1 + npm test (46 unit tests, 64/64 eval) | Client-ready print-styled HTML report & claims ledger |
 | **T-015** | P2 | Completed | 3e66d57 | Yes | G1 + npm test (51 unit tests, 65/65 eval) | One SQLite database with numbered migrations, mirrored columns, and JSON import |
-| **T-014** | P2 | Pending | - | - | - | Asynchronous stage execution |
+| **T-014** | P2 | Completed | 67435a1 | Yes | G1 + npm test (54 unit tests, 66/66 eval) | Asynchronous stage execution with in-process worker, jobs table, 202 Prefer: respond-async, SSE events, and crash recovery |
 | **T-018** | P2 | Pending | - | - | - | Per-client connector credentials |
 | **T-019** | P2 | Pending | - | - | - | Real report delivery |
 | **T-023** | P2 | Pending | - | - | - | Lead retention & deletion |

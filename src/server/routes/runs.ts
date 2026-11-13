@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 
 import { AuditLogger } from "../../audit.js";
@@ -27,15 +28,33 @@ import {
   listRunsQuerySchema,
   parseWith,
   rejectRunBodySchema,
+  runJobParamsSchema,
   runParamsSchema,
 } from "../schemas.js";
 import { assertProjectAccess, requestClientId } from "../tenancy.js";
 import { renderClientReadyReport } from "../export/clientReport.js";
+import type { JobRecord, JobStore } from "../jobs/types.js";
+import type { JobWorker } from "../jobs/worker.js";
 
 interface RunRouteDeps {
   clientId: string;
   registry: AgentRegistry;
   store: ProjectStore;
+  jobWorker?: JobWorker;
+}
+
+function isAsyncPreferred(request: FastifyRequest): boolean {
+  const prefer = request.headers.prefer;
+  return typeof prefer === "string" && prefer.toLowerCase().includes("respond-async");
+}
+
+function isJobStore(store: unknown): store is JobStore {
+  const candidate = store as Partial<JobStore>;
+  return (
+    typeof candidate?.createJob === "function" &&
+    typeof candidate?.getJob === "function" &&
+    typeof candidate?.claimNextJob === "function"
+  );
 }
 
 function loadScopedProject(
@@ -177,9 +196,31 @@ export function registerRunRoutes(app: FastifyInstance, deps: RunRouteDeps): voi
     reply.type("text/html; charset=utf-8").send(html);
   });
 
-  app.post("/v1/runs/:runId/advance", async (request) => {
+  app.post("/v1/runs/:runId/advance", async (request, reply) => {
     const clientId = requestClientId(request, deps.clientId);
     const params = parseWith(runParamsSchema, request.params);
+
+    if (isAsyncPreferred(request)) {
+      if (!isJobStore(deps.store)) {
+        throw new HttpError(400, "async_not_supported", "Asynchronous execution requires SQLite store.");
+      }
+      const project = loadScopedProject(request, deps.store, clientId, params.runId);
+      const job: JobRecord = {
+        id: randomUUID(),
+        clientId: project.clientId,
+        runId: project.id,
+        kind: "advance",
+        payload: {},
+        status: "queued",
+        attempts: 0,
+        createdAt: new Date().toISOString(),
+      };
+      deps.store.createJob(job);
+      deps.jobWorker?.wake();
+      reply.code(202);
+      return { run: project, job: { id: job.id, status: "queued" } };
+    }
+
     // Serialize per-run: load, drive, and save inside the lock so concurrent
     // /advance calls cannot each run the stage on a stale copy and clobber.
     return withRunLock(params.runId, async () => {
@@ -190,9 +231,32 @@ export function registerRunRoutes(app: FastifyInstance, deps: RunRouteDeps): voi
     });
   });
 
-  app.post("/v1/runs/:runId/confirm", async (request) => {
+  app.post("/v1/runs/:runId/confirm", async (request, reply) => {
     const clientId = requestClientId(request, deps.clientId);
     const params = parseWith(runParamsSchema, request.params);
+    const body = request.body as { autoContinue?: boolean } | undefined;
+
+    if (isAsyncPreferred(request)) {
+      if (!isJobStore(deps.store)) {
+        throw new HttpError(400, "async_not_supported", "Asynchronous execution requires SQLite store.");
+      }
+      const project = loadScopedProject(request, deps.store, clientId, params.runId);
+      const job: JobRecord = {
+        id: randomUUID(),
+        clientId: project.clientId,
+        runId: project.id,
+        kind: "confirm_continue",
+        payload: { autoContinue: body?.autoContinue ?? false },
+        status: "queued",
+        attempts: 0,
+        createdAt: new Date().toISOString(),
+      };
+      deps.store.createJob(job);
+      deps.jobWorker?.wake();
+      reply.code(202);
+      return { run: project, job: { id: job.id, status: "queued" } };
+    }
+
     return withRunLock(params.runId, async () => {
       const project = loadScopedProject(request, deps.store, clientId, params.runId);
       const nextStage = confirmStage(project, deps.store);
@@ -202,6 +266,31 @@ export function registerRunRoutes(app: FastifyInstance, deps: RunRouteDeps): voi
       deps.store.saveProject(project);
       return { run: project, nextStage, step };
     });
+  });
+
+  app.get("/v1/runs/:runId/jobs/:jobId", async (request) => {
+    const clientId = requestClientId(request, deps.clientId);
+    const params = parseWith(runJobParamsSchema, request.params);
+    const project = loadScopedProject(request, deps.store, clientId, params.runId);
+    if (!isJobStore(deps.store)) {
+      throw notFound(`Job ${params.jobId} was not found.`);
+    }
+    const job = deps.store.getJob(clientId, project.id, params.jobId);
+    if (!job) {
+      throw notFound(`Job ${params.jobId} was not found.`);
+    }
+    return {
+      job: {
+        id: job.id,
+        runId: job.runId,
+        kind: job.kind,
+        status: job.status,
+        error: job.error ?? null,
+        createdAt: job.createdAt,
+        startedAt: job.startedAt ?? null,
+        finishedAt: job.finishedAt ?? null,
+      },
+    };
   });
 
   app.post("/v1/runs/:runId/reject", async (request) => {

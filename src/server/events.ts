@@ -33,6 +33,12 @@ function eventMessage(entry: AuditEntry): string {
       return `Stage gate: ${String(entry.status ?? "unknown")}`;
     case "guardrail_block":
       return "Guardrail blocked the action.";
+    case "job_started":
+      return `Job started: ${String(entry.jobId ?? "unknown")}`;
+    case "job_finished":
+      return `Job finished: ${String(entry.jobId ?? "unknown")}`;
+    case "job_failed":
+      return `Job failed: ${String(entry.jobId ?? "unknown")}`;
     default:
       return entry.type;
   }

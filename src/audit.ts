@@ -37,6 +37,9 @@ export type AuditType =
   | "resume"
   | "gateway_completion"
   | "gateway_cost_exceeded"
+  | "job_started"
+  | "job_finished"
+  | "job_failed"
   | "error";
 
 export interface AuditEntry {

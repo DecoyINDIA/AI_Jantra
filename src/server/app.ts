@@ -25,6 +25,8 @@ import { registerCompleteRoutes } from "./routes/complete.js";
 import { registerLeadRoutes } from "./routes/leads.js";
 import { defaultLeadStore, type LeadStore } from "./leads/store.js";
 import { defaultWebhookStore, type WebhookSubscriptionStore } from "./webhooks/store.js";
+import { JobWorker } from "./jobs/worker.js";
+import type { JobStore } from "./jobs/types.js";
 
 export interface CreateServerOptions {
   loopbackToken: string;
@@ -39,6 +41,8 @@ export interface CreateServerOptions {
   adminToken?: string;
   allowedOrigins?: string[];
   allowedHosts?: string[];
+  jobWorker?: JobWorker;
+  jobPollIntervalMs?: number;
 }
 
 export interface StartedLocalApi {
@@ -72,6 +76,15 @@ function isWebhookStore(store: unknown): store is WebhookSubscriptionStore {
   );
 }
 
+function isJobStore(store: unknown): store is ProjectStore & JobStore {
+  const candidate = store as Partial<JobStore>;
+  return (
+    typeof candidate?.createJob === "function" &&
+    typeof candidate?.getJob === "function" &&
+    typeof candidate?.claimNextJob === "function"
+  );
+}
+
 export function createServer(options: CreateServerOptions): FastifyInstance {
   const mode = options.mode ?? "local";
   const app = fastify({
@@ -94,6 +107,17 @@ export function createServer(options: CreateServerOptions): FastifyInstance {
   const apiKeyStore = options.apiKeyStore ?? (isApiKeyStore(store) ? store : undefined);
   const leadStore = options.leadStore ?? (isLeadStore(store) ? store : defaultLeadStore);
   const webhookStore = options.webhookStore ?? (isWebhookStore(store) ? store : defaultWebhookStore);
+  const jobWorker =
+    options.jobWorker ??
+    (isJobStore(store)
+      ? new JobWorker({
+          store,
+          pollIntervalMs: options.jobPollIntervalMs ?? 1000,
+        })
+      : undefined);
+  if (jobWorker) {
+    jobWorker.start();
+  }
 
   app.get("/health", async () => ({ status: "healthy" }));
 
@@ -136,8 +160,8 @@ export function createServer(options: CreateServerOptions): FastifyInstance {
 
   registerAgentRoutes(app, registry);
   registerModelRoutes(app);
-  registerRunRoutes(app, { clientId, registry, store });
-  registerInteractionRoutes(app, { clientId, store });
+  registerRunRoutes(app, { clientId, registry, store, jobWorker });
+  registerInteractionRoutes(app, { clientId, store, jobWorker });
   registerArtifactRoutes(app, { clientId, store });
   registerAuditRoutes(app, { clientId, store });
   registerEventRoutes(app, { clientId, store });
@@ -168,6 +192,7 @@ export function createServer(options: CreateServerOptions): FastifyInstance {
   });
 
   app.addHook("onClose", async () => {
+    jobWorker?.stop();
     setAuditPublisher(null);
     setGatePublisher(null);
   });
