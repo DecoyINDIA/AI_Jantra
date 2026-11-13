@@ -17,7 +17,7 @@ import type {
 } from "../../model/provider.js";
 import { GeminiProvider } from "../../model/gemini.js";
 import { createProject } from "../../pipeline/orchestrator.js";
-import { JsonProjectStore } from "../../pipeline/store.js";
+import { JsonProjectStore, type ProjectStore } from "../../pipeline/store.js";
 import type { StageContext } from "../../pipeline/types.js";
 import { createServer } from "../../server/app.js";
 import { readAuditEntries } from "../../server/events.js";
@@ -1229,6 +1229,36 @@ async function verifyPublicKeyScope(): Promise<void> {
   }
 }
 
+async function verifyErrorEnvelopeNoLeak(): Promise<void> {
+  const storeStub = {
+    loadProject: () => {
+      throw new Error("SECRET /data/jantra/x.sqlite");
+    },
+  } as unknown as ProjectStore;
+
+  const app = createServer({
+    mode: "local",
+    loopbackToken: "test-token",
+    store: storeStub,
+  });
+
+  try {
+    const res = await app.inject({
+      method: "GET",
+      url: "/v1/runs/abc",
+      headers: { authorization: "Bearer test-token" },
+    });
+    assert(res.statusCode === 500, `Expected 500 status code, got ${res.statusCode}`);
+    const body = res.json() as { error?: { code?: string; message?: string; details?: { requestId?: string } } };
+    assert(body.error?.code === "internal_error", `Expected code === "internal_error", got ${body.error?.code}`);
+    assert(body.error?.message === "Internal error.", `Expected message === "Internal error.", got ${body.error?.message}`);
+    assert(!res.body.includes("SECRET"), "Error response leaked secret text");
+    assert(typeof body.error?.details?.requestId === "string" && body.error.details.requestId.length > 0, "Expected non-empty requestId");
+  } finally {
+    await app.close();
+  }
+}
+
 async function runRegression(
   fixtureId: string,
   fn: () => Promise<void> | void,
@@ -1280,5 +1310,6 @@ export async function runRegressionEvals(): Promise<StageEvalResult[]> {
     await runRegression("ops-no-silent-synthetic", verifyOpsNoSilentSynthetic),
     await runRegression("public-key-scope", verifyPublicKeyScope),
     await runRegression("safe-fetch-redirect", verifySafeFetchRedirect),
+    await runRegression("error-envelope-no-leak", verifyErrorEnvelopeNoLeak),
   ];
 }

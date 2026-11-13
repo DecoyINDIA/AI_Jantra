@@ -72,6 +72,27 @@ const badModel = await app.inject({
 });
 assert(badModel.statusCode === 400, `Invalid modelId was not rejected: ${badModel.body}`);
 
+const unknownAgent = await app.inject({
+  method: "POST",
+  url: "/v1/runs",
+  headers: { ...auth, "content-type": "application/json" },
+  payload: {
+    agentId: "does-not-exist",
+  },
+});
+assert(unknownAgent.statusCode === 404, `Unknown agentId was not rejected with 404: ${unknownAgent.statusCode}`);
+assert(unknownAgent.json().error?.code === "not_found", `Expected not_found error code, got: ${unknownAgent.body}`);
+
+const malformedJson = await app.inject({
+  method: "POST",
+  url: "/v1/runs",
+  headers: { ...auth, "content-type": "application/json" },
+  payload: "{ malformed json",
+});
+assert(malformedJson.statusCode === 400, `Malformed JSON did not return 400: ${malformedJson.statusCode}`);
+assert(!malformedJson.body.includes("Unexpected token"), `Malformed JSON response leaked token details: ${malformedJson.body}`);
+assert(!malformedJson.body.includes("at "), `Malformed JSON response leaked stack frame: ${malformedJson.body}`);
+
 const created = await app.inject({
   method: "POST",
   url: "/v1/runs",
