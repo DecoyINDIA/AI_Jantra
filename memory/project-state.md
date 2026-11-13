@@ -25,8 +25,8 @@ All features below are committed to `main`.
 
 ### Security & Reliability Fixes (Shipped 2026-07-15)
 - **Fix 1 (High):** Bounded Fastify `trustProxy` to trust exactly `1` hop in remote mode, preventing `X-Forwarded-For` rate-limiting bypass.
-- **Fix 2 (High):** Implemented `assertPublicWebhookUrl` ([urlGuard.ts](file:///D:/XOLVER/Jantra/src/server/webhooks/urlGuard.ts)) checking schemes, private IPs, and resolving host DNS to prevent blind SSRF in webhook delivery and subscription.
-- **Fix 3 (Medium):** Added a parallel `behavioral-eval` job to the CI workflow ([ci.yml](file:///D:/XOLVER/Jantra/.github/workflows/ci.yml)) to run evaluation and smoke suites on every branch push or pull request.
+- **Fix 2 (High):** Implemented `assertPublicWebhookUrl` ([urlGuard.ts](src/server/webhooks/urlGuard.ts)) checking schemes, private IPs, and resolving host DNS to prevent blind SSRF in webhook delivery and subscription.
+- **Fix 3 (Medium):** Added a parallel `behavioral-eval` job to the CI workflow ([ci.yml](.github/workflows/ci.yml)) to run evaluation and smoke suites on every branch push or pull request.
 - **Fix 4 (Medium):** Introduced a generic `fetchWithTimeout` utility and wired it to page fetches, webhooks, Stripe/Shopify connectors, and Gemini model calls.
 - **Fix 5 (Medium):** Implemented daily spending ceiling enforce checks (default $2.00) for the completion gateway, backed by `gateway-spend.json` and SQLite table `client_daily_gateway_spend`.
 - **Fix 6 (Medium):** Confined the CSV ops connector directory to resolve relative to the client's data root `data/ops/<clientId>` and prevent directory traversal.

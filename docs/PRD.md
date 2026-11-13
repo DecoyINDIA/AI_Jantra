@@ -1,5 +1,7 @@
 # Jantra AI — Product Requirements Document
 
+> Status note (2026-11-13): sections that say the runtime builds on Claude or is Gemini-only are historical; see README for the current provider model.
+
 | | |
 |---|---|
 | **Product** | Jantra AI ("machine AI", from *yantra/jantra* = machine) |
