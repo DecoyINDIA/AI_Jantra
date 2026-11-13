@@ -61,7 +61,12 @@ export function registerRunRoutes(app: FastifyInstance, deps: RunRouteDeps): voi
         throw new HttpError(403, "model_pin_not_allowed", "This key cannot select a model.");
       }
     }
-    const definition = deps.registry.get(body.agentId);
+    let definition;
+    try {
+      definition = deps.registry.get(body.agentId);
+    } catch {
+      throw notFound(`Agent ${body.agentId} was not found.`);
+    }
     if (definition.id === PUBLIC_INTAKE_AGENT_ID) {
       const budget = clientDailyIdeationBudgetStatus(deps.store, clientId);
       if (budget.exceeded) {

@@ -1,6 +1,10 @@
 import type { FastifyReply } from "fastify";
 
-import { CostCeilingExceededError, GateConflictError } from "../runtime/errors.js";
+import {
+  CostCeilingExceededError,
+  GateConflictError,
+  StageFailedClosedError,
+} from "../runtime/errors.js";
 
 export class HttpError extends Error {
   constructor(
@@ -29,7 +33,7 @@ export function conflict(code: string, message: string, details?: unknown): Http
   return new HttpError(409, code, message, details);
 }
 
-export function sendHttpError(reply: FastifyReply, err: unknown): void {
+export function sendHttpError(reply: FastifyReply, err: unknown, requestId?: string): void {
   if (err instanceof CostCeilingExceededError) {
     reply.status(429).send({
       error: {
@@ -60,11 +64,31 @@ export function sendHttpError(reply: FastifyReply, err: unknown): void {
     });
     return;
   }
-  const message = err instanceof Error ? err.message : String(err);
+  if (err instanceof StageFailedClosedError) {
+    reply.status(422).send({
+      error: {
+        code: "stage_failed_closed",
+        message: "The stage stopped because its output could not be verified.",
+        details: { requestId },
+      },
+    });
+    return;
+  }
+  const statusCode = (err as { statusCode?: unknown })?.statusCode;
+  if (typeof statusCode === "number" && statusCode >= 400 && statusCode < 500) {
+    reply.status(statusCode).send({
+      error: {
+        code: "bad_request",
+        message: "Request could not be processed.",
+      },
+    });
+    return;
+  }
   reply.status(500).send({
     error: {
       code: "internal_error",
-      message,
+      message: "Internal error.",
+      details: { requestId },
     },
   });
 }

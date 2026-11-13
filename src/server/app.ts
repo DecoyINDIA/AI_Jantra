@@ -7,7 +7,8 @@ import { defaultStore, type ApiKeyStore, type ProjectStore } from "../pipeline/s
 import { dispatchGateEvent } from "./webhooks/dispatcher.js";
 import { installApiKeyAuth, parseApiKeyRecords, type ApiKeyRecord } from "./auth/apiKeys.js";
 import { runEventBus } from "./events.js";
-import { sendHttpError } from "./errors.js";
+import { CostCeilingExceededError, GateConflictError } from "../runtime/errors.js";
+import { HttpError, sendHttpError } from "./errors.js";
 import { installLocalSecurity } from "./security.js";
 import { installRateLimit } from "./rateLimit.js";
 import { config } from "../config.js";
@@ -118,8 +119,26 @@ export function createServer(options: CreateServerOptions): FastifyInstance {
   registerCompleteRoutes(app, { clientId, store });
   registerLeadRoutes(app, { clientId });
 
-  app.setErrorHandler((err, _request, reply) => {
-    sendHttpError(reply, err);
+  app.setErrorHandler((err, request, reply) => {
+    const status = (err as { statusCode?: number }).statusCode;
+    const isClient =
+      err instanceof HttpError ||
+      err instanceof GateConflictError ||
+      err instanceof CostCeilingExceededError ||
+      (typeof status === "number" && status < 500);
+    if (!isClient) {
+      console.error(
+        JSON.stringify({
+          level: "error",
+          requestId: request.id,
+          method: request.method,
+          path: request.url.split("?")[0],
+          error: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined,
+        }),
+      );
+    }
+    sendHttpError(reply, err, request.id);
   });
 
   app.addHook("onClose", async () => {

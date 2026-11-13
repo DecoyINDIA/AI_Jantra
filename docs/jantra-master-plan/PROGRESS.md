@@ -20,9 +20,20 @@ Status: In Progress
 | **T-003** | P0 | Completed | d0b561f | Yes | G1 (46/46 eval, typecheck, smoke, server:smoke) | Single data root on persistent disk |
 | **T-002** | P0 | Completed | 0736780 | Yes | G1 (48/48 eval, typecheck, smoke, server:smoke) | Ops pipeline honesty |
 | **T-001** | P0 | Completed | 1644996 | Yes | G1 (49/49 eval, typecheck, smoke, server:smoke) | Restrict public API keys |
-| **T-004** | P0 | Completed | pending | pending | G1 (50/50 eval, typecheck, smoke, server:smoke) | Outbound request guard (safeFetch) |
-| **T-005** | P1 | Pending | - | - | - | Discovery: origin client address |
-| **T-007** | P1 | Pending | - | - | - | Clean error envelope |
+| **T-004** | P0 | Completed | 40120cb | Yes | G1 (50/50 eval, typecheck, smoke, server:smoke) | Outbound request guard (safeFetch) |
+| **T-005** | P1 | Completed | - | Read-only | Discovery (Worker/Origin header flow) | Discovery: origin client address (see report below) |
+
+### T-005 Discovery Findings
+- **Header Analysis:**
+  | Header Name | Value Seen Locally | Value Seen Deployed | Client-Controllable? |
+  |---|---|---|---|
+  | `X-Forwarded-For` | `203.0.113.9` (forwarded as-is) | Not available | Yes (passed through by Worker) |
+  | `X-Jantra-Client-IP` | `203.0.113.9` (forwarded as-is) | Not available | Yes (passed through by Worker) |
+  | `CF-Connecting-IP` | `198.51.100.42` | Cloudflare edge IP | No (set by Cloudflare edge) |
+- **Answer A:** Is `request.ip` at the origin the visitor's address? **No.** Fastify's `trustProxy: 1` trusts only the immediate reverse-proxy hop (Render proxy). In production, Render's proxy connects to the container socket, resolving `request.ip` to Cloudflare's egress IP; thus, all public edge visitors would share a single IP bucket.
+- **Answer B:** Can a browser client inject `X-Jantra-Client-IP` through the current Worker? **Yes.** `worker.js` creates `new Headers(request.headers)` and deletes only `Origin` and `Cookie`, forwarding any client-supplied `X-Jantra-Client-IP` directly to the origin.
+- **Recommendation:** **CONFIRM** the T-006 design. `worker.js` must delete incoming `X-Jantra-Client-IP` and set it from `request.headers.get("CF-Connecting-IP")`. The origin must trust `X-Jantra-Client-IP` only when authenticated with `public` key scope.
+| **T-007** | P1 | Completed | pending | pending | G1 (51/51 eval, typecheck, smoke, server:smoke) | Clean error envelope |
 | **T-008** | P1 | Pending | - | - | - | Store defects |
 | **T-009** | P1 | Pending | - | - | - | Cross-platform scripts & CI typecheck |
 | **T-010** | P1 | Pending | - | - | - | Persist research checkpoints |
