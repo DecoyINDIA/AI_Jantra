@@ -1057,6 +1057,116 @@ async function verifyOpsNoSilentSynthetic(): Promise<void> {
   }
 }
 
+async function verifyPublicKeyScope(): Promise<void> {
+  const store = new JsonProjectStore();
+  const app = createServer({
+    mode: "remote",
+    loopbackToken: "",
+    store,
+    apiKeys: [
+      { key: "pub-key", clientId: "t1", subject: "web" },
+      { key: "full-key", clientId: "t1", subject: "ops" },
+    ],
+  });
+
+  try {
+    // 1. pub-key POST /v1/runs {agentId:"planning-pipeline"} -> 403 code agent_not_allowed
+    const res1 = await app.inject({
+      method: "POST",
+      url: "/v1/runs",
+      headers: { authorization: "Bearer pub-key" },
+      payload: { agentId: "planning-pipeline" },
+    });
+    assert(res1.statusCode === 403, `Expected 403 for planning-pipeline, got ${res1.statusCode}`);
+    assert((res1.json() as any).error?.code === "agent_not_allowed", "Expected agent_not_allowed code");
+
+    // 2. pub-key POST /v1/runs {agentId:"intake-public", autonomy:"auto"} -> 403 autonomy_not_allowed
+    const res2 = await app.inject({
+      method: "POST",
+      url: "/v1/runs",
+      headers: { authorization: "Bearer pub-key" },
+      payload: { agentId: "intake-public", autonomy: "auto" },
+    });
+    assert(res2.statusCode === 403, `Expected 403 for autonomy:auto, got ${res2.statusCode}`);
+    assert((res2.json() as any).error?.code === "autonomy_not_allowed", "Expected autonomy_not_allowed code");
+
+    // 3. pub-key POST /v1/runs {agentId:"intake-public", modelId:"gemini-2.5-pro"} -> 403 model_pin_not_allowed
+    const res3 = await app.inject({
+      method: "POST",
+      url: "/v1/runs",
+      headers: { authorization: "Bearer pub-key" },
+      payload: { agentId: "intake-public", modelId: "gemini-2.5-pro" },
+    });
+    assert(res3.statusCode === 403, `Expected 403 for modelId pin, got ${res3.statusCode}`);
+    assert((res3.json() as any).error?.code === "model_pin_not_allowed", "Expected model_pin_not_allowed code");
+
+    // 4. pub-key POST /v1/runs {agentId:"intake-public", title:"x"} -> 200, body.run.agentId intake-public
+    const res4 = await app.inject({
+      method: "POST",
+      url: "/v1/runs",
+      headers: { authorization: "Bearer pub-key" },
+      payload: { agentId: "intake-public", title: "x" },
+    });
+    assert(res4.statusCode === 200, `Expected 200 for intake-public run creation, got ${res4.statusCode}: ${res4.body}`);
+    assert((res4.json() as any).run?.agentId === "intake-public", "Expected intake-public agentId");
+
+    // 5. pub-key GET /v1/runs -> 403
+    const res5 = await app.inject({
+      method: "GET",
+      url: "/v1/runs",
+      headers: { authorization: "Bearer pub-key" },
+    });
+    assert(res5.statusCode === 403, `Expected 403 for GET /v1/runs with pub-key, got ${res5.statusCode}`);
+
+    // 6. pub-key POST /v1/complete {system:"s", user:"u"} -> 403
+    const res6 = await app.inject({
+      method: "POST",
+      url: "/v1/complete",
+      headers: { authorization: "Bearer pub-key" },
+      payload: { system: "s", user: "u" },
+    });
+    assert(res6.statusCode === 403, `Expected 403 for POST /v1/complete with pub-key, got ${res6.statusCode}`);
+
+    // 7. pub-key GET /v1/agents -> 403
+    const res7 = await app.inject({
+      method: "GET",
+      url: "/v1/agents",
+      headers: { authorization: "Bearer pub-key" },
+    });
+    assert(res7.statusCode === 403, `Expected 403 for GET /v1/agents with pub-key, got ${res7.statusCode}`);
+
+    // 8. full-key POST /v1/runs {agentId:"planning-pipeline", title:"x"} -> 200; keep its run id
+    const res8 = await app.inject({
+      method: "POST",
+      url: "/v1/runs",
+      headers: { authorization: "Bearer full-key" },
+      payload: { agentId: "planning-pipeline", title: "x" },
+    });
+    assert(res8.statusCode === 200, `Expected 200 for full-key run creation, got ${res8.statusCode}`);
+    const planningRunId = (res8.json() as any).run?.id;
+    assert(planningRunId, "Expected planning run id");
+
+    // 9. pub-key GET /v1/runs/<that id> -> 403 agent_not_allowed
+    const res9 = await app.inject({
+      method: "GET",
+      url: `/v1/runs/${planningRunId}`,
+      headers: { authorization: "Bearer pub-key" },
+    });
+    assert(res9.statusCode === 403, `Expected 403 for pub-key GET on planning run, got ${res9.statusCode}`);
+    assert((res9.json() as any).error?.code === "agent_not_allowed", "Expected agent_not_allowed code");
+
+    // 10. full-key GET /v1/agents -> 200
+    const res10 = await app.inject({
+      method: "GET",
+      url: "/v1/agents",
+      headers: { authorization: "Bearer full-key" },
+    });
+    assert(res10.statusCode === 200, `Expected 200 for full-key GET /v1/agents, got ${res10.statusCode}`);
+  } finally {
+    await app.close();
+  }
+}
+
 async function runRegression(
   fixtureId: string,
   fn: () => Promise<void> | void,
@@ -1106,5 +1216,6 @@ export async function runRegressionEvals(): Promise<StageEvalResult[]> {
     await runRegression("injection-content-neutralized", verifyInjectionContentNeutralized),
     await runRegression("ops-delivery-honest", verifyOpsDeliveryHonest),
     await runRegression("ops-no-silent-synthetic", verifyOpsNoSilentSynthetic),
+    await runRegression("public-key-scope", verifyPublicKeyScope),
   ];
 }

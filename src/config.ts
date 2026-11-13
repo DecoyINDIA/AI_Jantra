@@ -80,6 +80,16 @@ function booleanFromEnv(name: string, fallback: boolean): boolean {
   throw new Error(`${name} must be a boolean-like value. Received "${raw}".`);
 }
 
+function listFromEnv(name: string, fallback: string[]): string[] {
+  const raw = process.env[name];
+  if (raw === undefined) return fallback;
+  if (!raw.trim()) return [];
+  return raw
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 export function resolveDataDirs(env: Record<string, string | undefined>): {
   dataDir: string;
   auditDir: string;
@@ -122,6 +132,11 @@ export const config = {
     process.env.JANTRA_MOCK_FIXTURE ?? "src/runtime/evals/fixtures/transcript.json",
   explicitCache: booleanFromEnv("JANTRA_EXPLICIT_CACHE", true),
   opsAllowSynthetic: booleanFromEnv("JANTRA_OPS_ALLOW_SYNTHETIC", false),
+  publicSubjects: listFromEnv("JANTRA_PUBLIC_SUBJECTS", ["web"]),
+  publicAgentIds: listFromEnv("JANTRA_PUBLIC_AGENT_IDS", [
+    "intake-public",
+    "firebnb-concierge",
+  ]),
   dataDir: dataDirs.dataDir,
   auditDir: dataDirs.auditDir,
   auditMaxFieldBytes: Math.trunc(numberFromEnv("JANTRA_AUDIT_MAX_FIELD_BYTES", 16 * 1024)),
