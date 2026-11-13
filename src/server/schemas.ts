@@ -146,6 +146,12 @@ export const createLeadBodySchema = z.object({
   phone: z.string().trim().max(LEAD_PHONE_MAX_CHARS).optional(),
   idea: z.string().trim().min(1).max(LEAD_IDEA_MAX_CHARS),
   source: z.string().trim().max(LEAD_SOURCE_MAX_CHARS).optional(),
+  runId: z
+    .string()
+    .min(1)
+    .max(RUN_ID_MAX_CHARS)
+    .regex(/^[A-Za-z0-9_-]+$/, "runId must use slug-safe characters.")
+    .optional(),
 });
 
 export function parseWith<T>(schema: z.ZodType<T>, value: unknown): T {

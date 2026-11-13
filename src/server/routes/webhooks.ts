@@ -12,13 +12,20 @@ import {
 } from "../webhooks/store.js";
 import { assertPublicWebhookUrl } from "../webhooks/urlGuard.js";
 
-const GATE_EVENT_TYPES = ["run.awaiting_confirmation", "run.awaiting_input"] as const;
+export const WEBHOOK_EVENT_TYPES = [
+  "run.awaiting_confirmation",
+  "run.awaiting_input",
+  "run.intake_completed",
+  "lead.created",
+] as const;
+
+export type WebhookEventType = (typeof WEBHOOK_EVENT_TYPES)[number];
 
 const createWebhookBodySchema = z.object({
   url: z.string().url().max(2048),
   secret: z.string().min(8).max(256).optional(),
-  // Empty/omitted → subscribe to all gate events.
-  events: z.array(z.enum(GATE_EVENT_TYPES)).max(GATE_EVENT_TYPES.length).optional(),
+  // Empty/omitted → subscribe to all events.
+  events: z.array(z.enum(WEBHOOK_EVENT_TYPES)).max(WEBHOOK_EVENT_TYPES.length).optional(),
 });
 
 const webhookParamsSchema = z.object({

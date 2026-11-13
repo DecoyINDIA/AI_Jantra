@@ -26,6 +26,7 @@ const ROUTES = [
   { method: "POST", re: /^\/v1\/runs\/[^/]+\/advance$/ },
   { method: "GET", re: /^\/v1\/runs\/[^/]+\/interactions$/ },
   { method: "POST", re: /^\/v1\/runs\/[^/]+\/interactions\/[^/]+$/ },
+  { method: "POST", re: /^\/v1\/leads$/ },
 ];
 
 function allowedOrigins(env) {

@@ -42,8 +42,8 @@ Status: In Progress
 | **T-012** | P1 | Completed | 6ed82c6 | Yes | G1 (61/61 eval, typecheck, smoke, server:smoke) | Budget reserve/settle & unknown price guard |
 | **T-013** | P1 | Completed | 5f9e017 | Yes | G1 (61/61 eval, typecheck, smoke, server:smoke) | Documentation truth pass |
 | **T-016** | P2 | Completed | 3239b8a | Yes | G1 + Docker smoke (/health 200, healthy) | Production container |
-| **T-017** | P2 | Completed | pending | Yes | G1 + npm test (37 unit tests, 61/61 eval) | Unit tests & split regressions |
-| **T-021** | P2 | Pending | - | - | - | Lead notification & lead<->run link |
+| **T-017** | P2 | Completed | f57df4d | Yes | G1 + npm test (37 unit tests, 61/61 eval) | Unit tests & split regressions |
+| **T-021** | P2 | Completed | a4231dc | Yes | G1 + npm test (40 unit tests, 62/62 eval) | Lead notification & lead↔run link |
 | **T-020** | P2 | Pending | - | - | - | Promote intake to plan & gate queue UI |
 | **T-022** | P2 | Pending | - | - | - | Client-ready export |
 | **T-015** | P2 | Pending | - | - | - | One SQLite database with migrations |
