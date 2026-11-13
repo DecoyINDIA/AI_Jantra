@@ -24,8 +24,17 @@ function parseJudge(text: string): z.infer<typeof modelJudgeSchema> {
   if (start !== -1 && end !== -1) {
     cleaned = cleaned.slice(start, end + 1);
   }
-  
-  const rawObj = JSON.parse(cleaned);
+
+  let rawObj: any;
+  try {
+    rawObj = JSON.parse(cleaned);
+  } catch (err) {
+    throw new SchemaValidationError(
+      `Model judge output is not valid JSON. Raw response: ${text}`,
+      { raw: text, cause: err },
+    );
+  }
+
   if (rawObj && typeof rawObj === "object" && !rawObj.scores) {
     if (
       (typeof rawObj.completeness === "number" || typeof rawObj.completeness === "string") &&
@@ -58,15 +67,16 @@ async function judgeFixture(
   fixture: EvalFixture,
   stage: JudgeStage,
 ): Promise<StageEvalResult> {
-  const provider = createProviderForStage(stage, stage === "planning" ? "pro" : "flash");
-  const result = await provider.generate({
-    purpose: "eval_model_judge",
-    system:
-      "You are a supplementary Jantra eval judge. Score judgment-heavy quality only. Do not generate product artifacts. Return only JSON.",
-    messages: [
-      {
-        role: "user",
-        content: `Stage to judge: ${stage}
+  try {
+    const provider = createProviderForStage(stage, stage === "planning" ? "pro" : "flash");
+    const result = await provider.generate({
+      purpose: "eval_model_judge",
+      system:
+        "You are a supplementary Jantra eval judge. Score judgment-heavy quality only. Do not generate product artifacts. Return only JSON.",
+      messages: [
+        {
+          role: "user",
+          content: `Stage to judge: ${stage}
 
 Idea:
 ${fixture.idea}
@@ -77,21 +87,30 @@ Features: ${fixture.expected.features.join(", ")}
 Risks: ${fixture.expected.risks.join(", ")}
 
 Score completeness, balance, and entailment from 1 to 5. This is advisory and does not replace deterministic gates.`,
-      },
-    ],
-    responseJsonSchema: z.toJSONSchema(modelJudgeSchema),
-    thinking: false,
-    temperature: 0,
-    maxOutputTokens: 1500,
-  });
-  const parsed = parseJudge(result.text);
-  return {
-    fixtureId: `${fixture.id}-model-judge`,
-    stage,
-    score: Number(average(parsed.scores).toFixed(1)),
-    passed: true,
-    notes: `Supplementary model judge: ${JSON.stringify(parsed.scores)}. ${parsed.notes}`,
-  };
+        },
+      ],
+      responseJsonSchema: z.toJSONSchema(modelJudgeSchema),
+      thinking: false,
+      temperature: 0,
+      maxOutputTokens: 1500,
+    });
+    const parsed = parseJudge(result.text);
+    return {
+      fixtureId: `${fixture.id}-model-judge`,
+      stage,
+      score: Number(average(parsed.scores).toFixed(1)),
+      passed: true,
+      notes: `Supplementary model judge: ${JSON.stringify(parsed.scores)}. ${parsed.notes}`,
+    };
+  } catch (err) {
+    return {
+      fixtureId: `${fixture.id}-model-judge`,
+      stage,
+      score: 1,
+      passed: false,
+      notes: `Model judge failed: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
 }
 
 export async function runModelJudgeEvals(

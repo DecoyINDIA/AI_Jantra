@@ -10,7 +10,7 @@ import { runEventBus } from "./events.js";
 import { CostCeilingExceededError, GateConflictError } from "../runtime/errors.js";
 import { HttpError, sendHttpError } from "./errors.js";
 import { installLocalSecurity } from "./security.js";
-import { installRateLimit } from "./rateLimit.js";
+import { installIdentityRateLimit, installRateLimit } from "./rateLimit.js";
 import { config } from "../config.js";
 import { registerAgentRoutes } from "./routes/agents.js";
 import { registerAdminKeyRoutes } from "./routes/adminKeys.js";
@@ -79,14 +79,20 @@ export function createServer(options: CreateServerOptions): FastifyInstance {
 
   if (mode === "remote") {
     // Throttle before auth so unauthenticated floods and API-key brute-force
-    // attempts are capped too. The loopback-only local API is not rate limited.
+    // attempts are capped too. Because every public request shares the edge's
+    // address, multiply the pre-auth limiter's effective ceiling by 10 for safety.
     installRateLimit(app, {
       windowMs: config.rateLimitWindowMs,
-      max: config.rateLimitMax,
+      max: config.rateLimitMax * 10,
     });
     installApiKeyAuth(app, {
       apiKeyStore,
       envRecords: options.apiKeys ?? parseApiKeyRecords(),
+    });
+    installIdentityRateLimit(app, {
+      windowMs: config.rateLimitWindowMs,
+      publicMax: config.publicVisitorRateLimitMax,
+      fullMax: config.rateLimitMax,
     });
   } else {
     installLocalSecurity(app, {

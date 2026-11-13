@@ -22,17 +22,21 @@ import { checkpointResearchState } from "../../pipeline/stages/research.js";
 import { JsonProjectStore, type ProjectStore } from "../../pipeline/store.js";
 import type { Artifact, Project, ProjectListQuery, ProjectPage, Source, StageContext } from "../../pipeline/types.js";
 import { createServer } from "../../server/app.js";
+import fastify, { type FastifyRequest } from "fastify";
 import { readAuditEntries } from "../../server/events.js";
 import { runIntakeReentrant } from "../../pipeline/stages/intake.js";
 import {
   intakeBudgetAuditRunId,
   intakeBudgetDayUtc,
+  visitorDailyBudgetStatus,
+  visitorSpendId,
 } from "../intakeBudget.js";
 import { RuleBasedPolicy, sanitizeUntrustedWebContent, type PolicyConfig } from "../../policy.js";
 import { createAdminApiKeyBodySchema, parseWith, runParamsSchema } from "../../server/schemas.js";
 import { JsonWebhookSubscriptionStore } from "../../server/webhooks/store.js";
 import { JsonLeadStore } from "../../server/leads/store.js";
-import { createFixedWindowLimiter } from "../../server/rateLimit.js";
+import { createFixedWindowLimiter, installIdentityRateLimit } from "../../server/rateLimit.js";
+import { visitorAddress, visitorKey } from "../../server/visitor.js";
 import type { AnyTool, Policy } from "../../types.js";
 import type { StageEvalResult } from "./report.js";
 import { assertPublicWebhookUrl } from "../../server/webhooks/urlGuard.js";
@@ -1399,6 +1403,84 @@ function verifyResearchCheckpointPersisted(): void {
   assert(planData?.x === 1, `Expected plan.x === 1, got ${JSON.stringify(planData)}`);
 }
 
+async function verifyVisitorRateLimit(): Promise<void> {
+  const app = fastify();
+  app.addHook("onRequest", async (request) => {
+    (request as any).identity = {
+      subject: "web",
+      scope: "public",
+      allowedAgentIds: ["intake-public"],
+    };
+  });
+  installIdentityRateLimit(app, {
+    windowMs: 60_000,
+    publicMax: 30,
+    fullMax: 120,
+  });
+  app.post("/v1/runs", async () => ({ ok: true }));
+
+  for (let i = 0; i < 30; i++) {
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/runs",
+      headers: { "x-jantra-client-ip": "198.51.100.1" },
+    });
+    assert(res.statusCode === 200, `Request ${i} failed with status ${res.statusCode}`);
+  }
+  const res31 = await app.inject({
+    method: "POST",
+    url: "/v1/runs",
+    headers: { "x-jantra-client-ip": "198.51.100.1" },
+  });
+  assert(res31.statusCode === 429, `31st request should be 429, got ${res31.statusCode}`);
+
+  const resOther = await app.inject({
+    method: "POST",
+    url: "/v1/runs",
+    headers: { "x-jantra-client-ip": "198.51.100.2" },
+  });
+  assert(resOther.statusCode === 200, `Different IP should be allowed, got ${resOther.statusCode}`);
+  await app.close();
+}
+
+function verifyVisitorHeaderIgnoredForFullKeys(): void {
+  const fullReq = {
+    identity: { scope: "full", subject: "admin" },
+    headers: { "x-jantra-client-ip": "198.51.100.1" },
+    ip: "127.0.0.1",
+  } as unknown as FastifyRequest;
+  assert(visitorAddress(fullReq) === "127.0.0.1", `Expected 127.0.0.1, got ${visitorAddress(fullReq)}`);
+
+  const publicReq = {
+    identity: { scope: "public", subject: "web" },
+    headers: { "x-jantra-client-ip": "198.51.100.1" },
+    ip: "127.0.0.1",
+  } as unknown as FastifyRequest;
+  assert(visitorAddress(publicReq) === "198.51.100.1", `Expected 198.51.100.1, got ${visitorAddress(publicReq)}`);
+
+  const invalidIpReq = {
+    identity: { scope: "public", subject: "web" },
+    headers: { "x-jantra-client-ip": "not-an-ip" },
+    ip: "127.0.0.1",
+  } as unknown as FastifyRequest;
+  assert(visitorAddress(invalidIpReq) === "127.0.0.1", `Expected 127.0.0.1 for invalid IP, got ${visitorAddress(invalidIpReq)}`);
+}
+
+function verifyVisitorDailyBudget(): void {
+  const store = new JsonProjectStore();
+  const clientId = `test-client-${Date.now()}`;
+  const key1 = "visitor-key-1";
+  const key2 = "visitor-key-2";
+  const day = intakeBudgetDayUtc();
+
+  store.addClientDailyIdeationSpend(visitorSpendId(clientId, key1), day, 0.2);
+  const status1 = visitorDailyBudgetStatus(store, clientId, key1);
+  assert(status1.exceeded, "Expected visitor 1 budget to be exceeded");
+
+  const status2 = visitorDailyBudgetStatus(store, clientId, key2);
+  assert(!status2.exceeded, "Expected visitor 2 budget NOT to be exceeded");
+}
+
 async function runRegression(
   fixtureId: string,
   fn: () => Promise<void> | void,
@@ -1454,5 +1536,8 @@ export async function runRegressionEvals(): Promise<StageEvalResult[]> {
     await runRegression("json-store-ignores-non-project-files", verifyJsonStoreIgnoresNonProjectFiles),
     await runRegression("store-path-segments", verifyStorePathSegments),
     await runRegression("research-checkpoint-persisted", verifyResearchCheckpointPersisted),
+    await runRegression("visitor-rate-limit", verifyVisitorRateLimit),
+    await runRegression("visitor-header-ignored-for-full-keys", verifyVisitorHeaderIgnoredForFullKeys),
+    await runRegression("visitor-daily-budget", verifyVisitorDailyBudget),
   ];
 }

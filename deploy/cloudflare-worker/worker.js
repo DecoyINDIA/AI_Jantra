@@ -117,6 +117,13 @@ export default {
 
     const target = `${env.JANTRA_ORIGIN.replace(/\/$/, "")}${url.pathname}${url.search}`;
     const headers = new Headers(request.headers);
+    for (const name of [...headers.keys()]) {
+      if (name.toLowerCase().startsWith("x-jantra-") && name.toLowerCase() !== "x-jantra-user") {
+        headers.delete(name);
+      }
+    }
+    const visitorIp = request.headers.get("CF-Connecting-IP");
+    if (visitorIp) headers.set("X-Jantra-Client-IP", visitorIp);
     headers.set("Authorization", `Bearer ${env.JANTRA_API_KEY}`);
     headers.delete("Origin"); // origin-side CORS stays off; the edge owns CORS
     headers.delete("Cookie");

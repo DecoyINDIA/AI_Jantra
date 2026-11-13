@@ -37,6 +37,8 @@ export interface CreateProjectOptions {
   modelId?: string;
   /** Run-level autonomy policy. Defaults to "gated". */
   autonomy?: "gated" | "auto";
+  /** Optional visitor key for public-traffic budgeting and attribution. */
+  visitorKey?: string;
 }
 
 function emptyStage(id: StageId, status: StageState["status"] = "pending"): StageState {
@@ -109,6 +111,7 @@ export function createProject(
     agentDefinitionSnapshot: snapshot,
     modelId: options.modelId,
     autonomy: options.autonomy ?? "gated",
+    visitorKey: options.visitorKey,
     status: "active",
     currentStage: firstActiveStage(snapshot),
     stages: initialStages(snapshot),
