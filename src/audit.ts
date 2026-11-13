@@ -40,6 +40,7 @@ export type AuditType =
   | "job_started"
   | "job_finished"
   | "job_failed"
+  | "lead_deleted"
   | "error";
 
 export interface AuditEntry {

@@ -862,3 +862,96 @@ export async function verifyModelCatalogFromConfig(): Promise<void> {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 }
+
+export async function verifyLeadRetentionAndDeletion(): Promise<void> {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "jantra-retention-eval-"));
+  const dbPath = path.join(dir, "retention.sqlite");
+  const store = new SqliteProjectStore(dbPath, { skipImport: true });
+  const rawKey = "jnt_live_retention_1234567890abcdef1234567890abcdef";
+  const clientId = "retention-eval-client";
+
+  store.createApiKey({
+    id: "key-retention-eval",
+    keyHash: hashApiKey(rawKey),
+    prefix: "jnt_live_",
+    clientId,
+    subject: "operator",
+    label: "Retention eval key",
+    createdAt: new Date().toISOString(),
+    lastUsedAt: null,
+    revokedAt: null,
+    scope: "full",
+  });
+
+  const app = createServer({
+    mode: "remote",
+    loopbackToken: "",
+    store,
+  });
+
+  try {
+    // 1. Post a lead
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/v1/leads",
+      headers: {
+        authorization: `Bearer ${rawKey}`,
+        "content-type": "application/json",
+      },
+      payload: {
+        name: "Retention Test",
+        email: "retention@example.com",
+        idea: "Lead retention test",
+        source: "eval",
+      },
+    });
+    assert(createRes.statusCode === 201, `Lead creation failed: ${createRes.body}`);
+    const leadId = createRes.json().id as string;
+
+    // 2. List leads -> should contain the new lead
+    const listRes = await app.inject({
+      method: "GET",
+      url: "/v1/leads",
+      headers: {
+        authorization: `Bearer ${rawKey}`,
+      },
+    });
+    assert(listRes.statusCode === 200, `List leads failed: ${listRes.body}`);
+    assert(listRes.json().items.some((l: { id: string }) => l.id === leadId), "Expected lead in list");
+
+    // 3. Delete lead via DELETE /v1/leads/:id
+    const delRes = await app.inject({
+      method: "DELETE",
+      url: `/v1/leads/${leadId}`,
+      headers: {
+        authorization: `Bearer ${rawKey}`,
+      },
+    });
+    assert(delRes.statusCode === 200, `Delete lead failed: ${delRes.body}`);
+    assert(delRes.json().status === "deleted", "Expected status deleted");
+
+    // 4. List leads again -> should be empty
+    const listAgain = await app.inject({
+      method: "GET",
+      url: "/v1/leads",
+      headers: {
+        authorization: `Bearer ${rawKey}`,
+      },
+    });
+    assert(!listAgain.json().items.some((l: { id: string }) => l.id === leadId), "Expected lead to be removed");
+
+    // 5. Deleting nonexistent lead returns 404
+    const delAgain = await app.inject({
+      method: "DELETE",
+      url: `/v1/leads/${leadId}`,
+      headers: {
+        authorization: `Bearer ${rawKey}`,
+      },
+    });
+    assert(delAgain.statusCode === 404, `Expected 404 on already deleted lead, got ${delAgain.statusCode}`);
+  } finally {
+    await app.close();
+    store.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}

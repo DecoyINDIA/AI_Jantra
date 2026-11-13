@@ -176,6 +176,8 @@ export const config = {
   synthesisConcurrency: boundedIntegerFromEnv("JANTRA_SYNTHESIS_CONCURRENCY", 3, 1, 6),
   maxSources: boundedIntegerFromEnv("JANTRA_MAX_SOURCES", 24, 1, 48),
   modelCatalogPath: process.env.JANTRA_MODEL_CATALOG_PATH || undefined,
+  leadRetentionDays: boundedIntegerFromEnv("JANTRA_LEAD_RETENTION_DAYS", 30, 1, 365),
+  enableLeadDeletionSweep: booleanFromEnv("JANTRA_ENABLE_LEAD_DELETION_SWEEP", false),
 };
 
 export function requireApiKey(): void {

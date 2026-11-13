@@ -402,8 +402,16 @@ export class SqliteProjectStore
     return this.leadStore.listLeadsByUser(clientId, userSub);
   }
 
+  getLead(clientId: string, id: string): LeadRecord | null {
+    return this.leadStore.getLead ? this.leadStore.getLead(clientId, id) : null;
+  }
+
   deleteLead(clientId: string, id: string): boolean {
     return this.leadStore.deleteLead ? this.leadStore.deleteLead(clientId, id) : false;
+  }
+
+  sweepExpiredLeads(retentionDays: number): number {
+    return this.leadStore.sweepExpiredLeads ? this.leadStore.sweepExpiredLeads(retentionDays) : 0;
   }
 
   getLeadStore(): LeadStore {

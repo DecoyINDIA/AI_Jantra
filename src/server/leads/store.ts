@@ -4,6 +4,7 @@ import {
   readFileSync,
   readdirSync,
   renameSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -48,9 +49,11 @@ export interface LeadRecord {
 
 export interface LeadStore {
   createLead(record: LeadRecord): LeadRecord;
+  getLead?(clientId: string, id: string): LeadRecord | null;
   listLeads(clientId: string): LeadRecord[];
   listLeadsByUser(clientId: string, userSub: string): LeadRecord[];
   deleteLead?(clientId: string, id: string): boolean;
+  sweepExpiredLeads?(retentionDays: number): number;
 }
 
 interface LeadRow {
@@ -125,6 +128,15 @@ export class SqliteLeadStore implements LeadStore {
     return rows.map(toLeadRecord);
   }
 
+  getLead(clientId: string, id: string): LeadRecord | null {
+    const row = this.db
+      .prepare(
+        "select * from leads where client_id = ? and id = ? and deleted_at is null",
+      )
+      .get(clientId, id) as LeadRow | undefined;
+    return row ? toLeadRecord(row) : null;
+  }
+
   deleteLead(clientId: string, id: string): boolean {
     const now = new Date().toISOString();
     const result = this.db
@@ -133,6 +145,17 @@ export class SqliteLeadStore implements LeadStore {
       )
       .run(now, clientId, id);
     return result.changes > 0;
+  }
+
+  sweepExpiredLeads(retentionDays: number): number {
+    const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
+    const now = new Date().toISOString();
+    const result = this.db
+      .prepare(
+        "update leads set deleted_at = ? where created_at < ? and deleted_at is null",
+      )
+      .run(now, cutoff);
+    return result.changes;
   }
 }
 
@@ -144,6 +167,27 @@ export class JsonLeadStore implements LeadStore {
       JSON.stringify(record, null, 2),
     );
     return record;
+  }
+
+  getLead(clientId: string, id: string): LeadRecord | null {
+    const file = leadFile(clientId, id);
+    if (!existsSync(file)) return null;
+    try {
+      return JSON.parse(readFileSync(file, "utf8")) as LeadRecord;
+    } catch {
+      return null;
+    }
+  }
+
+  deleteLead(clientId: string, id: string): boolean {
+    const file = leadFile(clientId, id);
+    if (!existsSync(file)) return false;
+    rmSync(file, { force: true });
+    return true;
+  }
+
+  sweepExpiredLeads(_retentionDays: number): number {
+    return 0;
   }
 
   listLeads(clientId: string): LeadRecord[] {
