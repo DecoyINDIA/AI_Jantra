@@ -3,7 +3,7 @@ import * as path from "node:path";
 import type { OpsConnector, ConnectorConfig } from "./base.js";
 import type { DataSnapshot } from "../schema.js";
 
-function parseCsvRow(row: string): string[] {
+export function parseCsvRow(row: string): string[] {
   const result: string[] = [];
   let current = "";
   let inQuotes = false;
@@ -29,7 +29,7 @@ function parseCsvRow(row: string): string[] {
 
 import { config } from "../../../config.js";
 
-function parseCsv(content: string): string[][] {
+export function parseCsv(content: string): string[][] {
   const lines = content.split(/\r?\n/);
   return lines
     .map(line => line.trim())

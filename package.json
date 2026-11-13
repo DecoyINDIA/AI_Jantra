@@ -30,7 +30,8 @@
     "embed:build": "npm run build -w @jantra/embed-widget",
     "edge:verify": "node deploy/cloudflare-worker/verify-edge.mjs",
     "eval": "node --import tsx src/runtime/evals/index.ts",
-    "smoke": "node --import tsx src/runtime/evals/smoke.ts"
+    "smoke": "node --import tsx src/runtime/evals/smoke.ts",
+    "test": "node --import tsx --test \"src/**/*.test.ts\""
   },
   "dependencies": {
     "@google/genai": "^2.7.0",
