@@ -4,6 +4,7 @@ import { app } from "electron";
 
 export interface LicenseStatus {
   active: boolean;
+  unverified: boolean;
   keySuffix?: string;
   activatedAt?: string;
 }
@@ -18,6 +19,7 @@ export async function activateLicense(key: string): Promise<LicenseStatus> {
   }
   const status: LicenseStatus = {
     active: true,
+    unverified: true,
     keySuffix: key.slice(-6),
     activatedAt: new Date().toISOString(),
   };
@@ -28,8 +30,12 @@ export async function activateLicense(key: string): Promise<LicenseStatus> {
 
 export async function licenseStatus(): Promise<LicenseStatus> {
   try {
-    return JSON.parse(await readFile(licensePath(), "utf8")) as LicenseStatus;
+    const raw = JSON.parse(await readFile(licensePath(), "utf8")) as LicenseStatus;
+    return {
+      ...raw,
+      unverified: true,
+    };
   } catch {
-    return { active: false };
+    return { active: false, unverified: true };
   }
 }
