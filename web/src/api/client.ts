@@ -96,6 +96,17 @@ export interface CostRollupView {
   perStage: Record<string, Omit<CostRollupView, "perStage">>;
 }
 
+export interface LeadView {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  idea: string;
+  source: string;
+  runId?: string;
+  createdAt: string;
+}
+
 export interface RunDetail {
   id: string;
   title: string;
@@ -311,6 +322,11 @@ export const api = {
     adminFetch<{ items: ApiKeyMetadata[] }>(`/v1/admin/keys${query}`),
   revokeApiKey: (id: string) =>
     adminFetch<{ apiKey: ApiKeyMetadata }>(`/v1/admin/keys/${encodeURIComponent(id)}/revoke`, {
+      method: "POST",
+    }),
+  listLeads: () => apiFetch<{ items: LeadView[] }>("/v1/leads"),
+  promoteRun: (runId: string) =>
+    apiFetch<{ run: RunDetail }>(`/v1/runs/${runId}/promote`, {
       method: "POST",
     }),
 };

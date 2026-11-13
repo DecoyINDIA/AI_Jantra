@@ -1,15 +1,16 @@
-import { Boxes, KeyRound, ListChecks, Settings as SettingsIcon } from "lucide-react";
+import { Boxes, Inbox, KeyRound, ListChecks, Settings as SettingsIcon } from "lucide-react";
 import { useState } from "react";
 import AgentCatalog from "../routes/AgentCatalog";
 import ApiKeys from "../routes/ApiKeys";
+import HomeQueue from "../routes/HomeQueue";
 import RunDetail from "../routes/RunDetail";
 import RunList from "../routes/RunList";
 import Settings from "../routes/Settings";
 
-type View = "agents" | "runs" | "apiKeys" | "settings";
+type View = "queue" | "runs" | "agents" | "apiKeys" | "settings";
 
 export default function App() {
-  const [view, setView] = useState<View>("agents");
+  const [view, setView] = useState<View>("queue");
   const [runId, setRunId] = useState<string | null>(null);
   return (
     <div className="app-shell">
@@ -20,13 +21,13 @@ export default function App() {
           <span>AI</span>
         </div>
         <button
-          className={view === "agents" ? "active" : ""}
+          className={view === "queue" ? "active" : ""}
           onClick={() => {
             setRunId(null);
-            setView("agents");
+            setView("queue");
           }}
         >
-          <Boxes aria-hidden="true" /> Agents
+          <Inbox aria-hidden="true" /> Queue & Leads
         </button>
         <button
           className={view === "runs" ? "active" : ""}
@@ -36,6 +37,15 @@ export default function App() {
           }}
         >
           <ListChecks aria-hidden="true" /> Runs
+        </button>
+        <button
+          className={view === "agents" ? "active" : ""}
+          onClick={() => {
+            setRunId(null);
+            setView("agents");
+          }}
+        >
+          <Boxes aria-hidden="true" /> Agents
         </button>
         <button
           className={view === "apiKeys" ? "active" : ""}
@@ -59,6 +69,13 @@ export default function App() {
       <div className="content">
         {runId ? (
           <RunDetail runId={runId} />
+        ) : view === "queue" ? (
+          <HomeQueue
+            onOpenRun={(id) => {
+              setRunId(id);
+              setView("runs");
+            }}
+          />
         ) : view === "agents" ? (
           <AgentCatalog
             onOpenRun={(id) => {

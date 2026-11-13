@@ -47,6 +47,7 @@ export interface LeadRecord {
 
 export interface LeadStore {
   createLead(record: LeadRecord): LeadRecord;
+  listLeads(clientId: string): LeadRecord[];
   listLeadsByUser(clientId: string, userSub: string): LeadRecord[];
 }
 
@@ -58,6 +59,15 @@ export class JsonLeadStore implements LeadStore {
       JSON.stringify(record, null, 2),
     );
     return record;
+  }
+
+  listLeads(clientId: string): LeadRecord[] {
+    const dir = clientLeadDir(clientId);
+    if (!existsSync(dir)) return [];
+    return readdirSync(dir)
+      .filter((f) => f.endsWith(".json"))
+      .map((f) => JSON.parse(readFileSync(join(dir, f), "utf8")) as LeadRecord)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
   listLeadsByUser(clientId: string, userSub: string): LeadRecord[] {
