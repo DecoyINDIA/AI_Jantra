@@ -46,6 +46,7 @@ import {
   verifyClientReadyExport,
   verifySqliteMigrationsAndStores,
   verifyAsyncStageExecution,
+  verifyModelCatalogFromConfig,
   verifyRateLimiterFixedWindow,
   verifyRateLimiterProxyTrust,
   verifyRejectRoutePersistsReason,
@@ -99,5 +100,6 @@ export async function runRegressionEvals(): Promise<StageEvalResult[]> {
     await runRegression("client-ready-export", verifyClientReadyExport),
     await runRegression("sqlite-migrations-and-stores", verifySqliteMigrationsAndStores),
     await runRegression("async-stage-execution", verifyAsyncStageExecution),
+    await runRegression("model-catalog-from-config", verifyModelCatalogFromConfig),
   ];
 }
