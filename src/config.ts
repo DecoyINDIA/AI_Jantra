@@ -121,6 +121,7 @@ export const config = {
   mockFixturePath:
     process.env.JANTRA_MOCK_FIXTURE ?? "src/runtime/evals/fixtures/transcript.json",
   explicitCache: booleanFromEnv("JANTRA_EXPLICIT_CACHE", true),
+  opsAllowSynthetic: booleanFromEnv("JANTRA_OPS_ALLOW_SYNTHETIC", false),
   dataDir: dataDirs.dataDir,
   auditDir: dataDirs.auditDir,
   auditMaxFieldBytes: Math.trunc(numberFromEnv("JANTRA_AUDIT_MAX_FIELD_BYTES", 16 * 1024)),
