@@ -41,6 +41,7 @@ import {
 } from "./security.js";
 import {
   verifyErrorEnvelopeNoLeak,
+  verifyLeadRunLinkAndWebhooks,
   verifyRateLimiterFixedWindow,
   verifyRateLimiterProxyTrust,
   verifyRejectRoutePersistsReason,
@@ -89,5 +90,6 @@ export async function runRegressionEvals(): Promise<StageEvalResult[]> {
     await runRegression("report-provenance-revert", verifyReportProvenanceRevert),
     await runRegression("gateway-reserve-settle", verifyGatewayReserveSettle),
     await runRegression("unknown-model-cost", verifyUnknownModelCost),
+    await runRegression("lead-run-link-and-webhooks", verifyLeadRunLinkAndWebhooks),
   ];
 }

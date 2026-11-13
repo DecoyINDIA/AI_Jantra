@@ -309,6 +309,14 @@ function completeStageArtifacts(
   if (gate !== "auto") {
     publishGateEvent(gateEventForStatus(project, stage.id, "awaiting_confirmation"));
   }
+  if (stage.id === "intake") {
+    publishGateEvent({
+      type: "run.intake_completed",
+      clientId: project.clientId,
+      runId: project.id,
+      stageId: stage.id,
+    });
+  }
 }
 
 const inertIo: StageIO = {

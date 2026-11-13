@@ -123,7 +123,7 @@ export function createServer(options: CreateServerOptions): FastifyInstance {
   registerEventRoutes(app, { clientId, store });
   registerWebhookRoutes(app, { clientId });
   registerCompleteRoutes(app, { clientId, store });
-  registerLeadRoutes(app, { clientId });
+  registerLeadRoutes(app, { clientId, projectStore: store });
 
   app.setErrorHandler((err, request, reply) => {
     const status = (err as { statusCode?: number }).statusCode;

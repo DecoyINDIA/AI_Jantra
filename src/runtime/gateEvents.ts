@@ -8,7 +8,7 @@ import type { Project } from "../pipeline/types.js";
  * mirroring `setAuditPublisher`.
  */
 export interface GateEvent {
-  type: "run.awaiting_confirmation" | "run.awaiting_input";
+  type: "run.awaiting_confirmation" | "run.awaiting_input" | "run.intake_completed";
   clientId: string;
   runId: string;
   stageId: string;

@@ -248,3 +248,81 @@ export async function verifyErrorEnvelopeNoLeak(): Promise<void> {
     await app.close();
   }
 }
+
+export async function verifyLeadRunLinkAndWebhooks(): Promise<void> {
+  const token = "lead-webhook-token";
+  const auth = { authorization: `Bearer ${token}`, host: "127.0.0.1:4317" };
+  const store = new JsonProjectStore();
+  const app = createServer({ loopbackToken: token, store });
+
+  try {
+    // 1. Create a run for client-alpha
+    const runAlphaRes = await app.inject({
+      method: "POST",
+      url: "/v1/runs",
+      headers: { ...auth, "content-type": "application/json" },
+      payload: {
+        agentId: "intake-public",
+        title: "Alpha intake",
+      },
+    });
+    assert(runAlphaRes.statusCode === 200, `Expected 200, got ${runAlphaRes.statusCode}`);
+    const runAlphaId = runAlphaRes.json().run.id as string;
+
+    // 2. Post lead with valid runId under same client
+    const leadRes = await app.inject({
+      method: "POST",
+      url: "/v1/leads",
+      headers: { ...auth, "content-type": "application/json" },
+      payload: {
+        name: "Test Founder",
+        email: "founder@example.com",
+        idea: "My startup idea",
+        runId: runAlphaId,
+      },
+    });
+    assert(leadRes.statusCode === 201, `Expected 201 for lead creation with runId, got ${leadRes.statusCode}: ${leadRes.body}`);
+    const leadBody = leadRes.json();
+    assert(leadBody.runId === runAlphaId, "Lead response missing runId");
+
+    // 3. Post lead with non-existent runId -> 404
+    const notFoundLead = await app.inject({
+      method: "POST",
+      url: "/v1/leads",
+      headers: { ...auth, "content-type": "application/json" },
+      payload: {
+        name: "Test Founder",
+        email: "founder@example.com",
+        idea: "My startup idea",
+        runId: "non-existent-run-id",
+      },
+    });
+    assert(notFoundLead.statusCode === 404, `Expected 404 for non-existent runId, got ${notFoundLead.statusCode}`);
+
+    // 4. Test cross-tenant isolation: create another app with client-beta
+    const appBeta = createServer({
+      mode: "remote",
+      loopbackToken: "",
+      apiKeys: [{ key: "beta-key", clientId: "client-beta", subject: "beta" }],
+      store,
+    });
+    try {
+      const crossTenantLead = await appBeta.inject({
+        method: "POST",
+        url: "/v1/leads",
+        headers: { authorization: "Bearer beta-key", "content-type": "application/json" },
+        payload: {
+          name: "Beta Founder",
+          email: "beta@example.com",
+          idea: "Beta idea",
+          runId: runAlphaId, // belongs to default client, not client-beta
+        },
+      });
+      assert(crossTenantLead.statusCode === 404, `Expected 404 for cross-tenant runId, got ${crossTenantLead.statusCode}`);
+    } finally {
+      await appBeta.close();
+    }
+  } finally {
+    await app.close();
+  }
+}

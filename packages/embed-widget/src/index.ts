@@ -68,8 +68,16 @@ export interface JantraIntakeOptions {
   /** Run title used server-side. Defaults to "Website intake". */
   title?: string;
   theme?: JantraThemeTokens;
+  /**
+   * Whether to collect contact details (name and email) to save as a lead upon
+   * intake completion. When true (or omitted), a lead capture form is shown
+   * once the idea summary is produced.
+   */
+  collectLead?: boolean;
   /** Called once the agent produces its idea summary (a captured lead). */
   onComplete?: (summary: JantraIdeaSummary) => void;
+  /** Called when a lead is successfully submitted via the completion step. */
+  onLeadSubmitted?: (lead: { id: string; runId?: string }) => void;
   /** Called on any unrecoverable error. */
   onError?: (error: Error) => void;
   /** Per-request timeout. Defaults to 20 seconds. */
@@ -320,6 +328,9 @@ export function mountJantraIntakeWidget(options: JantraIntakeOptions): JantraInt
       if (summary) {
         renderSummary(summary);
         options.onComplete?.({ title: summary.title, content: summary.content });
+        if (options.collectLead !== false) {
+          renderLeadCaptureForm(summary);
+        }
       }
       pendingInteractionId = null;
       busy = false;
@@ -343,6 +354,80 @@ export function mountJantraIntakeWidget(options: JantraIntakeOptions): JantraInt
     wrap.append(heading, pre);
     thread.append(wrap);
     thread.scrollTop = thread.scrollHeight;
+  }
+
+  function renderLeadCaptureForm(summary: Artifact): void {
+    const wrap = document.createElement("div");
+    wrap.className = `${scope}__lead-capture`;
+
+    const title = document.createElement("p");
+    title.className = `${scope}__lead-title`;
+    title.textContent = "Where should we send your plan when it's ready?";
+
+    const leadForm = document.createElement("form");
+    leadForm.className = `${scope}__lead-form`;
+
+    const nameInput = document.createElement("input");
+    nameInput.type = "text";
+    nameInput.className = `${scope}__lead-input`;
+    nameInput.placeholder = "Your name";
+    nameInput.required = true;
+    nameInput.maxLength = 200;
+
+    const emailInput = document.createElement("input");
+    emailInput.type = "email";
+    emailInput.className = `${scope}__lead-input`;
+    emailInput.placeholder = "Your email address";
+    emailInput.required = true;
+    emailInput.maxLength = 320;
+
+    const submitBtn = document.createElement("button");
+    submitBtn.type = "submit";
+    submitBtn.className = `${scope}__lead-submit`;
+    submitBtn.textContent = "Send to my inbox";
+
+    leadForm.append(nameInput, emailInput, submitBtn);
+    wrap.append(title, leadForm);
+    thread.append(wrap);
+    thread.scrollTop = thread.scrollHeight;
+
+    leadForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const name = nameInput.value.trim();
+      const email = emailInput.value.trim();
+      if (!name || !email) return;
+
+      submitBtn.disabled = true;
+      nameInput.disabled = true;
+      emailInput.disabled = true;
+      submitBtn.textContent = "Saving...";
+
+      try {
+        const lead = await request<{ id: string; runId?: string }>("/v1/leads", {
+          method: "POST",
+          body: JSON.stringify({
+            name,
+            email,
+            idea: summary.content.slice(0, 4000),
+            source: "embed-widget",
+            runId: runId ?? undefined,
+          }),
+        });
+
+        wrap.replaceChildren();
+        const successMsg = document.createElement("div");
+        successMsg.className = `${scope}__lead-success`;
+        successMsg.textContent = "Thank you! We've saved your idea and our team will be in touch.";
+        wrap.append(successMsg);
+        options.onLeadSubmitted?.(lead);
+      } catch {
+        submitBtn.disabled = false;
+        nameInput.disabled = false;
+        emailInput.disabled = false;
+        submitBtn.textContent = "Send to my inbox";
+        showStatus("Could not save your contact details. Please try again.");
+      }
+    });
   }
 
   let pendingInteractionId: string | null = null;
@@ -456,6 +541,19 @@ function css(scope: string, t: Required<JantraThemeTokens>, reduceMotion: boolea
   border-radius: 12px; padding: 12px 14px; }
 .${scope}__summary pre { white-space: pre-wrap; word-wrap: break-word; margin: 8px 0 0;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; color: ${t.text}; }
+.${scope}__lead-capture { background: ${t.surface}; border: 1px solid ${t.border};
+  border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+.${scope}__lead-title { margin: 0; font-size: 14px; font-weight: 600; color: ${t.text}; }
+.${scope}__lead-form { display: flex; flex-direction: column; gap: 8px; }
+.${scope}__lead-input { font: inherit; font-size: 14px; color: ${t.text};
+  background: ${t.surface}; border: 1px solid ${t.border}; border-radius: 8px;
+  padding: 8px 12px; }
+.${scope}__lead-input:focus { outline: 2px solid ${t.accent}; outline-offset: 1px; }
+.${scope}__lead-submit { font: inherit; font-size: 14px; font-weight: 600; color: ${t.accentText};
+  background: ${t.accent}; border: none; border-radius: 8px; padding: 8px 16px;
+  cursor: pointer; }
+.${scope}__lead-submit:disabled { opacity: 0.5; cursor: default; }
+.${scope}__lead-success { font-size: 14px; color: ${t.accent}; font-weight: 500; }
 .${scope}__status { display: flex; align-items: center; justify-content: space-between; gap: 10px;
   color: #7a2e1e; background: #fff6f3; border: 1px solid #f0d4cc;
   border-radius: 12px; padding: 9px 11px; font-size: 13px; line-height: 1.4; }

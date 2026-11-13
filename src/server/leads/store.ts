@@ -41,6 +41,7 @@ export interface LeadRecord {
   phone?: string;
   idea: string;
   source: string;
+  runId?: string;
   createdAt: string;
 }
 
