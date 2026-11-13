@@ -171,6 +171,14 @@ export function createServer(options: CreateServerOptions): FastifyInstance {
   registerCompleteRoutes(app, { clientId, store });
   registerLeadRoutes(app, { clientId, projectStore: store, leadStore, webhookStore });
 
+  if (config.enableLeadDeletionSweep && typeof leadStore.sweepExpiredLeads === "function") {
+    try {
+      leadStore.sweepExpiredLeads(config.leadRetentionDays);
+    } catch (err) {
+      console.warn("Failed to run initial lead retention sweep:", err);
+    }
+  }
+
   app.setErrorHandler((err, request, reply) => {
     const status = (err as { statusCode?: number }).statusCode;
     const isClient =

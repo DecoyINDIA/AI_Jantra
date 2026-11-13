@@ -1,14 +1,21 @@
 import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
+import { z } from "zod";
 
 import { createLeadBodySchema, parseWith } from "../schemas.js";
 import { requestClientId } from "../tenancy.js";
-import { notFound, unauthorized } from "../errors.js";
+import { forbidden, notFound, unauthorized } from "../errors.js";
 import { verifyOptionalUser, type VerifiedUser } from "../auth/logtoUser.js";
 import { defaultLeadStore, type LeadRecord, type LeadStore } from "../leads/store.js";
 import { defaultStore, type ProjectStore } from "../../pipeline/store.js";
 import { defaultWebhookStore, type WebhookSubscriptionStore } from "../webhooks/store.js";
 import { dispatchWebhookEvent } from "../webhooks/dispatcher.js";
+import { AuditLogger } from "../../audit.js";
+import { config } from "../../config.js";
+
+const leadParamsSchema = z.object({
+  id: z.string().min(1).max(96).regex(/^[A-Za-z0-9_-]+$/, "id must use slug-safe characters."),
+});
 
 interface LeadRouteDeps {
   clientId: string;
@@ -117,5 +124,41 @@ export function registerLeadRoutes(app: FastifyInstance, deps: LeadRouteDeps): v
     }));
 
     return { items };
+  });
+
+  // Delete a lead. Full-scope callers can delete any lead in the client tenant.
+  // Public callers require a valid user token matching the lead's owner.
+  // Deletion is audited with IDs only.
+  app.delete("/v1/leads/:id", async (request, reply) => {
+    const clientId = requestClientId(request, deps.clientId);
+    const params = parseWith(leadParamsSchema, request.params);
+    const identity = request.identity;
+
+    const existing = leadStore.getLead?.(clientId, params.id);
+    if (!existing) {
+      throw notFound(`Lead ${params.id} was not found.`);
+    }
+
+    if (identity?.scope !== "full") {
+      const user = await resolveUser(request);
+      if (!user || existing.userSub !== user.sub) {
+        throw forbidden("You are not authorized to delete this lead.");
+      }
+    }
+
+    const deleted = leadStore.deleteLead?.(clientId, params.id) ?? false;
+    if (!deleted) {
+      throw notFound(`Lead ${params.id} was not found.`);
+    }
+
+    const audit = new AuditLogger(existing.runId ?? "system", config.auditDir);
+    audit.record("lead_deleted", {
+      clientId,
+      leadId: params.id,
+      runId: existing.runId ?? null,
+    });
+
+    reply.code(200);
+    return { status: "deleted", id: params.id };
   });
 }
