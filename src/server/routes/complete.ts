@@ -7,8 +7,8 @@ import { completeBodySchema, parseWith } from "../schemas.js";
 import { requestClientId } from "../tenancy.js";
 import { defaultStore, type ProjectStore } from "../../pipeline/store.js";
 import {
-  clientDailyGatewayBudgetStatus,
-  recordGatewaySpend,
+  reserveGatewayBudget,
+  settleGatewayBudget,
   auditClientDailyGatewayBudgetExceeded,
 } from "../../runtime/gatewayBudget.js";
 
@@ -24,17 +24,22 @@ export function registerCompleteRoutes(app: FastifyInstance, deps: CompleteRoute
     const clientId = requestClientId(request, deps.clientId);
     const body = parseWith(completeBodySchema, request.body);
 
-    const budget = clientDailyGatewayBudgetStatus(store, clientId);
-    if (budget.exceeded) {
-      auditClientDailyGatewayBudgetExceeded(clientId, budget);
+    const estimate = config.gatewayRunCeilingUsd;
+    const reservation = reserveGatewayBudget(store, clientId, estimate);
+    if (!reservation.ok) {
+      auditClientDailyGatewayBudgetExceeded(clientId, {
+        spend: reservation.spend,
+        ceiling: reservation.ceiling,
+        day: reservation.day,
+      });
       return reply.status(429).send({
         error: {
           code: "gateway_daily_budget_exceeded",
           message: "Gateway daily budget exceeded.",
           details: {
-            spend: budget.spend,
-            ceiling: budget.ceiling,
-            day: budget.day,
+            spend: reservation.spend,
+            ceiling: reservation.ceiling,
+            day: reservation.day,
           },
         },
       });
@@ -43,14 +48,21 @@ export function registerCompleteRoutes(app: FastifyInstance, deps: CompleteRoute
     const provider = createProviderForStage("complete", "flash", "gateway", body.modelId);
     
     const started = Date.now();
-    const result = await provider.generate({
-      system: body.system,
-      messages: [{ role: "user", content: body.user }],
-      responseJsonSchema: body.responseJsonSchema,
-      maxOutputTokens: body.maxOutputTokens,
-      temperature: body.temperature,
-      grounding: false,
-    });
+    let result;
+    try {
+      result = await provider.generate({
+        system: body.system,
+        messages: [{ role: "user", content: body.user }],
+        responseJsonSchema: body.responseJsonSchema,
+        maxOutputTokens: body.maxOutputTokens,
+        temperature: body.temperature,
+        grounding: false,
+      });
+    } catch (err) {
+      settleGatewayBudget(store, clientId, estimate, 0, reservation.day);
+      throw err;
+    }
+    settleGatewayBudget(store, clientId, estimate, result.costUsd, reservation.day);
 
     const latencyMs = Date.now() - started;
     const runId = `gateway-${randomUUID()}`;
@@ -69,9 +81,6 @@ export function registerCompleteRoutes(app: FastifyInstance, deps: CompleteRoute
       latencyMs,
       textChars: result.text.length,
     });
-
-    // Record spend in the database
-    recordGatewaySpend(store, clientId, result.costUsd);
 
     if (result.costUsd > config.gatewayRunCeilingUsd) {
       audit.record("gateway_cost_exceeded", {

@@ -32,6 +32,8 @@ import {
   visitorDailyBudgetStatus,
   visitorSpendId,
 } from "../intakeBudget.js";
+import { reserveGatewayBudget, settleGatewayBudget } from "../gatewayBudget.js";
+import { shouldRejectUnknownCost } from "../../model/openaiCompatible.js";
 import { RuleBasedPolicy, sanitizeUntrustedWebContent, type PolicyConfig } from "../../policy.js";
 import { createAdminApiKeyBodySchema, parseWith, runParamsSchema } from "../../server/schemas.js";
 import { JsonWebhookSubscriptionStore } from "../../server/webhooks/store.js";
@@ -1581,6 +1583,77 @@ function verifyReportProvenanceRevert(): void {
   );
 }
 
+function verifyGatewayReserveSettle(): void {
+  const store = new JsonProjectStore();
+  const day = intakeBudgetDayUtc();
+  const ceiling = config.gatewayClientDailyCeilingUsd;
+  const estimate = config.gatewayRunCeilingUsd;
+
+  // Case 1: seed spend so spend + estimate > ceiling -> reserve fails
+  const clientIdExceed = `eval-gw-exceed-${Date.now()}`;
+  const seedExceed = Number((ceiling - estimate * 0.8).toFixed(6));
+  store.addClientDailyGatewaySpend(clientIdExceed, day, seedExceed);
+  const resExceed = reserveGatewayBudget(store, clientIdExceed, estimate);
+  assert(!resExceed.ok, `Expected reserve to fail when spend (${seedExceed}) + estimate (${estimate}) > ceiling (${ceiling})`);
+
+  // Case 2: seed so spend + estimate <= ceiling -> reserve succeeds and spend is incremented
+  const clientId2 = `eval-gw-allow-${Date.now()}`;
+  const seedOk = Number((ceiling - estimate * 2).toFixed(6));
+  store.addClientDailyGatewaySpend(clientId2, day, seedOk);
+  const resOk = reserveGatewayBudget(store, clientId2, estimate);
+  assert(resOk.ok, "Expected reserve to succeed");
+  const storedAfterReserve = Number(store.getClientDailyGatewaySpend(clientId2, day).toFixed(6));
+  const expectedAfterReserve = Number((seedOk + estimate).toFixed(6));
+  assert(storedAfterReserve === expectedAfterReserve, `Expected stored spend ${expectedAfterReserve}, got ${storedAfterReserve}`);
+
+  // Case 3: settle(estimate, actual 0.01) -> updates store
+  const actual = 0.01;
+  settleGatewayBudget(store, clientId2, estimate, actual, day);
+  const storedAfterSettle = Number(store.getClientDailyGatewaySpend(clientId2, day).toFixed(6));
+  const expectedAfterSettle = Number((seedOk + actual).toFixed(6));
+  assert(storedAfterSettle === expectedAfterSettle, `Expected stored spend ${expectedAfterSettle}, got ${storedAfterSettle}`);
+
+  // Case 4: fresh reserve and settle(estimate, 0) -> net 0 change
+  const clientId3 = `eval-gw-cancel-${Date.now()}`;
+  const initSpend = Number(store.getClientDailyGatewaySpend(clientId3, day).toFixed(6));
+  const res3 = reserveGatewayBudget(store, clientId3, estimate);
+  assert(res3.ok, "Expected reserve to succeed");
+  settleGatewayBudget(store, clientId3, estimate, 0, day);
+  const finalSpend = Number(store.getClientDailyGatewaySpend(clientId3, day).toFixed(6));
+  assert(finalSpend === initSpend, `Expected net 0 change after settle(estimate, 0), got ${finalSpend} vs initial ${initSpend}`);
+
+  // Case 5: simulate concurrency: call reserve 50 times synchronously from spend 0 with estimate
+  const clientIdConc = `eval-gw-conc-${Date.now()}`;
+  const maxAllowed = Math.floor(ceiling / estimate);
+  let successCount = 0;
+  for (let i = 0; i < 50; i++) {
+    const r = reserveGatewayBudget(store, clientIdConc, estimate);
+    if (r.ok) successCount++;
+  }
+  assert(successCount === maxAllowed, `Expected exactly ${maxAllowed} successful reservations, got ${successCount}`);
+  const concStored = Number(store.getClientDailyGatewaySpend(clientIdConc, day).toFixed(6));
+  assert(concStored <= ceiling, `Expected concStored (${concStored}) <= ceiling (${ceiling})`);
+}
+
+function verifyUnknownModelCost(): void {
+  // reported cost present (even when 0) → false
+  assert(!shouldRejectUnknownCost({ reportedCost: 0, priceIn: 0, priceOut: 0, allowUnpriced: false, totalTokens: 100 }), "reportedCost=0 should not reject");
+  assert(!shouldRejectUnknownCost({ reportedCost: 0.05, priceIn: 0, priceOut: 0, allowUnpriced: false, totalTokens: 100 }), "reportedCost>0 should not reject");
+
+  // prices set → false
+  assert(!shouldRejectUnknownCost({ reportedCost: undefined, priceIn: 1, priceOut: 0, allowUnpriced: false, totalTokens: 100 }), "priceIn>0 should not reject");
+  assert(!shouldRejectUnknownCost({ reportedCost: undefined, priceIn: 0, priceOut: 2, allowUnpriced: false, totalTokens: 100 }), "priceOut>0 should not reject");
+
+  // allow flag → false
+  assert(!shouldRejectUnknownCost({ reportedCost: undefined, priceIn: 0, priceOut: 0, allowUnpriced: true, totalTokens: 100 }), "allowUnpriced=true should not reject");
+
+  // zero tokens → false
+  assert(!shouldRejectUnknownCost({ reportedCost: undefined, priceIn: 0, priceOut: 0, allowUnpriced: false, totalTokens: 0 }), "totalTokens=0 should not reject");
+
+  // otherwise → true
+  assert(shouldRejectUnknownCost({ reportedCost: undefined, priceIn: 0, priceOut: 0, allowUnpriced: false, totalTokens: 100 }), "unpriced non-zero tokens should reject");
+}
+
 async function runRegression(
   fixtureId: string,
   fn: () => Promise<void> | void,
@@ -1641,5 +1714,7 @@ export async function runRegressionEvals(): Promise<StageEvalResult[]> {
     await runRegression("visitor-daily-budget", verifyVisitorDailyBudget),
     await runRegression("report-provenance-unit", verifyReportProvenanceUnit),
     await runRegression("report-provenance-revert", verifyReportProvenanceRevert),
+    await runRegression("gateway-reserve-settle", verifyGatewayReserveSettle),
+    await runRegression("unknown-model-cost", verifyUnknownModelCost),
   ];
 }

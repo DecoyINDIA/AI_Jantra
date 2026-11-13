@@ -289,7 +289,7 @@ export class JsonProjectStore implements ProjectStore {
     // JSON storage is single-process today; read-modify-write is acceptable until
     // the public service moves fully to a transactional database.
     const spend = readNamedSpend(clientId, "spend.json");
-    spend[dayUtc] = (spend[dayUtc] ?? 0) + deltaUsd;
+    spend[dayUtc] = Number(((spend[dayUtc] ?? 0) + deltaUsd).toFixed(6));
     writeNamedSpend(clientId, "spend.json", spend);
   }
 
@@ -300,7 +300,7 @@ export class JsonProjectStore implements ProjectStore {
   addClientDailyGatewaySpend(clientId: string, dayUtc: string, deltaUsd: number): void {
     mkdirSync(clientDir(clientId), { recursive: true });
     const spend = readNamedSpend(clientId, "gateway-spend.json");
-    spend[dayUtc] = (spend[dayUtc] ?? 0) + deltaUsd;
+    spend[dayUtc] = Number(((spend[dayUtc] ?? 0) + deltaUsd).toFixed(6));
     writeNamedSpend(clientId, "gateway-spend.json", spend);
   }
 
