@@ -8,6 +8,7 @@ import {
 import { join } from "node:path";
 
 import { config } from "../../config.js";
+import { assertSafePathSegment } from "../../pipeline/store.js";
 import type { WebhookSubscription } from "./types.js";
 
 /**
@@ -16,7 +17,7 @@ import type { WebhookSubscription } from "./types.js";
  * deployment should move this to the transactional store alongside projects.
  */
 function clientWebhookFile(clientId: string): string {
-  return join(config.projectDir, clientId, "webhooks.json");
+  return join(config.projectDir, assertSafePathSegment(clientId, "clientId"), "webhooks.json");
 }
 
 function readAll(clientId: string): WebhookSubscription[] {
@@ -32,7 +33,7 @@ function readAll(clientId: string): WebhookSubscription[] {
 
 function writeAll(clientId: string, subscriptions: WebhookSubscription[]): void {
   const file = clientWebhookFile(clientId);
-  mkdirSync(join(config.projectDir, clientId), { recursive: true });
+  mkdirSync(join(config.projectDir, assertSafePathSegment(clientId, "clientId")), { recursive: true });
   // Atomic write: temp + rename so a crash mid-write cannot corrupt the file.
   const tmp = `${file}.${process.pid}.tmp`;
   writeFileSync(tmp, JSON.stringify(subscriptions, null, 2), "utf8");

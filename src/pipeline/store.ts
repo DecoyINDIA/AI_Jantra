@@ -86,7 +86,7 @@ let atomicSeq = 0;
  * segment before it ever reaches join(). A bad value should never get this far;
  * if it does, fail loudly rather than read/write outside the project tree.
  */
-function assertSafePathSegment(value: string, label: string): string {
+export function assertSafePathSegment(value: string, label: string): string {
   if (
     !value ||
     value.includes("/") ||
@@ -237,6 +237,8 @@ export function pageProjects(projects: Project[], query: ProjectListQuery): Proj
   };
 }
 
+const NON_PROJECT_FILES = new Set(["spend.json", "gateway-spend.json", "webhooks.json"]);
+
 export class JsonProjectStore implements ProjectStore {
   saveProject(project: Project): void {
     mkdirSync(clientDir(project.clientId), { recursive: true });
@@ -255,9 +257,26 @@ export class JsonProjectStore implements ProjectStore {
   listProjects(query: ProjectListQuery): ProjectPage {
     const dir = clientDir(query.clientId);
     if (!existsSync(dir)) return { items: [] };
-    const projects = readdirSync(dir)
-      .filter((f) => f.endsWith(".json") && f !== "spend.json" && f !== "gateway-spend.json")
-      .map((f) => normalizeProject(JSON.parse(readFileSync(join(dir, f), "utf8")) as Project));
+    const projects: Project[] = [];
+    for (const f of readdirSync(dir)) {
+      if (!f.endsWith(".json") || NON_PROJECT_FILES.has(f)) continue;
+      try {
+        const raw = JSON.parse(readFileSync(join(dir, f), "utf8"));
+        if (
+          raw &&
+          typeof raw === "object" &&
+          !Array.isArray(raw) &&
+          typeof raw.id === "string" &&
+          raw.stages &&
+          typeof raw.stages === "object" &&
+          !Array.isArray(raw.stages)
+        ) {
+          projects.push(normalizeProject(raw as Project));
+        }
+      } catch {
+        // Skip unparseable or corrupted non-project files
+      }
+    }
     return pageProjects(projects, query);
   }
 

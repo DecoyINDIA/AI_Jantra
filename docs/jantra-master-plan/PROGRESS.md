@@ -33,8 +33,8 @@ Status: In Progress
 - **Answer A:** Is `request.ip` at the origin the visitor's address? **No.** Fastify's `trustProxy: 1` trusts only the immediate reverse-proxy hop (Render proxy). In production, Render's proxy connects to the container socket, resolving `request.ip` to Cloudflare's egress IP; thus, all public edge visitors would share a single IP bucket.
 - **Answer B:** Can a browser client inject `X-Jantra-Client-IP` through the current Worker? **Yes.** `worker.js` creates `new Headers(request.headers)` and deletes only `Origin` and `Cookie`, forwarding any client-supplied `X-Jantra-Client-IP` directly to the origin.
 - **Recommendation:** **CONFIRM** the T-006 design. `worker.js` must delete incoming `X-Jantra-Client-IP` and set it from `request.headers.get("CF-Connecting-IP")`. The origin must trust `X-Jantra-Client-IP` only when authenticated with `public` key scope.
-| **T-007** | P1 | Completed | pending | pending | G1 (51/51 eval, typecheck, smoke, server:smoke) | Clean error envelope |
-| **T-008** | P1 | Pending | - | - | - | Store defects |
+| **T-007** | P1 | Completed | 0107546 | Yes | G1 (51/51 eval, typecheck, smoke, server:smoke) | Clean error envelope |
+| **T-008** | P1 | Completed | pending | pending | G1 (53/53 eval, typecheck, smoke, server:smoke) | Store defects |
 | **T-009** | P1 | Pending | - | - | - | Cross-platform scripts & CI typecheck |
 | **T-010** | P1 | Pending | - | - | - | Persist research checkpoints |
 | **T-006** | P1 | Pending | - | - | - | Per-visitor limits |
