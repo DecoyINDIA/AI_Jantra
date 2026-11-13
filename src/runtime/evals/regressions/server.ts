@@ -9,6 +9,7 @@ import { createServer } from "../../../server/app.js";
 import { createFixedWindowLimiter, installIdentityRateLimit } from "../../../server/rateLimit.js";
 import { runParamsSchema } from "../../../server/schemas.js";
 import { visitorAddress } from "../../../server/visitor.js";
+import { hashApiKey } from "../../../server/auth/apiKeys.js";
 import { assert, readAuditJsonl } from "./common.js";
 
 export async function verifyRejectRoutePersistsReason(): Promise<void> {
@@ -693,6 +694,129 @@ export async function verifySqliteMigrationsAndStores(): Promise<void> {
     assert(leadInDb, "Lead was not found in SQLite store");
     assert(leadInDb.email === "test@example.com", `Expected email test@example.com, got ${leadInDb.email}`);
     assert(leadInDb.runId === runId, `Expected runId ${runId}, got ${leadInDb.runId}`);
+  } finally {
+    await app.close();
+    store.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+export async function verifyAsyncStageExecution(): Promise<void> {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "jantra-async-eval-"));
+  const dbPath = path.join(dir, "async.sqlite");
+  const store = new SqliteProjectStore(dbPath, { skipImport: true });
+  const rawKey = "jnt_live_asynctest_1234567890abcdef1234567890abcdef";
+  const clientId = "async-eval-client";
+
+  store.createApiKey({
+    id: "key-async-eval",
+    keyHash: hashApiKey(rawKey),
+    prefix: "jnt_live_",
+    clientId,
+    subject: "operator",
+    label: "Async stage evaluation key",
+    createdAt: new Date().toISOString(),
+    lastUsedAt: null,
+    revokedAt: null,
+    scope: "full",
+  });
+
+  const app = createServer({
+    mode: "remote",
+    loopbackToken: "",
+    store,
+    jobPollIntervalMs: 20,
+  });
+
+  try {
+    // 1. Create a run
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/v1/runs",
+      headers: {
+        authorization: `Bearer ${rawKey}`,
+        "content-type": "application/json",
+      },
+      payload: {
+        agentId: "planning-pipeline",
+        title: "Async stage run",
+      },
+    });
+    assert(createRes.statusCode === 200, `Run creation failed: ${createRes.body}`);
+    const runId = createRes.json().run.id as string;
+
+    // 2. Advance stage with Prefer: respond-async -> 202 Accepted
+    const advanceRes = await app.inject({
+      method: "POST",
+      url: `/v1/runs/${runId}/advance`,
+      headers: {
+        authorization: `Bearer ${rawKey}`,
+        prefer: "respond-async",
+      },
+    });
+    assert(advanceRes.statusCode === 202, `Expected 202, got ${advanceRes.statusCode}: ${advanceRes.body}`);
+    const jobId = advanceRes.json().job.id as string;
+    assert(jobId && jobId.length > 0, "Expected job id in 202 response");
+
+    // 3. Poll GET /v1/runs/:runId/jobs/:jobId until done
+    const deadline = Date.now() + 5000;
+    let jobStatus = "queued";
+    while (Date.now() < deadline && jobStatus !== "done") {
+      await new Promise((r) => setTimeout(r, 40));
+      const jobRes = await app.inject({
+        method: "GET",
+        url: `/v1/runs/${runId}/jobs/${jobId}`,
+        headers: {
+          authorization: `Bearer ${rawKey}`,
+        },
+      });
+      assert(jobRes.statusCode === 200, `Job get failed: ${jobRes.body}`);
+      jobStatus = jobRes.json().job.status as string;
+    }
+    assert(jobStatus === "done", `Expected job status done, got ${jobStatus}`);
+
+    // 4. Verify run reached awaiting gate
+    const getRes = await app.inject({
+      method: "GET",
+      url: `/v1/runs/${runId}`,
+      headers: {
+        authorization: `Bearer ${rawKey}`,
+      },
+    });
+    assert(getRes.statusCode === 200, `Run get failed: ${getRes.body}`);
+    const run = getRes.json().run;
+    assert(
+      run.stages.intake?.status === "awaiting_confirmation" ||
+        run.stages.intake?.status === "awaiting_input",
+      `Expected intake gate status, got ${run.stages.intake?.status}`,
+    );
+
+    // 5. Test interaction or synchronous call without Prefer: respond-async
+    const interaction = run.interactions?.find((i: { status: string }) => i.status === "pending");
+    if (interaction) {
+      const answerRes = await app.inject({
+        method: "POST",
+        url: `/v1/runs/${runId}/interactions/${interaction.id}`,
+        headers: {
+          authorization: `Bearer ${rawKey}`,
+          "content-type": "application/json",
+        },
+        payload: {
+          text: "Testing synchronous interaction response.",
+        },
+      });
+      assert(answerRes.statusCode === 200, `Expected 200 synchronous interaction, got ${answerRes.statusCode}`);
+    }
+
+    // 6. Unknown job returns 404
+    const notFoundJob = await app.inject({
+      method: "GET",
+      url: `/v1/runs/${runId}/jobs/job-unknown-999`,
+      headers: {
+        authorization: `Bearer ${rawKey}`,
+      },
+    });
+    assert(notFoundJob.statusCode === 404, `Expected 404 for unknown job, got ${notFoundJob.statusCode}`);
   } finally {
     await app.close();
     store.close();

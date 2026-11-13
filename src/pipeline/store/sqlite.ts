@@ -34,6 +34,7 @@ import {
   type WebhookSubscriptionStore,
 } from "../../server/webhooks/store.js";
 import type { WebhookSubscription } from "../../server/webhooks/types.js";
+import type { JobKind, JobRecord, JobStatus, JobStore } from "../../server/jobs/types.js";
 
 interface ApiKeyRow {
   id: string;
@@ -78,6 +79,40 @@ function storedApiKeyRecord(row: ApiKeyRow): StoredApiKeyRecord {
   };
 }
 
+interface JobRow {
+  id: string;
+  client_id: string;
+  run_id: string;
+  kind: string;
+  payload: string;
+  status: string;
+  attempts: number;
+  error: string | null;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+}
+
+function toJobRecord(row: JobRow): JobRecord {
+  let payload: Record<string, unknown> = {};
+  try {
+    payload = JSON.parse(row.payload) as Record<string, unknown>;
+  } catch {}
+  return {
+    id: row.id,
+    clientId: row.client_id,
+    runId: row.run_id,
+    kind: row.kind as JobKind,
+    payload,
+    status: row.status as JobStatus,
+    attempts: row.attempts,
+    error: row.error,
+    createdAt: row.created_at,
+    startedAt: row.started_at,
+    finishedAt: row.finished_at,
+  };
+}
+
 export interface SqliteStoreOptions {
   leadDir?: string;
   projectDir?: string;
@@ -85,7 +120,7 @@ export interface SqliteStoreOptions {
 }
 
 export class SqliteProjectStore
-  implements ProjectStore, ApiKeyStore, LeadStore, WebhookSubscriptionStore
+  implements ProjectStore, ApiKeyStore, LeadStore, WebhookSubscriptionStore, JobStore
 {
   private readonly db: Database.Database;
   private readonly files = new JsonProjectStore();
@@ -390,6 +425,79 @@ export class SqliteProjectStore
 
   getWebhookStore(): WebhookSubscriptionStore {
     return this.webhookStore;
+  }
+
+  // JobStore implementation
+  createJob(job: JobRecord): JobRecord {
+    this.db
+      .prepare(
+        `insert into jobs (
+          id, client_id, run_id, kind, payload, status, attempts, error, created_at, started_at, finished_at
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        job.id,
+        job.clientId,
+        job.runId,
+        job.kind,
+        JSON.stringify(job.payload ?? {}),
+        job.status,
+        job.attempts,
+        job.error ?? null,
+        job.createdAt,
+        job.startedAt ?? null,
+        job.finishedAt ?? null,
+      );
+    return job;
+  }
+
+  getJob(clientId: string, runId: string, jobId: string): JobRecord | null {
+    const row = this.db
+      .prepare("select * from jobs where client_id = ? and run_id = ? and id = ?")
+      .get(clientId, runId, jobId) as JobRow | undefined;
+    return row ? toJobRecord(row) : null;
+  }
+
+  claimNextJob(): JobRecord | null {
+    const now = new Date().toISOString();
+    const claimTx = this.db.transaction(() => {
+      const row = this.db
+        .prepare("select * from jobs where status = 'queued' order by created_at asc limit 1")
+        .get() as JobRow | undefined;
+      if (!row) return null;
+      this.db
+        .prepare(
+          "update jobs set status = 'running', started_at = ?, attempts = attempts + 1 where id = ? and status = 'queued'",
+        )
+        .run(now, row.id);
+      return {
+        ...toJobRecord(row),
+        status: "running" as const,
+        startedAt: now,
+        attempts: row.attempts + 1,
+      };
+    });
+    return claimTx();
+  }
+
+  finishJob(jobId: string, error?: string | null): void {
+    const now = new Date().toISOString();
+    if (error) {
+      this.db
+        .prepare("update jobs set status = 'failed', error = ?, finished_at = ? where id = ?")
+        .run(error, now, jobId);
+    } else {
+      this.db
+        .prepare("update jobs set status = 'done', finished_at = ? where id = ?")
+        .run(now, jobId);
+    }
+  }
+
+  requeueRunningJobs(): number {
+    const result = this.db
+      .prepare("update jobs set status = 'queued' where status = 'running'")
+      .run();
+    return result.changes;
   }
 
   close(): void {

@@ -46,6 +46,14 @@ export const artifactParamsSchema = runParamsSchema.extend({
     .regex(/^[A-Za-z0-9_.:-]+$/, "artifactId must use slug-safe characters."),
 });
 
+export const runJobParamsSchema = runParamsSchema.extend({
+  jobId: z
+    .string()
+    .min(1)
+    .max(96)
+    .regex(/^[A-Za-z0-9_-]+$/, "jobId must use slug-safe characters."),
+});
+
 export const MODEL_ID_MAX_CHARS = 96;
 
 export const createRunBodySchema = z.object({

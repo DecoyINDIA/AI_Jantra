@@ -107,6 +107,17 @@ export interface LeadView {
   createdAt: string;
 }
 
+export interface JobView {
+  id: string;
+  runId: string;
+  kind: "advance" | "confirm_continue" | "interaction";
+  status: "queued" | "running" | "done" | "failed";
+  error?: string | null;
+  createdAt: string;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+}
+
 export interface RunDetail {
   id: string;
   title: string;
@@ -301,26 +312,46 @@ export const api = {
     }),
   listRuns: (query = "") => apiFetch<{ items: RunSummary[]; nextCursor?: string }>(`/v1/runs${query}`),
   getRun: (runId: string) => apiFetch<{ run: RunDetail }>(`/v1/runs/${runId}`),
-  advanceRun: (runId: string) =>
-    apiFetch<{ run: RunDetail; step: unknown }>(`/v1/runs/${runId}/advance`, {
-      method: "POST",
-    }),
-  confirmRun: (runId: string) =>
-    apiFetch<{ run: RunDetail; nextStage: string | null }>(`/v1/runs/${runId}/confirm`, {
-      method: "POST",
-    }),
+  advanceRun: (runId: string, options?: { async?: boolean }) =>
+    apiFetch<{ run: RunDetail; step?: unknown; job?: { id: string; status: string } }>(
+      `/v1/runs/${encodeURIComponent(runId)}/advance`,
+      {
+        method: "POST",
+        headers: options?.async ? { Prefer: "respond-async" } : undefined,
+      },
+    ),
+  confirmRun: (runId: string, options?: { async?: boolean; autoContinue?: boolean }) =>
+    apiFetch<{ run: RunDetail; nextStage?: string | null; job?: { id: string; status: string } }>(
+      `/v1/runs/${encodeURIComponent(runId)}/confirm`,
+      {
+        method: "POST",
+        headers: options?.async ? { Prefer: "respond-async" } : undefined,
+        body: options?.autoContinue !== undefined ? JSON.stringify({ autoContinue: options.autoContinue }) : undefined,
+      },
+    ),
   rejectRun: (runId: string, reason: string) =>
-    apiFetch<{ run: RunDetail }>(`/v1/runs/${runId}/reject`, {
+    apiFetch<{ run: RunDetail }>(`/v1/runs/${encodeURIComponent(runId)}/reject`, {
       method: "POST",
       body: JSON.stringify({ reason }),
     }),
   listInteractions: (runId: string) =>
-    apiFetch<{ interactions: PendingInteractionView[] }>(`/v1/runs/${runId}/interactions`),
-  answerInteraction: (runId: string, interactionId: string, body: { text?: string; approved?: boolean }) =>
-    apiFetch<{ run: RunDetail; step: unknown }>(`/v1/runs/${runId}/interactions/${interactionId}`, {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
+    apiFetch<{ interactions: PendingInteractionView[] }>(`/v1/runs/${encodeURIComponent(runId)}/interactions`),
+  answerInteraction: (
+    runId: string,
+    interactionId: string,
+    body: { text?: string; approved?: boolean },
+    options?: { async?: boolean },
+  ) =>
+    apiFetch<{ run: RunDetail; step?: unknown; job?: { id: string; status: string } }>(
+      `/v1/runs/${encodeURIComponent(runId)}/interactions/${encodeURIComponent(interactionId)}`,
+      {
+        method: "POST",
+        headers: options?.async ? { Prefer: "respond-async" } : undefined,
+        body: JSON.stringify(body),
+      },
+    ),
+  getJob: (runId: string, jobId: string) =>
+    apiFetch<{ job: JobView }>(`/v1/runs/${encodeURIComponent(runId)}/jobs/${encodeURIComponent(jobId)}`),
   getArtifact: (runId: string, artifactId: string) =>
     apiFetch<{ artifact: ArtifactView }>(`/v1/runs/${runId}/artifacts/${artifactId}`),
   listSources: (runId: string) => apiFetch<{ sources: SourceView[] }>(`/v1/runs/${runId}/sources`),
