@@ -23,6 +23,8 @@ import { registerRunRoutes } from "./routes/runs.js";
 import { registerWebhookRoutes } from "./routes/webhooks.js";
 import { registerCompleteRoutes } from "./routes/complete.js";
 import { registerLeadRoutes } from "./routes/leads.js";
+import { defaultLeadStore, type LeadStore } from "./leads/store.js";
+import { defaultWebhookStore, type WebhookSubscriptionStore } from "./webhooks/store.js";
 
 export interface CreateServerOptions {
   loopbackToken: string;
@@ -31,6 +33,8 @@ export interface CreateServerOptions {
   registry?: AgentRegistry;
   store?: ProjectStore;
   apiKeyStore?: ApiKeyStore;
+  leadStore?: LeadStore;
+  webhookStore?: WebhookSubscriptionStore;
   apiKeys?: ApiKeyRecord[];
   adminToken?: string;
   allowedOrigins?: string[];
@@ -54,6 +58,20 @@ function isApiKeyStore(store: ProjectStore): store is ProjectStore & ApiKeyStore
   );
 }
 
+function isLeadStore(store: unknown): store is LeadStore {
+  const candidate = store as Partial<LeadStore>;
+  return typeof candidate?.createLead === "function" && typeof candidate?.listLeads === "function";
+}
+
+function isWebhookStore(store: unknown): store is WebhookSubscriptionStore {
+  const candidate = store as Partial<WebhookSubscriptionStore>;
+  return (
+    typeof candidate?.list === "function" &&
+    typeof candidate?.create === "function" &&
+    typeof candidate?.delete === "function"
+  );
+}
+
 export function createServer(options: CreateServerOptions): FastifyInstance {
   const mode = options.mode ?? "local";
   const app = fastify({
@@ -74,6 +92,8 @@ export function createServer(options: CreateServerOptions): FastifyInstance {
   const registry = options.registry ?? defaultAgentRegistry;
   const store = options.store ?? defaultStore;
   const apiKeyStore = options.apiKeyStore ?? (isApiKeyStore(store) ? store : undefined);
+  const leadStore = options.leadStore ?? (isLeadStore(store) ? store : defaultLeadStore);
+  const webhookStore = options.webhookStore ?? (isWebhookStore(store) ? store : defaultWebhookStore);
 
   app.get("/health", async () => ({ status: "healthy" }));
 
@@ -105,7 +125,7 @@ export function createServer(options: CreateServerOptions): FastifyInstance {
   setAuditPublisher((entry) => runEventBus.publishAuditEntry(entry));
   // Fan human-gate transitions (awaiting_confirmation / awaiting_input) out to
   // registered webhooks so operators learn a run is waiting without the UI open.
-  setGatePublisher((event) => dispatchGateEvent(event));
+  setGatePublisher((event) => dispatchGateEvent(event, webhookStore));
 
   if (options.adminToken) {
     if (!apiKeyStore) {
@@ -121,9 +141,9 @@ export function createServer(options: CreateServerOptions): FastifyInstance {
   registerArtifactRoutes(app, { clientId, store });
   registerAuditRoutes(app, { clientId, store });
   registerEventRoutes(app, { clientId, store });
-  registerWebhookRoutes(app, { clientId });
+  registerWebhookRoutes(app, { clientId, store: webhookStore });
   registerCompleteRoutes(app, { clientId, store });
-  registerLeadRoutes(app, { clientId, projectStore: store });
+  registerLeadRoutes(app, { clientId, projectStore: store, leadStore, webhookStore });
 
   app.setErrorHandler((err, request, reply) => {
     const status = (err as { statusCode?: number }).statusCode;

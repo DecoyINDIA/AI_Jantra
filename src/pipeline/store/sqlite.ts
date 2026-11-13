@@ -3,16 +3,37 @@ import { dirname, join } from "node:path";
 import Database from "better-sqlite3";
 
 import { config } from "../../config.js";
-import type { Artifact, Project, ProjectListQuery, ProjectPage, Source } from "../types.js";
+import type {
+  Artifact,
+  Project,
+  ProjectListQuery,
+  ProjectPage,
+  ProjectSummary,
+  Source,
+  StageStatus,
+} from "../types.js";
 import {
+  decodeCursor,
+  encodeCursor,
   JsonProjectStore,
   normalizeProject,
-  pageProjects,
   type ApiKeyMetadata,
   type ApiKeyStore,
   type ProjectStore,
   type StoredApiKeyRecord,
 } from "../store.js";
+import { runMigrations } from "./migrations/index.js";
+import { importLegacyJsonData } from "./migrations/importLegacyJson.js";
+import {
+  SqliteLeadStore,
+  type LeadRecord,
+  type LeadStore,
+} from "../../server/leads/store.js";
+import {
+  SqliteWebhookSubscriptionStore,
+  type WebhookSubscriptionStore,
+} from "../../server/webhooks/store.js";
+import type { WebhookSubscription } from "../../server/webhooks/types.js";
 
 interface ApiKeyRow {
   id: string;
@@ -24,9 +45,18 @@ interface ApiKeyRow {
   created_at: string;
   last_used_at: string | null;
   revoked_at: string | null;
+  scope?: string | null;
+  allowed_agents?: string | null;
 }
 
 function apiKeyMetadata(row: ApiKeyRow): ApiKeyMetadata {
+  let allowedAgents: string[] | null = null;
+  if (row.allowed_agents) {
+    try {
+      const parsed = JSON.parse(row.allowed_agents);
+      if (Array.isArray(parsed)) allowedAgents = parsed;
+    } catch {}
+  }
   return {
     id: row.id,
     prefix: row.prefix,
@@ -36,6 +66,8 @@ function apiKeyMetadata(row: ApiKeyRow): ApiKeyMetadata {
     createdAt: row.created_at,
     lastUsedAt: row.last_used_at,
     revokedAt: row.revoked_at,
+    scope: (row.scope as "full" | "public") ?? "full",
+    allowedAgents,
   };
 }
 
@@ -46,72 +78,71 @@ function storedApiKeyRecord(row: ApiKeyRow): StoredApiKeyRecord {
   };
 }
 
-export class SqliteProjectStore implements ProjectStore, ApiKeyStore {
+export interface SqliteStoreOptions {
+  leadDir?: string;
+  projectDir?: string;
+  skipImport?: boolean;
+}
+
+export class SqliteProjectStore
+  implements ProjectStore, ApiKeyStore, LeadStore, WebhookSubscriptionStore
+{
   private readonly db: Database.Database;
   private readonly files = new JsonProjectStore();
+  private readonly leadStore: SqliteLeadStore;
+  private readonly webhookStore: SqliteWebhookSubscriptionStore;
 
-  constructor(path = join(config.projectDir, "jantra.sqlite")) {
+  constructor(
+    path = join(config.projectDir, "jantra.sqlite"),
+    options?: SqliteStoreOptions,
+  ) {
     mkdirSync(dirname(path), { recursive: true });
     this.db = new Database(path);
-    this.db.exec(`
-      create table if not exists projects (
-        client_id text not null,
-        project_id text not null,
-        updated_at text not null,
-        data text not null,
-        primary key (client_id, project_id)
-      )
-    `);
-    this.db.exec(`
-      create table if not exists api_keys (
-        id text primary key,
-        key_hash text not null unique,
-        prefix text not null,
-        client_id text not null,
-        subject text not null,
-        label text not null,
-        created_at text not null,
-        last_used_at text,
-        revoked_at text
-      );
-
-      create index if not exists idx_api_keys_client_id_created_at
-        on api_keys (client_id, created_at desc);
-
-      create index if not exists idx_api_keys_revoked_at
-        on api_keys (revoked_at);
-    `);
-    this.db.exec(`
-      create table if not exists client_daily_ideation_spend (
-        client_id text not null,
-        day_utc text not null,
-        usd real not null,
-        primary key (client_id, day_utc)
-      )
-    `);
-    this.db.exec(`
-      create table if not exists client_daily_gateway_spend (
-        client_id text not null,
-        day_utc text not null,
-        usd real not null,
-        primary key (client_id, day_utc)
-      )
-    `);
+    runMigrations(this.db);
+    if (!options?.skipImport) {
+      importLegacyJsonData(this.db, {
+        leadDir: options?.leadDir,
+        projectDir: options?.projectDir ?? dirname(path),
+      });
+    }
+    this.leadStore = new SqliteLeadStore(this.db);
+    this.webhookStore = new SqliteWebhookSubscriptionStore(this.db);
   }
 
   saveProject(project: Project): void {
     const normalized = normalizeProject(project);
+    const currentStage = normalized.stages[normalized.currentStage];
     this.db
       .prepare(
-        `insert into projects (client_id, project_id, updated_at, data)
-         values (?, ?, ?, ?)
-         on conflict(client_id, project_id)
-         do update set updated_at = excluded.updated_at, data = excluded.data`,
+        `insert into projects (
+          client_id, project_id, updated_at, title, agent_id, agent_version,
+          status, current_stage, current_stage_status, cost_usd, created_at, data
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        on conflict(client_id, project_id)
+        do update set
+          updated_at = excluded.updated_at,
+          title = excluded.title,
+          agent_id = excluded.agent_id,
+          agent_version = excluded.agent_version,
+          status = excluded.status,
+          current_stage = excluded.current_stage,
+          current_stage_status = excluded.current_stage_status,
+          cost_usd = excluded.cost_usd,
+          created_at = excluded.created_at,
+          data = excluded.data`,
       )
       .run(
         normalized.clientId,
         normalized.id,
         normalized.updatedAt,
+        normalized.title,
+        normalized.agentId,
+        normalized.agentVersion,
+        normalized.status,
+        normalized.currentStage,
+        currentStage?.status ?? "pending",
+        normalized.cost.usd,
+        normalized.createdAt ?? normalized.updatedAt,
         JSON.stringify(normalized),
       );
   }
@@ -125,13 +156,74 @@ export class SqliteProjectStore implements ProjectStore, ApiKeyStore {
   }
 
   listProjects(query: ProjectListQuery): ProjectPage {
-    const rows = this.db
-      .prepare("select data from projects where client_id = ? order by updated_at desc")
-      .all(query.clientId) as { data?: string }[];
-    const projects = rows
-      .filter((row): row is { data: string } => typeof row.data === "string")
-      .map((row) => normalizeProject(JSON.parse(row.data) as Project));
-    return pageProjects(projects, query);
+    const limit = Math.min(Math.max(query.limit ?? 25, 1), 100);
+    const cursor = decodeCursor(query.cursor);
+
+    const whereClauses: string[] = ["client_id = ?"];
+    const params: unknown[] = [query.clientId];
+
+    if (query.agentId) {
+      whereClauses.push("agent_id = ?");
+      params.push(query.agentId);
+    }
+    if (query.status) {
+      whereClauses.push("status = ?");
+      params.push(query.status);
+    }
+    if (query.currentStage) {
+      whereClauses.push("current_stage = ?");
+      params.push(query.currentStage);
+    }
+    if (cursor) {
+      whereClauses.push("(updated_at < ? or (updated_at = ? and project_id < ?))");
+      params.push(cursor.updatedAt, cursor.updatedAt, cursor.id);
+    }
+
+    const sql = `
+      select project_id, client_id, updated_at, title, agent_id, agent_version,
+             status, current_stage, current_stage_status, cost_usd, created_at
+      from projects
+      where ${whereClauses.join(" and ")}
+      order by updated_at desc, project_id desc
+      limit ?
+    `;
+    params.push(limit + 1);
+
+    const rows = this.db.prepare(sql).all(...params) as Array<{
+      project_id: string;
+      client_id: string;
+      updated_at: string;
+      title: string | null;
+      agent_id: string | null;
+      agent_version: number | null;
+      status: string | null;
+      current_stage: string | null;
+      current_stage_status: string | null;
+      cost_usd: number | null;
+      created_at: string | null;
+    }>;
+
+    const hasMore = rows.length > limit;
+    const pageRows = hasMore ? rows.slice(0, limit) : rows;
+
+    const items: ProjectSummary[] = pageRows.map((r) => ({
+      id: r.project_id,
+      title: r.title ?? "Untitled",
+      clientId: r.client_id,
+      agentId: r.agent_id ?? "unknown",
+      agentVersion: r.agent_version ?? 1,
+      status: (r.status as "active" | "completed" | "abandoned") ?? "active",
+      currentStage: r.current_stage ?? "intake",
+      currentStageStatus: (r.current_stage_status as StageStatus) ?? "pending",
+      costUsd: r.cost_usd ?? 0,
+      createdAt: r.created_at ?? r.updated_at,
+      updatedAt: r.updated_at,
+    }));
+
+    return {
+      items,
+      nextCursor: hasMore && items.length ? encodeCursor(items[items.length - 1]!) : undefined,
+    };
   }
 
   getClientDailyIdeationSpend(clientId: string, dayUtc: string): number {
@@ -188,11 +280,14 @@ export class SqliteProjectStore implements ProjectStore, ApiKeyStore {
   }
 
   createApiKey(record: StoredApiKeyRecord): ApiKeyMetadata {
+    const scope = record.scope ?? "full";
+    const allowedAgentsJson = record.allowedAgents ? JSON.stringify(record.allowedAgents) : null;
     this.db
       .prepare(
         `insert into api_keys (
-          id, key_hash, prefix, client_id, subject, label, created_at, last_used_at, revoked_at
-        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          id, key_hash, prefix, client_id, subject, label, created_at, last_used_at, revoked_at,
+          scope, allowed_agents
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         record.id,
@@ -204,6 +299,8 @@ export class SqliteProjectStore implements ProjectStore, ApiKeyStore {
         record.createdAt,
         record.lastUsedAt,
         record.revokedAt,
+        scope,
+        allowedAgentsJson,
       );
     return {
       id: record.id,
@@ -214,6 +311,8 @@ export class SqliteProjectStore implements ProjectStore, ApiKeyStore {
       createdAt: record.createdAt,
       lastUsedAt: record.lastUsedAt,
       revokedAt: record.revokedAt,
+      scope,
+      allowedAgents: record.allowedAgents ?? null,
     };
   }
 
@@ -253,6 +352,44 @@ export class SqliteProjectStore implements ProjectStore, ApiKeyStore {
 
   touchApiKeyLastUsed(id: string, usedAt: string): void {
     this.db.prepare("update api_keys set last_used_at = ? where id = ?").run(usedAt, id);
+  }
+
+  // LeadStore delegation
+  createLead(record: LeadRecord): LeadRecord {
+    return this.leadStore.createLead(record);
+  }
+
+  listLeads(clientId: string): LeadRecord[] {
+    return this.leadStore.listLeads(clientId);
+  }
+
+  listLeadsByUser(clientId: string, userSub: string): LeadRecord[] {
+    return this.leadStore.listLeadsByUser(clientId, userSub);
+  }
+
+  deleteLead(clientId: string, id: string): boolean {
+    return this.leadStore.deleteLead ? this.leadStore.deleteLead(clientId, id) : false;
+  }
+
+  getLeadStore(): LeadStore {
+    return this.leadStore;
+  }
+
+  // WebhookSubscriptionStore delegation
+  list(clientId: string): WebhookSubscription[] {
+    return this.webhookStore.list(clientId);
+  }
+
+  create(subscription: WebhookSubscription): WebhookSubscription {
+    return this.webhookStore.create(subscription);
+  }
+
+  delete(clientId: string, id: string): boolean {
+    return this.webhookStore.delete(clientId, id);
+  }
+
+  getWebhookStore(): WebhookSubscriptionStore {
+    return this.webhookStore;
   }
 
   close(): void {

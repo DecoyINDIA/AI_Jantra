@@ -83,11 +83,15 @@ export function resolveApiKeyIdentity(
       if (dbRecord.revokedAt) {
         throw unauthorized("Missing or invalid API key.");
       }
+      const subScope = scopeForSubject(dbRecord.subject);
+      const scope = dbRecord.scope ?? subScope.scope;
+      const allowedAgentIds = dbRecord.allowedAgents ?? subScope.allowedAgentIds;
       const identity: Identity = {
         subject: dbRecord.subject,
         clientId: dbRecord.clientId,
         mode: "remote",
-        ...scopeForSubject(dbRecord.subject),
+        scope,
+        ...(allowedAgentIds ? { allowedAgentIds } : {}),
       };
       touchLastUsedBestEffort(options.apiKeyStore, dbRecord);
       return identity;
