@@ -38,8 +38,8 @@ Status: In Progress
 | **T-009** | P1 | Completed | 1c8a17a | Yes | G1 (53/53 eval, typecheck, smoke, server:smoke) | Cross-platform scripts & CI typecheck |
 | **T-010** | P1 | Completed | a233bb5 | Yes | G1 (54/54 eval, typecheck, smoke, server:smoke) | Persist research checkpoints |
 | **T-006** | P1 | Completed | 16636c8 | Yes | G1 (57/57 eval, typecheck, smoke, server:smoke) | Per-visitor limits |
-| **T-011** | P1 | Completed | pending | pending | G1 (59/59 eval, typecheck, smoke, server:smoke) | Verify research report after refinement |
-| **T-012** | P1 | Pending | - | - | - | Budget reserve/settle & unknown price guard |
+| **T-011** | P1 | Completed | cfcf245 | Yes | G1 (59/59 eval, typecheck, smoke, server:smoke) | Verify research report after refinement |
+| **T-012** | P1 | Completed | pending | Yes | G1 (61/61 eval, typecheck, smoke, server:smoke) | Budget reserve/settle & unknown price guard |
 | **T-013** | P1 | Pending | - | - | - | Documentation truth pass |
 | **T-016** | P2 | Pending | - | - | - | Production container |
 | **T-017** | P2 | Pending | - | - | - | Unit tests & split regressions |

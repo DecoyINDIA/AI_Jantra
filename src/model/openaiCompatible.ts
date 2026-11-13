@@ -1,6 +1,6 @@
 import type { GeminiModelId } from "../config.js";
 import { config } from "../config.js";
-import { ModelProviderError } from "../runtime/errors.js";
+import { ModelProviderError, UnknownModelCostError } from "../runtime/errors.js";
 import { fetchWithTimeout } from "../util/fetchWithTimeout.js";
 import { GeminiProvider } from "./gemini.js";
 import type {
@@ -199,6 +199,28 @@ function usageFromResponse(response: OpenAIResponse): ModelUsage {
   };
 }
 
+export function shouldRejectUnknownCost(params: {
+  reportedCost?: number;
+  priceIn: number;
+  priceOut: number;
+  allowUnpriced: boolean;
+  totalTokens: number;
+}): boolean {
+  if (typeof params.reportedCost === "number" && Number.isFinite(params.reportedCost)) {
+    return false;
+  }
+  if (params.priceIn > 0 || params.priceOut > 0) {
+    return false;
+  }
+  if (params.allowUnpriced) {
+    return false;
+  }
+  if (params.totalTokens === 0) {
+    return false;
+  }
+  return true;
+}
+
 export class OpenAICompatibleProvider implements ModelProvider {
   readonly id: string;
   private readonly baseUrl: string;
@@ -232,6 +254,17 @@ export class OpenAICompatibleProvider implements ModelProvider {
   }
 
   private costUsd(usage: ModelUsage, reportedCost?: number): number {
+    if (
+      shouldRejectUnknownCost({
+        reportedCost,
+        priceIn: this.pricing.inputPerMillion,
+        priceOut: this.pricing.outputPerMillion,
+        allowUnpriced: config.allowUnpricedModels,
+        totalTokens: usage.totalTokens,
+      })
+    ) {
+      throw new UnknownModelCostError();
+    }
     if (typeof reportedCost === "number" && Number.isFinite(reportedCost)) {
       return reportedCost;
     }

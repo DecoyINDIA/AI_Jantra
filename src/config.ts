@@ -163,6 +163,7 @@ export const config = {
   opsClientDailyCeilingUsd: numberFromEnv("JANTRA_OPS_DAILY_CEILING_USD", 5.00),
   gatewayRunCeilingUsd: numberFromEnv("JANTRA_GATEWAY_RUN_CEILING_USD", 0.05),
   gatewayClientDailyCeilingUsd: numberFromEnv("JANTRA_GATEWAY_DAILY_CEILING_USD", 2.0),
+  allowUnpricedModels: booleanFromEnv("JANTRA_ALLOW_UNPRICED_MODELS", false),
   // Remote-surface request rate limit (fixed window, per client IP). Applies
   // only in remote mode; the loopback-only local API is not throttled. Defaults
   // to 120 requests / 60s. Set max to 0 via env to effectively disable.

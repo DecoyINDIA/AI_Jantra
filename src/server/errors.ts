@@ -4,6 +4,7 @@ import {
   CostCeilingExceededError,
   GateConflictError,
   StageFailedClosedError,
+  UnknownModelCostError,
 } from "../runtime/errors.js";
 
 export class HttpError extends Error {
@@ -60,6 +61,15 @@ export function sendHttpError(reply: FastifyReply, err: unknown, requestId?: str
         code: err.code,
         message: err.message,
         details: err.details,
+      },
+    });
+    return;
+  }
+  if (err instanceof UnknownModelCostError) {
+    reply.status(503).send({
+      error: {
+        code: "unknown_model_cost",
+        message: "The model's cost is not configured.",
       },
     });
     return;

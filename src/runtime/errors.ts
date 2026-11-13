@@ -50,3 +50,12 @@ export class GateConflictError extends JantraError {
     super(message, "gate_conflict", details);
   }
 }
+
+export class UnknownModelCostError extends JantraError {
+  constructor(
+    message = "Model cost is unknown: set JANTRA_PRICE_INPUT/JANTRA_PRICE_OUTPUT or JANTRA_ALLOW_UNPRICED_MODELS=true.",
+    details: Record<string, unknown> = {},
+  ) {
+    super(message, "unknown_model_cost", details);
+  }
+}

@@ -28,6 +28,37 @@ export function clientDailyGatewayBudgetStatus(
   };
 }
 
+export function reserveGatewayBudget(
+  store: ProjectStore,
+  clientId: string,
+  estimateUsd: number,
+  now = new Date(),
+): { ok: boolean; spend: number; ceiling: number; day: string } {
+  const day = intakeBudgetDayUtc(now);
+  const ceiling = config.gatewayClientDailyCeilingUsd;
+  const spend = roundUsd(store.getClientDailyGatewaySpend(clientId, day));
+  if (ceiling > 0 && roundUsd(spend + estimateUsd) > ceiling) {
+    return { ok: false, spend, ceiling, day };
+  }
+  if (estimateUsd > 0) {
+    store.addClientDailyGatewaySpend(clientId, day, roundUsd(estimateUsd));
+  }
+  return { ok: true, spend: roundUsd(spend + estimateUsd), ceiling, day };
+}
+
+export function settleGatewayBudget(
+  store: ProjectStore,
+  clientId: string,
+  estimateUsd: number,
+  actualUsd: number,
+  day: string,
+): void {
+  const delta = roundUsd(actualUsd - estimateUsd);
+  if (delta !== 0) {
+    store.addClientDailyGatewaySpend(clientId, day, delta);
+  }
+}
+
 export function recordGatewaySpend(
   store: ProjectStore,
   clientId: string,
