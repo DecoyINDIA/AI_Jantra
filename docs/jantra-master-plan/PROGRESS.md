@@ -52,5 +52,5 @@ Status: In Progress
 | **T-019** | P2 | Pending | - | - | - | Real report delivery |
 | **T-023** | P2 | Pending | - | - | - | Lead retention & deletion |
 | **T-025** | P2 | Blocked | - | - | - | Requires licensing design pass with owner |
-| **T-024** | P3 | Pending | - | - | - | Operator UI token handling |
+| **T-024** | P3 | Completed | 75b114d | Yes | G1 + npm test (54 unit tests, 66/66 eval) | Operator UI token handling: sessionStorage default, remember checkbox, never re-render admin token |
 | **T-026** | P3 | Pending | - | - | - | Model catalog from configuration |
