@@ -6,3 +6,7 @@ dist/
 .mainframe/
 .wrangler/
 *.log
+.agents/
+.claude/settings.local.json
+.claude/skills/world-class-agents/
+

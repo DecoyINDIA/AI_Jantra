@@ -14,6 +14,8 @@ import { installIdentityRateLimit, installRateLimit } from "./rateLimit.js";
 import { config } from "../config.js";
 import { registerAgentRoutes } from "./routes/agents.js";
 import { registerAdminKeyRoutes } from "./routes/adminKeys.js";
+import { registerAdminCredentialRoutes } from "./routes/adminCredentials.js";
+import { registerCredentialRoutes } from "./routes/credentials.js";
 import { registerArtifactRoutes } from "./routes/artifacts.js";
 import { registerAuditRoutes } from "./routes/audit.js";
 import { registerEventRoutes } from "./routes/events.js";
@@ -23,6 +25,8 @@ import { registerRunRoutes } from "./routes/runs.js";
 import { registerWebhookRoutes } from "./routes/webhooks.js";
 import { registerCompleteRoutes } from "./routes/complete.js";
 import { registerLeadRoutes } from "./routes/leads.js";
+import { registerLicenseRoutes } from "./routes/license.js";
+import { defaultLicenseManager, type LicenseManager } from "../licensing/index.js";
 import { defaultLeadStore, type LeadStore } from "./leads/store.js";
 import { defaultWebhookStore, type WebhookSubscriptionStore } from "./webhooks/store.js";
 import { JobWorker } from "./jobs/worker.js";
@@ -44,6 +48,8 @@ export interface CreateServerOptions {
   allowedHosts?: string[];
   jobWorker?: JobWorker;
   jobPollIntervalMs?: number;
+  licenseManager?: LicenseManager;
+  licenseEnforcement?: boolean;
 }
 
 export interface StartedLocalApi {
@@ -108,6 +114,34 @@ export function createServer(options: CreateServerOptions): FastifyInstance {
   const apiKeyStore = options.apiKeyStore ?? (isApiKeyStore(store) ? store : undefined);
   const leadStore = options.leadStore ?? (isLeadStore(store) ? store : defaultLeadStore);
   const webhookStore = options.webhookStore ?? (isWebhookStore(store) ? store : defaultWebhookStore);
+  const licenseManager = options.licenseManager ?? defaultLicenseManager;
+  const licenseEnforcement =
+    options.licenseEnforcement ??
+    (licenseManager.isEnforcementEnabled() || config.licenseEnforcement);
+
+  if (licenseEnforcement) {
+    app.addHook("preHandler", async (request) => {
+      if (
+        request.method === "GET" ||
+        request.method === "HEAD" ||
+        request.method === "OPTIONS"
+      ) {
+        return;
+      }
+      const path = request.url.split("?")[0]!;
+      if (path === "/v1/license") {
+        return;
+      }
+      const requiresLicense =
+        path === "/v1/complete" ||
+        path === "/v1/runs" ||
+        path.startsWith("/v1/runs/");
+
+      if (requiresLicense) {
+        await licenseManager.assertActive("Execution");
+      }
+    });
+  }
   const jobWorker =
     options.jobWorker ??
     (isJobStore(store)
@@ -157,6 +191,7 @@ export function createServer(options: CreateServerOptions): FastifyInstance {
       throw new Error("JANTRA_ADMIN_TOKEN requires a SQLite ApiKeyStore.");
     }
     registerAdminKeyRoutes(app, { adminToken: options.adminToken, apiKeyStore });
+    registerAdminCredentialRoutes(app, { adminToken: options.adminToken, store });
   }
 
   registerAgentRoutes(app, registry);
@@ -170,10 +205,15 @@ export function createServer(options: CreateServerOptions): FastifyInstance {
   registerWebhookRoutes(app, { clientId, store: webhookStore });
   registerCompleteRoutes(app, { clientId, store });
   registerLeadRoutes(app, { clientId, projectStore: store, leadStore, webhookStore });
+  registerCredentialRoutes(app, { clientId, store });
+  registerLicenseRoutes(app, { licenseManager });
 
   if (config.enableLeadDeletionSweep && typeof leadStore.sweepExpiredLeads === "function") {
     try {
-      leadStore.sweepExpiredLeads(config.leadRetentionDays);
+      leadStore.sweepExpiredLeads(config.leadRetentionDays, {
+        deleteLinkedRuns: config.leadDeleteLinkedRuns,
+        projectStore: store,
+      });
     } catch (err) {
       console.warn("Failed to run initial lead retention sweep:", err);
     }

@@ -1,16 +1,20 @@
-import { fixtures } from "./fixtures.js";
-import {
+process.env.JANTRA_PROVIDER ??= "mock";
+process.env.JANTRA_MOCK_FIXTURE ??= "src/runtime/evals/fixtures/transcript.json";
+
+const { fixtures } = await import("./fixtures.js");
+const {
   judgeEvaluatorLoopRefinement,
   judgeIntakeFixture,
   judgePlanningConsistency,
   judgeResearchVerification,
   judgeResearchSourceSelection,
-} from "./judge.js";
-import { runModelJudgeEvals } from "./modelJudge.js";
-import { runRegressionEvals } from "./regressions.js";
-import { renderEvalReport, type StageEvalResult } from "./report.js";
-import { rubrics } from "./rubrics.js";
-import { runOpsEvaluation } from "./opsEvals.js";
+} = await import("./judge.js");
+const { runModelJudgeEvals } = await import("./modelJudge.js");
+const { runRegressionEvals } = await import("./regressions.js");
+const { renderEvalReport } = await import("./report.js");
+type StageEvalResult = import("./report.js").StageEvalResult;
+const { rubrics } = await import("./rubrics.js");
+const { runOpsEvaluation } = await import("./opsEvals.js");
 
 function validateRubrics(): StageEvalResult[] {
   return Object.entries(rubrics).map(([stage, rubric]) => ({
