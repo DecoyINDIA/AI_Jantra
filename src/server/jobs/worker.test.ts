@@ -2,13 +2,24 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, it } from "node:test";
+import { after, before, describe, it } from "node:test";
+import { config } from "../../config.js";
 import { createProject } from "../../pipeline/orchestrator.js";
 import { SqliteProjectStore } from "../../pipeline/store/sqlite.js";
 import { JobWorker } from "./worker.js";
 import type { JobRecord } from "./types.js";
 
 describe("JobWorker (T-014)", () => {
+  const originalProvider = config.provider;
+
+  before(() => {
+    (config as any).provider = "mock";
+  });
+
+  after(() => {
+    (config as any).provider = originalProvider;
+  });
+
   it("claims and executes an advance job asynchronously", async () => {
     const dir = mkdtempSync(join(tmpdir(), "jantra-job-worker-"));
     const dbPath = join(dir, "jobs.sqlite");
