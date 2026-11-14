@@ -41,19 +41,19 @@ Status: In Progress
 | **T-011** | P1 | Completed | cfcf245 | Yes | G1 (59/59 eval, typecheck, smoke, server:smoke) | Verify research report after refinement |
 | **T-012** | P1 | Completed | 6ed82c6 | Yes | G1 (61/61 eval, typecheck, smoke, server:smoke) | Budget reserve/settle & unknown price guard |
 | **T-013** | P1 | Completed | 5f9e017 | Yes | G1 (61/61 eval, typecheck, smoke, server:smoke) | Documentation truth pass |
-| **T-016** | P2 | Implemented (Code Complete) | 3239b8a | Yes | G1 + Docker smoke (/health 200, healthy) | Production container implemented; pending Render deployment rollout |
-| **T-017** | P2 | Implemented (Code Complete) | f57df4d | Yes | G1 + npm test (61 unit tests, 64/64 eval) | Unit tests with node:test & split regression modules implemented and green |
-| **T-021** | P2 | Implemented (Code Complete) | 258c149 | Yes | G1 + npm test (61 unit tests, 64/64 eval) | Lead notification & lead↔run link implemented; pending live webhook verification |
-| **T-020** | P2 | Implemented (Code Complete) | 7992930 | Yes | G1 + npm test (61 unit tests, 64/64 eval) | Promote intake to plan & gate queue UI implemented; pending live promotion acceptance |
-| **T-022** | P2 | Implemented (Code Complete) | 21c4e81 | Yes | G1 + npm test (61 unit tests, 64/64 eval) | Client-ready print-styled HTML report & claims ledger implemented; pending prospect validation |
-| **T-015** | P2 | Implemented (Code Complete) | 23f80e1 | Yes | G1 + npm test (61 unit tests, 64/64 eval) | One SQLite DB with migrations, mirrored columns, JSON import implemented; pending Render disk mount cutover |
-| **T-014** | P2 | Implemented (Code Complete) | d685952 | Yes | G1 + npm test (61 unit tests, 64/64 eval) | Async stage execution with in-process worker, jobs table, 202 Prefer: respond-async, SSE events implemented; pending live acceptance |
-| **T-018** | P2 | Blocked | - | - | - | Framework implemented; acceptance blocked by X5 and live delivery per D-3 |
-| **T-019** | P2 | Blocked | - | - | - | Framework implemented; acceptance blocked by X5 and live delivery |
-| **T-023** | P2 | Implemented (Code Complete) | - | Yes | G1 + npm test (89 unit tests, 69/69 eval) | Lead deletion route, store methods, 30-day retention sweep gated by JANTRA_ENABLE_LEAD_DELETION_SWEEP per D-6 |
-| **T-025** | P2 | Implemented (Code Complete) | - | Yes | G1 + npm test (89 unit tests, 69/69 eval) | Offline Ed25519 verification, rotated embedded public key, issuance script with external key requirement, unlicensed read-only enforcement, multi-provider desktop config |
-| **T-024** | P3 | Implemented (Code Complete) | b32ce0d | Yes | G1 + npm test (89 unit tests, 69/69 eval) | Operator UI token handling: sessionStorage default, remember checkbox, never re-render admin token |
-| **T-026** | P3 | Implemented (Code Complete) | fc7b3bf | Yes | G1 + npm test (89 unit tests, 69/69 eval) | Model catalog from JANTRA_MODEL_CATALOG_PATH with Zod validation, endpoint model verification |
+| **T-016** | P2 | Implemented (Production acceptance pending) | 3239b8a | Yes | G1 + Docker smoke (/health 200, healthy) | Production container implemented; pending Render deployment rollout |
+| **T-017** | P2 | Implemented (Pushed) | f57df4d | Yes | G1 + npm test (95 unit tests, 70/70 eval) | Unit tests with node:test & split regression modules implemented and green |
+| **T-021** | P2 | Implemented (Production acceptance pending) | 258c149 | Yes | G1 + npm test (95 unit tests, 70/70 eval) | Lead notification & lead↔run link implemented; pending live webhook verification |
+| **T-020** | P2 | Implemented (Production acceptance pending) | 7992930 | Yes | G1 + npm test (95 unit tests, 70/70 eval) | Promote intake to plan & gate queue UI implemented; pending live promotion acceptance |
+| **T-022** | P2 | Implemented (Production acceptance pending) | 21c4e81 | Yes | G1 + npm test (95 unit tests, 70/70 eval) | Client-ready print-styled HTML report & claims ledger implemented; pending prospect validation |
+| **T-015** | P2 | Implemented (Production acceptance pending) | 23f80e1 | Yes | G1 + npm test (95 unit tests, 70/70 eval) | One SQLite DB with migrations, mirrored columns, JSON import implemented; pending Render disk mount cutover |
+| **T-014** | P2 | Implemented (Production acceptance pending) | d685952 | Yes | G1 + npm test (95 unit tests, 70/70 eval) | Async stage execution with in-process worker, jobs table, 202 Prefer: respond-async, SSE events implemented; pending live acceptance |
+| **T-018** | P2 | Externally Blocked (Framework Implemented) | a6a1271 | Yes | G1 + npm test (95 unit tests, 70/70 eval) | Framework implemented; acceptance blocked by X5 and live delivery per D-3 |
+| **T-019** | P2 | Externally Blocked (Framework Implemented) | 12c2a63 | Yes | G1 + npm test (95 unit tests, 70/70 eval) | Framework implemented; acceptance blocked by X5 and live delivery |
+| **T-023** | P2 | Implemented (Production acceptance pending) | c36d7b0 | Yes | G1 + npm test (95 unit tests, 70/70 eval) | Lead deletion route, store methods, 30-day retention sweep gated by JANTRA_ENABLE_LEAD_DELETION_SWEEP per D-6 (remains disabled) |
+| **T-025** | P2 | Implemented (Pushed) | b385290 | Yes | G1 + npm test (95 unit tests, 70/70 eval) | Offline Ed25519 verification, rotated embedded public key, pure issuance library, unlicensed read-only enforcement, multi-provider desktop config |
+| **T-024** | P3 | Implemented (Production acceptance pending) | b32ce0d | Yes | G1 + npm test (95 unit tests, 70/70 eval) | Operator UI token handling: sessionStorage default, remember checkbox, never re-render admin token |
+| **T-026** | P3 | Implemented (Pushed) | fc7b3bf | Yes | G1 + npm test (95 unit tests, 70/70 eval) | Model catalog from JANTRA_MODEL_CATALOG_PATH with Zod validation, endpoint model verification, offline test isolation |
 
 ### Final Completion Execution Log (11_FINAL_COMPLETION_BRIEF.md)
 
@@ -64,6 +64,7 @@ Status: In Progress
 | **F-003** | P0 | Completed | 7607974 | Yes | Full gate (92/92 unit, 70/70 eval, smoke, server:smoke, edge:verify:local, git diff --check) | Isolated private key handling in scripts/issue-license.ts, made src/licensing/issue.ts pure without process.env, enforced --public-out and --private-out flags with 0600 permissions, never print private key to terminal |
 | **F-004** | P0 | Completed | 65e35b9 | Yes | Full gate (93/93 unit, 70/70 eval, smoke, server:smoke, edge:verify:local, git diff --check) | Verified desktop licence enforcement across all stage/model trigger routes (runs, advance, interactions, confirm, reject, promote, complete), authenticated activation, wrong-key & tampered rejection, provider secret isolation |
 | **F-005** | P0 | Completed | c84f073 | Yes | Full gate (95/95 unit, 70/70 eval, smoke, server:smoke, edge:verify:local, git diff --check) | Added checkCatalogModels to createServer (defaults to true in production remote, false in local tests/smoke/regressions), zero external network calls during gates |
+| **F-006** | P0 | Completed | [pending] | Yes | Full gate (95/95 unit, 70/70 eval, smoke, server:smoke, edge:verify:local, git diff --check) | Reconciled environment configuration (.env.example, render.yaml), updated progress logs and pending packets with accurate pushed hashes, verified test counts (95 unit, 70 eval), recorded open external blockers |
 
 
 ---
@@ -127,6 +128,12 @@ To mark production deployment accepted, the following 8 live gates must pass:
 ### 6. Retention Sweep Gating (Owner Decision D-6)
 - `JANTRA_ENABLE_LEAD_DELETION_SWEEP` must remain `false` (`0`) in production until lead webhook notifications are proven live and actively delivering leads to a durable system of record.
 - Only after successful delivery is proven in production may `JANTRA_ENABLE_LEAD_DELETION_SWEEP=true` and `JANTRA_LEAD_RETENTION_DAYS=30` be enabled.
+
+### 7. External Blockers Remaining Open (Out of Scope for Final Brief)
+- **X-001 (Partner Export & Experiment X5):** No real partner CSV or spreadsheet is available. T-018 and T-019 framework implemented; partner-specific field mapping and live acceptance remain blocked per Decision D-3.
+- **X-002 (Live Signed Report Delivery):** No confirmed production webhook receiver. Local mocked delivery proves code behavior; live delivery acceptance remains open.
+- **X-003 (Production Deployment & Retention Enablement):** Production rollout to Render and live Cloudflare Worker deployment remain out of scope for this brief. Lead deletion sweep remains disabled (`JANTRA_ENABLE_LEAD_DELETION_SWEEP=false`).
+- **X-004 (Prospect Validation of Export):** T-022 client-ready export implementation complete; product review by 3 target prospects remains open.
 
 *Detailed operational runbook and commands: see [deploy/PRODUCTION_CHECKLIST.md](../../deploy/PRODUCTION_CHECKLIST.md).*
 

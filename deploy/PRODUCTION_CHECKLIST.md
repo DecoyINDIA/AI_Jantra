@@ -82,7 +82,7 @@ This document defines the production deployment requirements, operational proced
 | `JANTRA_REMOTE_API_KEYS` | Render | **Secret** | Format `<key>:xolver:web,<admin-key>:xolver:operator` |
 | `JANTRA_PUBLIC_SUBJECTS` | Render | Config | `web` (subjects receiving public-scoped access) |
 | `JANTRA_PUBLIC_AGENT_IDS` | Render | Config | `intake-public,firebnb-concierge` |
-| `JANTRA_SECRETS_KEY` | Render | **Secret** | 32-byte hex key for encrypting client credentials at rest |
+| `JANTRA_SECRETS_KEY` | Render | **Secret** | 32-byte hex key for encrypting client credentials at rest (requires exactly 64 hexadecimal characters) |
 | `JANTRA_ENABLE_LEAD_DELETION_SWEEP` | Render | Config | **`false`** *(MUST remain false until lead delivery is proven live)* |
 | `JANTRA_LEAD_RETENTION_DAYS` | Render | Config | `30` |
 | `JANTRA_ORIGIN` | Cloudflare | Config | `https://jantra.onrender.com` |

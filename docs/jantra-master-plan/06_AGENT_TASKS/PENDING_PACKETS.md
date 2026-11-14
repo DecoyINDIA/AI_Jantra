@@ -13,19 +13,19 @@ This document tracks the execution status of task packets T-014 through T-026, r
 
 | Packet | Priority | Status | Commit | Offline Verification | Deployment / Acceptance State |
 |---|---|---|---|---|---|
-| **T-014** | P2 | Implemented | `d685952` | Unit tests + eval regression | Pending Live Acceptance #8 (async stage execution & crash recovery) |
-| **T-015** | P2 | Implemented | `23f80e1` | 5 unit tests + eval regression | Pending Render persistent volume migration & cutover |
-| **T-016** | P2 | Implemented | `3239b8a` | Docker build + container /health smoke | Pending Render production build & deployment |
-| **T-017** | P2 | Implemented | `f57df4d` | `node:test` runner + split regressions | Active in CI (`npm test`, 61 tests green) |
-| **T-018** | P2 | Blocked | - | - | **Blocked**: Waiting on partner data export for manual report X5 per D-3 |
-| **T-019** | P2 | Blocked | - | - | **Blocked**: Depends on T-018 and owner channel provider selection |
-| **T-020** | P2 | Implemented | `7992930` | Unit tests + eval regression | Pending Live Acceptance #6 (production promote route verification) |
-| **T-021** | P2 | Implemented | `258c149` | 3 unit tests + eval regression | Pending Live Acceptance #5 (signed webhook delivery to CRM/Slack) |
-| **T-022** | P2 | Implemented | `21c4e81` | 6 unit tests + eval regression | Pending Live Acceptance #7 (client PDF export review by prospects) |
-| **T-023** | P2 | Implemented | `c292fb9` | 2 unit tests + eval regression | Implemented (sweep gated by `JANTRA_ENABLE_LEAD_DELETION_SWEEP` per D-6 until webhooks proven) |
-| **T-024** | P3 | Implemented | `b32ce0d` | Workspace typecheck + UI verification | Pending operator acceptance on staging/production UI |
-| **T-025** | P2 | Implemented | - | 9 unit tests + 2 eval regressions | Offline Ed25519 license verification, unlicensed read-only enforcement, issuance script, and multi-provider desktop config |
-| **T-026** | P3 | Implemented | `fc7b3bf` | 5 unit tests + eval regression | Implemented; catalog loaded from `JANTRA_MODEL_CATALOG_PATH` with Zod schema |
+| **T-014** | P2 | Implemented (Production acceptance pending) | `d685952` | Unit tests + eval regression (95 unit, 70/70 eval) | Pending Live Acceptance #8 (async stage execution & crash recovery) |
+| **T-015** | P2 | Implemented (Production acceptance pending) | `23f80e1` | 5 unit tests + eval regression (95 unit, 70/70 eval) | Pending Render persistent volume migration & cutover |
+| **T-016** | P2 | Implemented (Production acceptance pending) | `3239b8a` | Docker build + container /health smoke | Pending Render production build & deployment |
+| **T-017** | P2 | Implemented (Pushed) | `f57df4d` | `node:test` runner + split regressions (95 unit, 70/70 eval) | Active in CI (`npm test`, 95 tests green, 70/70 eval) |
+| **T-018** | P2 | Externally Blocked (Framework Implemented) | `a6a1271` | Unit tests + eval regression (95 unit, 70/70 eval) | **Blocked**: Framework implemented; acceptance blocked by X5 and live delivery |
+| **T-019** | P2 | Externally Blocked (Framework Implemented) | `12c2a63` | Unit tests + eval regression (95 unit, 70/70 eval) | **Blocked**: Framework implemented; acceptance blocked by X5 and live delivery |
+| **T-020** | P2 | Implemented (Production acceptance pending) | `7992930` | Unit tests + eval regression (95 unit, 70/70 eval) | Pending Live Acceptance #6 (production promote route verification) |
+| **T-021** | P2 | Implemented (Production acceptance pending) | `258c149` | 3 unit tests + eval regression (95 unit, 70/70 eval) | Pending Live Acceptance #5 (signed webhook delivery to CRM/Slack) |
+| **T-022** | P2 | Implemented (Production acceptance pending) | `21c4e81` | 6 unit tests + eval regression (95 unit, 70/70 eval) | Pending Live Acceptance #7 (client PDF export review by prospects) |
+| **T-023** | P2 | Implemented (Production acceptance pending) | `c36d7b0` | 4 unit tests + eval regression (95 unit, 70/70 eval) | Implemented (sweep gated by `JANTRA_ENABLE_LEAD_DELETION_SWEEP=false` per D-6 until webhooks proven) |
+| **T-024** | P3 | Implemented (Production acceptance pending) | `b32ce0d` | Workspace typecheck + UI verification | Pending operator acceptance on staging/production UI |
+| **T-025** | P2 | Implemented (Pushed) | `b385290` | 12 unit tests + 2 eval regressions (95 unit, 70/70 eval) | Offline Ed25519 license verification, unlicensed read-only enforcement, pure issuance library, and multi-provider desktop config |
+| **T-026** | P3 | Implemented (Pushed) | `fc7b3bf` | 7 unit tests + eval regression (95 unit, 70/70 eval) | Implemented; catalog loaded from `JANTRA_MODEL_CATALOG_PATH` with Zod schema and offline test isolation |
 
 ---
 
