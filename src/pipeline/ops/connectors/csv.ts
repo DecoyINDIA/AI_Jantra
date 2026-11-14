@@ -37,6 +37,13 @@ export function parseCsv(content: string): string[][] {
     .map(parseCsvRow);
 }
 
+/**
+ * HARD GATE (T-018 / T-019):
+ * Do NOT invent or synthesize partner-specific field mappings until a real partner export
+ * (experiment X5) is provided and verified.
+ * Generic canonical mappings below are for standard CSV roles only; custom partner data
+ * mappings must remain gated on real partner exports.
+ */
 function autoMapHeaders(headers: string[], targetTable: string): Record<string, string> {
   const mapping: Record<string, string> = {};
   for (const header of headers) {

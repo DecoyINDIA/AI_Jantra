@@ -6,7 +6,7 @@ export class StripeConnector implements OpsConnector {
   constructor(readonly id: string) {}
 
   async fetch(cfg: ConnectorConfig): Promise<Partial<DataSnapshot>> {
-    const apiKey = cfg.credentials?.STRIPE_API_KEY || process.env.STRIPE_API_KEY;
+    const apiKey = cfg.credentials?.STRIPE_API_KEY;
     if (!apiKey) {
       throw new Error(`Stripe API key is not configured for connector ${this.id}`);
     }

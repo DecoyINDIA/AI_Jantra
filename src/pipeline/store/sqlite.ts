@@ -19,15 +19,21 @@ import {
   normalizeProject,
   type ApiKeyMetadata,
   type ApiKeyStore,
+  type CredentialStore,
+  type OpsProfileStore,
+  type OpsReportingProfile,
   type ProjectStore,
   type StoredApiKeyRecord,
 } from "../store.js";
+import { encryptSecret, decryptSecret, DecryptionError } from "../../security/encryption.js";
 import { runMigrations } from "./migrations/index.js";
 import { importLegacyJsonData } from "./migrations/importLegacyJson.js";
 import {
   SqliteLeadStore,
+  type DeleteLeadOptions,
   type LeadRecord,
   type LeadStore,
+  type SweepLeadsOptions,
 } from "../../server/leads/store.js";
 import {
   SqliteWebhookSubscriptionStore,
@@ -120,7 +126,14 @@ export interface SqliteStoreOptions {
 }
 
 export class SqliteProjectStore
-  implements ProjectStore, ApiKeyStore, LeadStore, WebhookSubscriptionStore, JobStore
+  implements
+    ProjectStore,
+    ApiKeyStore,
+    LeadStore,
+    WebhookSubscriptionStore,
+    JobStore,
+    CredentialStore,
+    OpsProfileStore
 {
   private readonly db: Database.Database;
   private readonly files = new JsonProjectStore();
@@ -389,6 +402,17 @@ export class SqliteProjectStore
     this.db.prepare("update api_keys set last_used_at = ? where id = ?").run(usedAt, id);
   }
 
+  deleteProject(clientId: string, projectId: string): boolean {
+    const res = this.db
+      .prepare("delete from projects where client_id = ? and project_id = ?")
+      .run(clientId, projectId);
+    this.db
+      .prepare("delete from jobs where client_id = ? and run_id = ?")
+      .run(clientId, projectId);
+    this.files.deleteProject(clientId, projectId);
+    return res.changes > 0;
+  }
+
   // LeadStore delegation
   createLead(record: LeadRecord): LeadRecord {
     return this.leadStore.createLead(record);
@@ -406,12 +430,16 @@ export class SqliteProjectStore
     return this.leadStore.getLead ? this.leadStore.getLead(clientId, id) : null;
   }
 
-  deleteLead(clientId: string, id: string): boolean {
-    return this.leadStore.deleteLead ? this.leadStore.deleteLead(clientId, id) : false;
+  deleteLead(clientId: string, id: string, options?: DeleteLeadOptions): boolean {
+    return this.leadStore.deleteLead
+      ? this.leadStore.deleteLead(clientId, id, { projectStore: this, ...options })
+      : false;
   }
 
-  sweepExpiredLeads(retentionDays: number): number {
-    return this.leadStore.sweepExpiredLeads ? this.leadStore.sweepExpiredLeads(retentionDays) : 0;
+  sweepExpiredLeads(retentionDays: number, options?: SweepLeadsOptions): number {
+    return this.leadStore.sweepExpiredLeads
+      ? this.leadStore.sweepExpiredLeads(retentionDays, { projectStore: this, ...options })
+      : 0;
   }
 
   getLeadStore(): LeadStore {
@@ -506,6 +534,84 @@ export class SqliteProjectStore
       .prepare("update jobs set status = 'queued' where status = 'running'")
       .run();
     return result.changes;
+  }
+
+  setConnectorCredentials(clientId: string, connector: string, credentials: Record<string, string>): void {
+    const encrypted = encryptSecret(JSON.stringify(credentials));
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `insert into connector_credentials (client_id, connector, encrypted_blob, created_at, updated_at)
+         values (?, ?, ?, ?, ?)
+         on conflict(client_id, connector)
+         do update set encrypted_blob = excluded.encrypted_blob, updated_at = excluded.updated_at`,
+      )
+      .run(clientId, connector, encrypted, now, now);
+  }
+
+  getConnectorCredentials(clientId: string, connector: string): Record<string, string> | null {
+    const row = this.db
+      .prepare("select encrypted_blob from connector_credentials where client_id = ? and connector = ?")
+      .get(clientId, connector) as { encrypted_blob?: string } | undefined;
+    if (!row?.encrypted_blob) return null;
+    const decrypted = decryptSecret(row.encrypted_blob);
+    return JSON.parse(decrypted) as Record<string, string>;
+  }
+
+  listConnectorCredentials(clientId: string): string[] {
+    const rows = this.db
+      .prepare("select connector from connector_credentials where client_id = ? order by connector asc")
+      .all(clientId) as Array<{ connector: string }>;
+    return rows.map((r) => r.connector);
+  }
+
+  deleteConnectorCredentials(clientId: string, connector: string): boolean {
+    const result = this.db
+      .prepare("delete from connector_credentials where client_id = ? and connector = ?")
+      .run(clientId, connector);
+    return result.changes > 0;
+  }
+
+  setOpsProfile(profile: OpsReportingProfile): void {
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `insert into ops_profiles (client_id, business_name, data, confirmed_at, confirmed_by, created_at, updated_at)
+         values (?, ?, ?, ?, ?, ?, ?)
+         on conflict(client_id)
+         do update set
+           business_name = excluded.business_name,
+           data = excluded.data,
+           confirmed_at = excluded.confirmed_at,
+           confirmed_by = excluded.confirmed_by,
+           updated_at = excluded.updated_at`,
+      )
+      .run(
+        profile.clientId,
+        profile.businessName,
+        JSON.stringify(profile),
+        profile.confirmedAt ?? null,
+        profile.confirmedBy ?? null,
+        profile.createdAt || now,
+        now,
+      );
+  }
+
+  getOpsProfile(clientId: string): OpsReportingProfile | null {
+    const row = this.db
+      .prepare("select data from ops_profiles where client_id = ?")
+      .get(clientId) as { data?: string } | undefined;
+    if (!row?.data) return null;
+    try {
+      return JSON.parse(row.data) as OpsReportingProfile;
+    } catch {
+      return null;
+    }
+  }
+
+  deleteOpsProfile(clientId: string): boolean {
+    const result = this.db.prepare("delete from ops_profiles where client_id = ?").run(clientId);
+    return result.changes > 0;
   }
 
   close(): void {

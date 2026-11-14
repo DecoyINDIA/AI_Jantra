@@ -6,8 +6,8 @@ export class ShopifyConnector implements OpsConnector {
   constructor(readonly id: string) {}
 
   async fetch(cfg: ConnectorConfig): Promise<Partial<DataSnapshot>> {
-    const shopName = cfg.credentials?.SHOPIFY_SHOP_NAME || cfg.config.shopName || process.env.SHOPIFY_SHOP_NAME;
-    const accessToken = cfg.credentials?.SHOPIFY_ACCESS_TOKEN || process.env.SHOPIFY_ACCESS_TOKEN;
+    const shopName = cfg.credentials?.SHOPIFY_SHOP_NAME || cfg.config.shopName;
+    const accessToken = cfg.credentials?.SHOPIFY_ACCESS_TOKEN;
 
     if (!shopName || !accessToken) {
       throw new Error(`Shopify shopName or accessToken is not configured for connector ${this.id}`);

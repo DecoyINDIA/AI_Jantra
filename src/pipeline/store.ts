@@ -4,6 +4,8 @@ import {
   readFileSync,
   readdirSync,
   renameSync,
+  rmSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
@@ -12,6 +14,8 @@ import { config } from "../config.js";
 import { planningPipelineDefinition } from "../agents/planningPipeline.js";
 import { snapshotDefinition } from "../agents/definition.js";
 import { emptyCostRollup } from "../runtime/telemetry.js";
+import { encryptSecret, decryptSecret, DecryptionError } from "../security/encryption.js";
+import type { SourceBinding } from "./ops/connectors.js";
 import type {
   Artifact,
   CostRollup,
@@ -22,6 +26,60 @@ import type {
   Source,
 } from "./types.js";
 import { scoreSource } from "./research/sourceQuality.js";
+
+export interface DeliveryConfig {
+  channel: "none" | "webhook";
+  webhookUrl?: string;
+  webhookSecret?: string;
+}
+
+export interface OpsReportingProfile {
+  clientId: string;
+  businessName: string;
+  description?: string;
+  currency?: string;
+  fiscalCalendar?: string;
+  knownEvents?: Array<{
+    name: string;
+    date: string;
+    type: "promo" | "holiday" | "one-off";
+    description?: string;
+  }>;
+  kpiSpec: {
+    kpis: Array<{
+      id: string;
+      name: string;
+      formula: string;
+      minHistoryPeriods: number;
+      target?: number;
+      unit?: string;
+    }>;
+    anomalyConfig?: {
+      sensitivity?: "low" | "medium" | "high";
+      suppressionList?: string[];
+      alertBudget?: number;
+    };
+  };
+  binding: SourceBinding;
+  delivery?: DeliveryConfig;
+  confirmedAt?: string;
+  confirmedBy?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CredentialStore {
+  setConnectorCredentials(clientId: string, connector: string, credentials: Record<string, string>): void;
+  getConnectorCredentials(clientId: string, connector: string): Record<string, string> | null;
+  listConnectorCredentials(clientId: string): string[];
+  deleteConnectorCredentials(clientId: string, connector: string): boolean;
+}
+
+export interface OpsProfileStore {
+  setOpsProfile(profile: OpsReportingProfile): void;
+  getOpsProfile(clientId: string): OpsReportingProfile | null;
+  deleteOpsProfile(clientId: string): boolean;
+}
 
 // SQLite migration work lives under ./store/ while this file keeps the shared store contract.
 export interface ProjectStore {
@@ -39,6 +97,16 @@ export interface ProjectStore {
     source: Source,
     content: string,
   ): string;
+  deleteProject?(clientId: string, projectId: string): boolean;
+  // Connector credentials
+  setConnectorCredentials?(clientId: string, connector: string, credentials: Record<string, string>): void;
+  getConnectorCredentials?(clientId: string, connector: string): Record<string, string> | null;
+  listConnectorCredentials?(clientId: string): string[];
+  deleteConnectorCredentials?(clientId: string, connector: string): boolean;
+  // Ops profiles
+  setOpsProfile?(profile: OpsReportingProfile): void;
+  getOpsProfile?(clientId: string): OpsReportingProfile | null;
+  deleteOpsProfile?(clientId: string): boolean;
 }
 
 export interface ApiKeyMetadata {
@@ -239,7 +307,13 @@ export function pageProjects(projects: Project[], query: ProjectListQuery): Proj
   };
 }
 
-const NON_PROJECT_FILES = new Set(["spend.json", "gateway-spend.json", "webhooks.json"]);
+const NON_PROJECT_FILES = new Set([
+  "spend.json",
+  "gateway-spend.json",
+  "webhooks.json",
+  "credentials.json",
+  "ops-profile.json",
+]);
 
 export class JsonProjectStore implements ProjectStore {
   saveProject(project: Project): void {
@@ -328,6 +402,116 @@ export class JsonProjectStore implements ProjectStore {
     writeFileSync(path, content, "utf8");
     return path;
   }
+
+  deleteProject(clientId: string, projectId: string): boolean {
+    const file = projectFile(clientId, projectId);
+    const dir = projectDir(clientId, projectId);
+    let deleted = false;
+    if (existsSync(file)) {
+      rmSync(file, { force: true });
+      deleted = true;
+    }
+    if (existsSync(dir)) {
+      rmSync(dir, { recursive: true, force: true });
+      deleted = true;
+    }
+    return deleted;
+  }
+
+  setConnectorCredentials(clientId: string, connector: string, credentials: Record<string, string>): void {
+    assertSafePathSegment(clientId, "clientId");
+    assertSafePathSegment(connector, "connector");
+    const dir = clientDir(clientId);
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, "credentials.json");
+    let map: Record<string, string> = {};
+    if (existsSync(file)) {
+      try {
+        map = JSON.parse(readFileSync(file, "utf8"));
+      } catch {}
+    }
+    const encrypted = encryptSecret(JSON.stringify(credentials));
+    map[connector] = encrypted;
+    atomicWriteFileSync(file, JSON.stringify(map, null, 2));
+  }
+
+  getConnectorCredentials(clientId: string, connector: string): Record<string, string> | null {
+    assertSafePathSegment(clientId, "clientId");
+    assertSafePathSegment(connector, "connector");
+    const file = join(clientDir(clientId), "credentials.json");
+    if (!existsSync(file)) return null;
+    try {
+      const map = JSON.parse(readFileSync(file, "utf8")) as Record<string, string>;
+      const encrypted = map[connector];
+      if (!encrypted) return null;
+      const decrypted = decryptSecret(encrypted);
+      return JSON.parse(decrypted) as Record<string, string>;
+    } catch (err: any) {
+      if (err instanceof DecryptionError) {
+        throw err;
+      }
+      return null;
+    }
+  }
+
+  listConnectorCredentials(clientId: string): string[] {
+    assertSafePathSegment(clientId, "clientId");
+    const file = join(clientDir(clientId), "credentials.json");
+    if (!existsSync(file)) return [];
+    try {
+      const map = JSON.parse(readFileSync(file, "utf8")) as Record<string, string>;
+      return Object.keys(map).sort();
+    } catch {
+      return [];
+    }
+  }
+
+  deleteConnectorCredentials(clientId: string, connector: string): boolean {
+    assertSafePathSegment(clientId, "clientId");
+    assertSafePathSegment(connector, "connector");
+    const file = join(clientDir(clientId), "credentials.json");
+    if (!existsSync(file)) return false;
+    try {
+      const map = JSON.parse(readFileSync(file, "utf8")) as Record<string, string>;
+      if (!(connector in map)) return false;
+      delete map[connector];
+      atomicWriteFileSync(file, JSON.stringify(map, null, 2));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  setOpsProfile(profile: OpsReportingProfile): void {
+    assertSafePathSegment(profile.clientId, "clientId");
+    const dir = clientDir(profile.clientId);
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, "ops-profile.json");
+    atomicWriteFileSync(file, JSON.stringify(profile, null, 2));
+  }
+
+  getOpsProfile(clientId: string): OpsReportingProfile | null {
+    assertSafePathSegment(clientId, "clientId");
+    const file = join(clientDir(clientId), "ops-profile.json");
+    if (!existsSync(file)) return null;
+    try {
+      return JSON.parse(readFileSync(file, "utf8")) as OpsReportingProfile;
+    } catch {
+      return null;
+    }
+  }
+
+  deleteOpsProfile(clientId: string): boolean {
+    assertSafePathSegment(clientId, "clientId");
+    const file = join(clientDir(clientId), "ops-profile.json");
+    if (!existsSync(file)) return false;
+    try {
+      unlinkSync(file);
+      return true;
+    } catch {
+      return false;
+    }
+  }
 }
 
 export const defaultStore: ProjectStore = new JsonProjectStore();
@@ -338,6 +522,10 @@ export function saveProject(project: Project): void {
 
 export function loadProject(clientId: string, projectId: string): Project | null {
   return defaultStore.loadProject(clientId, projectId);
+}
+
+export function deleteProject(clientId: string, projectId: string): boolean {
+  return defaultStore.deleteProject ? defaultStore.deleteProject(clientId, projectId) : false;
 }
 
 export function listProjects(query: ProjectListQuery): ProjectPage {

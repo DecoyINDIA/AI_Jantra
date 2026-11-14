@@ -178,6 +178,13 @@ export const config = {
   modelCatalogPath: process.env.JANTRA_MODEL_CATALOG_PATH || undefined,
   leadRetentionDays: boundedIntegerFromEnv("JANTRA_LEAD_RETENTION_DAYS", 30, 1, 365),
   enableLeadDeletionSweep: booleanFromEnv("JANTRA_ENABLE_LEAD_DELETION_SWEEP", false),
+  leadDeleteLinkedRuns: booleanFromEnv("JANTRA_LEAD_DELETE_LINKED_RUNS", false),
+  runLiveJudge: booleanFromEnv("JANTRA_RUN_LIVE_JUDGE", false),
+  secretsKey: process.env.JANTRA_SECRETS_KEY ?? "",
+  licensePublicKey: process.env.JANTRA_LICENSE_PUBLIC_KEY || undefined,
+  licensePath: process.env.JANTRA_LICENSE_PATH || undefined,
+  licenseToken: process.env.JANTRA_LICENSE_TOKEN || undefined,
+  licenseEnforcement: booleanFromEnv("JANTRA_LICENSE_ENFORCEMENT", false),
 };
 
 export function requireApiKey(): void {
