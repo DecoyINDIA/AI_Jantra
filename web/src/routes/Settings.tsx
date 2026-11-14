@@ -10,7 +10,15 @@ export default function Settings() {
   const [hasExistingAdmin, setHasExistingAdmin] = useState(Boolean(current.adminToken));
   const [rememberOnDevice, setRememberOnDevice] = useState(isRememberEnabled());
   const [desktopResult, setDesktopResult] = useState("");
-  const [licenseInfo, setLicenseInfo] = useState<{ active?: boolean; unverified?: boolean } | null>(null);
+  const [licenseInfo, setLicenseInfo] = useState<{
+    active?: boolean;
+    unverified?: boolean;
+    state?: string;
+    licensee?: string;
+    plan?: string;
+    expiresAt?: string;
+    reason?: string;
+  } | null>(null);
   const [saved, setSaved] = useState(false);
   const desktop = window.jantraDesktop;
 
@@ -97,9 +105,30 @@ export default function Settings() {
         <div className="desktop-tools">
           <h3>Desktop</h3>
           <p className="empty">
-            Licence: <strong>{licenseInfo?.active ? "Active (unverified stub)" : "Unverified / inactive"}</strong>
-            <br />
-            <small>Cryptographic licence verification pending owner design pass (T-025).</small>
+            Licence:{" "}
+            <strong>
+              {licenseInfo?.active
+                ? `Active (${licenseInfo.plan ?? "licensed"})`
+                : (licenseInfo?.state ?? "Unlicensed")}
+            </strong>
+            {licenseInfo?.licensee ? (
+              <>
+                <br />
+                <small>Licensee: {licenseInfo.licensee}</small>
+              </>
+            ) : null}
+            {licenseInfo?.expiresAt ? (
+              <>
+                <br />
+                <small>Expires: {new Date(licenseInfo.expiresAt).toLocaleDateString()}</small>
+              </>
+            ) : null}
+            {licenseInfo?.reason && !licenseInfo.active ? (
+              <>
+                <br />
+                <small>{licenseInfo.reason}</small>
+              </>
+            ) : null}
           </p>
           <div className="button-row">
             <button
