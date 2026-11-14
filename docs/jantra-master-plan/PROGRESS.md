@@ -65,6 +65,7 @@ Status: In Progress
 | **F-004** | P0 | Completed | 65e35b9 | Yes | Full gate (93/93 unit, 70/70 eval, smoke, server:smoke, edge:verify:local, git diff --check) | Verified desktop licence enforcement across all stage/model trigger routes (runs, advance, interactions, confirm, reject, promote, complete), authenticated activation, wrong-key & tampered rejection, provider secret isolation |
 | **F-005** | P0 | Completed | c84f073 | Yes | Full gate (95/95 unit, 70/70 eval, smoke, server:smoke, edge:verify:local, git diff --check) | Added checkCatalogModels to createServer (defaults to true in production remote, false in local tests/smoke/regressions), zero external network calls during gates |
 | **F-006** | P0 | Completed | 18e815a | Yes | Full gate (95/95 unit, 70/70 eval, smoke, server:smoke, edge:verify:local, git diff --check) | Reconciled environment configuration (.env.example, render.yaml), updated progress logs and pending packets with accurate pushed hashes, verified test counts (95 unit, 70 eval), recorded open external blockers |
+| **F-007** | P0 | Completed | b3906da | Yes | Full gate in clean clone (95/95 unit, 70/70 eval, smoke, server:smoke, edge:verify:local, git diff --check, mechanical security checks) | Verified clean checkout in fresh temp dir, isolated JobWorker/catalog tests and regression apiKeys for deterministic offline execution, verified zero leaks and origin/main sync |
 
 
 ---
