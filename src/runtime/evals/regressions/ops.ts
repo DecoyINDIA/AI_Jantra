@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { opsReportingDefinition } from "../../../agents/opsReporting.js";
 import { AuditLogger } from "../../../audit.js";
@@ -11,6 +11,7 @@ import { JsonProjectStore } from "../../../pipeline/store.js";
 import { SqliteProjectStore } from "../../../pipeline/store/sqlite.js";
 import { StageFailedClosedError } from "../../../runtime/errors.js";
 import type { StageContext } from "../../../pipeline/types.js";
+import { createServer } from "../../../server/app.js";
 import { assert, SequenceProvider } from "./common.js";
 
 export function verifyCsvDirectoryResolve(): void {
@@ -196,8 +197,11 @@ export async function verifyOpsCredentialIsolationAndDecryption(): Promise<void>
 export async function verifyOpsWebhookDelivery(): Promise<void> {
   const dir = mkdtempSync(path.join(tmpdir(), "jantra-ops-deliv-"));
   const sqlitePath = path.join(dir, "jantra.sqlite");
+  const origSecretsKey = config.secretsKey;
+  let store: SqliteProjectStore | null = null;
   try {
-    const store = new SqliteProjectStore(sqlitePath, { skipImport: true });
+    (config as any).secretsKey = "test-secrets-key-32-chars-long!!";
+    store = new SqliteProjectStore(sqlitePath, { skipImport: true });
     const project = createProject({
       clientId: "client-deliv-reg",
       title: "Ops Delivery Test",
@@ -218,6 +222,10 @@ export async function verifyOpsWebhookDelivery(): Promise<void> {
     const audit = new AuditLogger(project.id, config.auditDir);
 
     // 1. Success case
+    store.setConnectorCredentials("client-deliv-reg", "report-webhook", {
+      url: "https://example.com/api/webhook",
+      secret: "secret-hmac-123",
+    });
     store.setOpsProfile({
       clientId: "client-deliv-reg",
       businessName: "Delivery Corp",
@@ -225,8 +233,7 @@ export async function verifyOpsWebhookDelivery(): Promise<void> {
       binding: { connectors: [], overlapRules: [] },
       delivery: {
         channel: "webhook",
-        webhookUrl: "https://example.com/api/webhook",
-        webhookSecret: "secret-hmac-123",
+        credentialRef: "report-webhook",
       },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -260,7 +267,11 @@ export async function verifyOpsWebhookDelivery(): Promise<void> {
     const parsedSuccess = JSON.parse(successReceipt.content);
     assert(parsedSuccess.status === "sent", "status must be sent");
     assert(parsedSuccess.channel === "webhook", "channel must be webhook");
-    assert(parsedSuccess.providerResponse?.statusCode === 200, "providerResponse statusCode must be 200");
+    assert(parsedSuccess.destinationHost === "example.com", "destinationHost must be example.com");
+    assert(parsedSuccess.credentialRef === "report-webhook", "credentialRef must be report-webhook");
+    assert(parsedSuccess.url === undefined, "raw URL must not appear in receipt");
+    assert(parsedSuccess.recipients === undefined, "recipients must not appear in receipt");
+    assert(parsedSuccess.statusCode === 200, "statusCode must be 200");
     assert(Boolean(mockCalledWithHeaders?.["X-Jantra-Signature"]), "HMAC signature must be present");
 
     // 2. Failure case
@@ -288,10 +299,131 @@ export async function verifyOpsWebhookDelivery(): Promise<void> {
     const parsedFail = JSON.parse(failReceipt.content);
     assert(parsedFail.status === "failed", "status must be failed");
     assert(parsedFail.status !== "sent", "failed delivery must NEVER be marked as sent");
-    assert(parsedFail.providerResponse?.statusCode === 503, "providerResponse statusCode must be 503");
+    assert(parsedFail.statusCode === 503, "statusCode must be 503");
+    assert(parsedFail.errorCode === "http_5xx", "errorCode must be http_5xx");
+    assert(parsedFail.destinationHost === "example.com", "destinationHost must be example.com");
+    assert(parsedFail.url === undefined, "raw URL must not appear in receipt");
 
+  } finally {
+    (config as any).secretsKey = origSecretsKey;
+    try { store?.close(); } catch {}
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+export async function verifyNoSecretsInResponsesOrDisk(): Promise<void> {
+  const dir = mkdtempSync(path.join(tmpdir(), "jantra-ops-secrets-reg-"));
+  const sqlitePath = path.join(dir, "jantra.sqlite");
+  const origSecretsKey = config.secretsKey;
+  try {
+    (config as any).secretsKey = "test-secrets-key-32-chars-long!!";
+    const store = new SqliteProjectStore(sqlitePath, { skipImport: true });
+    const adminToken = "adm_test_token_super_secret_val";
+
+    const app = createServer({
+      mode: "remote",
+      loopbackToken: "",
+      adminToken,
+      store,
+      apiKeyStore: store,
+      apiKeys: [
+        { key: "key_alpha", clientId: "tenant-alpha", subject: "user-alpha" },
+        { key: "key_beta", clientId: "tenant-beta", subject: "user-beta" },
+      ],
+    });
+
+    const secretStripe = "sk_live_very_secret_stripe_12345";
+    const webhookSecret = "whsec_super_secret_webhook_99999";
+    const webhookUrl = "https://hooks.slack.com/services/T123/B456/SECRETKEY";
+
+    // 1. Admin sets Stripe credential
+    const putStripe = await app.inject({
+      method: "PUT",
+      url: "/v1/admin/clients/tenant-alpha/credentials/stripe",
+      headers: { "x-jantra-admin-token": adminToken, "Content-Type": "application/json" },
+      payload: { credentials: { STRIPE_API_KEY: secretStripe } },
+    });
+    assert(putStripe.statusCode === 200, "Admin PUT credential must succeed");
+    assert(!JSON.stringify(putStripe.json()).includes(secretStripe), "PUT response must not leak secret");
+
+    // 2. Admin sets report-webhook credential
+    const putWebhook = await app.inject({
+      method: "PUT",
+      url: "/v1/admin/clients/tenant-alpha/credentials/report-webhook",
+      headers: { "x-jantra-admin-token": adminToken, "Content-Type": "application/json" },
+      payload: { credentials: { url: webhookUrl, secret: webhookSecret } },
+    });
+    assert(putWebhook.statusCode === 200, "Admin PUT report-webhook credential must succeed");
+    assert(!JSON.stringify(putWebhook.json()).includes(webhookSecret), "PUT webhook response must not leak secret");
+
+    // 3. Admin GET credentials returns metadata only, never secret strings
+    const getAdminStripe = await app.inject({
+      method: "GET",
+      url: "/v1/admin/clients/tenant-alpha/credentials/stripe",
+      headers: { "x-jantra-admin-token": adminToken },
+    });
+    assert(getAdminStripe.statusCode === 200, "Admin GET stripe must succeed");
+    const adminStripeJson = getAdminStripe.json();
+    assert(adminStripeJson.configured === true, "configured must be true");
+    assert(!JSON.stringify(adminStripeJson).includes(secretStripe), "Admin GET must not return secret");
+
+    const getAdminWebhook = await app.inject({
+      method: "GET",
+      url: "/v1/admin/clients/tenant-alpha/credentials/report-webhook",
+      headers: { "x-jantra-admin-token": adminToken },
+    });
+    assert(getAdminWebhook.statusCode === 200, "Admin GET report-webhook must succeed");
+    const adminWebhookJson = getAdminWebhook.json();
+    assert(adminWebhookJson.configured === true, "configured must be true");
+    assert(!JSON.stringify(adminWebhookJson).includes(webhookSecret), "Admin GET webhook must not return secret");
+    assert(!JSON.stringify(adminWebhookJson).includes("SECRETKEY"), "Admin GET webhook must not return URL path secret");
+
+    // 4. Tenant routes cannot manage or read raw credentials (returns 403)
+    const tenantPut = await app.inject({
+      method: "PUT",
+      url: "/v1/credentials/stripe",
+      headers: { Authorization: "Bearer key_alpha", "Content-Type": "application/json" },
+      payload: { credentials: { STRIPE_API_KEY: "hack" } },
+    });
+    assert(tenantPut.statusCode === 403, "Tenant PUT credentials must be 403");
+
+    const tenantGet = await app.inject({
+      method: "GET",
+      url: "/v1/credentials/stripe",
+      headers: { Authorization: "Bearer key_alpha" },
+    });
+    assert(tenantGet.statusCode === 403, "Tenant GET credentials/:connector must be 403");
+
+    // 5. Tenant GET /v1/credentials lists only configured connector ids
+    const tenantList = await app.inject({
+      method: "GET",
+      url: "/v1/credentials",
+      headers: { Authorization: "Bearer key_alpha" },
+    });
+    assert(tenantList.statusCode === 200, "Tenant list must be 200");
+    const tenantListJson = tenantList.json();
+    assert(tenantListJson.connectors.includes("stripe"), "should include stripe");
+    assert(tenantListJson.connectors.includes("report-webhook"), "should include report-webhook");
+    assert(!JSON.stringify(tenantListJson).includes(secretStripe), "list must not leak secret");
+
+    // Tenant-beta sees nothing from tenant-alpha
+    const tenantBetaList = await app.inject({
+      method: "GET",
+      url: "/v1/credentials",
+      headers: { Authorization: "Bearer key_beta" },
+    });
+    assert(tenantBetaList.statusCode === 200, "tenant-beta status must be 200");
+    assert(tenantBetaList.json().connectors.length === 0, "tenant-beta must have no connectors");
+
+    // 6. Verify SQLite storage on disk does not contain plaintext secrets
+    const sqliteBytes = readFileSync(sqlitePath, "utf8");
+    assert(!sqliteBytes.includes(secretStripe), "SQLite must not contain stripe secret in plaintext");
+    assert(!sqliteBytes.includes(webhookSecret), "SQLite must not contain webhook secret in plaintext");
+
+    await app.close();
     store.close();
   } finally {
+    (config as any).secretsKey = origSecretsKey;
     rmSync(dir, { recursive: true, force: true });
   }
 }

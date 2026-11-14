@@ -20,6 +20,7 @@ import {
   type ApiKeyMetadata,
   type ApiKeyStore,
   type CredentialStore,
+  type DeliveryConfig,
   type OpsProfileStore,
   type OpsReportingProfile,
   type ProjectStore,
@@ -574,6 +575,16 @@ export class SqliteProjectStore
 
   setOpsProfile(profile: OpsReportingProfile): void {
     const now = new Date().toISOString();
+    const sanitizedDelivery: DeliveryConfig = {
+      channel: profile.delivery?.channel === "webhook" ? "webhook" : "none",
+      ...(profile.delivery?.channel === "webhook"
+        ? { credentialRef: profile.delivery.credentialRef ?? "report-webhook" }
+        : {}),
+    };
+    const sanitizedProfile: OpsReportingProfile = {
+      ...profile,
+      delivery: sanitizedDelivery,
+    };
     this.db
       .prepare(
         `insert into ops_profiles (client_id, business_name, data, confirmed_at, confirmed_by, created_at, updated_at)
@@ -587,12 +598,12 @@ export class SqliteProjectStore
            updated_at = excluded.updated_at`,
       )
       .run(
-        profile.clientId,
-        profile.businessName,
-        JSON.stringify(profile),
-        profile.confirmedAt ?? null,
-        profile.confirmedBy ?? null,
-        profile.createdAt || now,
+        sanitizedProfile.clientId,
+        sanitizedProfile.businessName,
+        JSON.stringify(sanitizedProfile),
+        sanitizedProfile.confirmedAt ?? null,
+        sanitizedProfile.confirmedBy ?? null,
+        sanitizedProfile.createdAt || now,
         now,
       );
   }
@@ -603,7 +614,20 @@ export class SqliteProjectStore
       .get(clientId) as { data?: string } | undefined;
     if (!row?.data) return null;
     try {
-      return JSON.parse(row.data) as OpsReportingProfile;
+      const raw = JSON.parse(row.data) as any;
+      if (raw && raw.delivery) {
+        if (raw.delivery.webhookUrl || raw.delivery.webhookSecret) {
+          raw.delivery = { channel: "none" };
+        } else {
+          raw.delivery = {
+            channel: raw.delivery.channel === "webhook" ? "webhook" : "none",
+            ...(raw.delivery.channel === "webhook"
+              ? { credentialRef: raw.delivery.credentialRef ?? "report-webhook" }
+              : {}),
+          };
+        }
+      }
+      return raw as OpsReportingProfile;
     } catch {
       return null;
     }

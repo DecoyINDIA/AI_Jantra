@@ -9,9 +9,11 @@ import { config } from "../../config.js";
 import { JsonProjectStore } from "../store.js";
 import type { StageContext } from "../types.js";
 import { SequenceProvider } from "../../runtime/evals/regressions/common.js";
+import { StageFailedClosedError } from "../../runtime/errors.js";
 import { deliverReportWebhook, runOpsDeliver } from "./opsReporting.js";
 
 describe("Lekha Ops Report Delivery Layer (T-019)", () => {
+  const originalSecretsKey = config.secretsKey;
   it("delivers signed webhook, records provider response, timestamp, and status sent", async () => {
     let receivedPayload: any = null;
     let receivedSignature: string | null = null;
@@ -51,7 +53,6 @@ describe("Lekha Ops Report Delivery Layer (T-019)", () => {
 
       assert.equal(outcome.ok, true);
       assert.equal(outcome.statusCode, 200);
-      assert.ok(outcome.body?.includes("msg_12345_ok"));
 
       assert.ok(receivedPayload);
       assert.equal(receivedPayload.clientId, "client_test");
@@ -63,6 +64,7 @@ describe("Lekha Ops Report Delivery Layer (T-019)", () => {
         .digest("hex");
       assert.equal(receivedSignature, expectedSig);
     } finally {
+      (config as any).secretsKey = originalSecretsKey;
       server.close();
     }
   });
@@ -82,7 +84,7 @@ describe("Lekha Ops Report Delivery Layer (T-019)", () => {
     try {
       const outcome = await deliverReportWebhook(
         webhookUrl,
-        undefined,
+        "test-secret",
         { id: "deliv_fail", report: { title: "Report", content: "data" } },
         2,
         (url, init) => fetch(url, init as any),
@@ -90,9 +92,10 @@ describe("Lekha Ops Report Delivery Layer (T-019)", () => {
 
       assert.equal(outcome.ok, false);
       assert.equal(outcome.statusCode, 500);
-      assert.ok(outcome.error?.includes("500"));
+      assert.equal(outcome.errorCode, "http_5xx");
       assert.ok(callCount >= 2, "Should have retried transient 500 error");
     } finally {
+      (config as any).secretsKey = originalSecretsKey;
       server.close();
     }
   });
@@ -112,7 +115,7 @@ describe("Lekha Ops Report Delivery Layer (T-019)", () => {
     try {
       const outcome = await deliverReportWebhook(
         webhookUrl,
-        undefined,
+        "test-secret",
         { id: "deliv_401" },
         3,
         (url, init) => fetch(url, init as any),
@@ -120,8 +123,10 @@ describe("Lekha Ops Report Delivery Layer (T-019)", () => {
 
       assert.equal(outcome.ok, false);
       assert.equal(outcome.statusCode, 401);
+      assert.equal(outcome.errorCode, "http_4xx");
       assert.equal(callCount, 1, "Should NOT retry non-retryable 401 error");
     } finally {
+      (config as any).secretsKey = originalSecretsKey;
       server.close();
     }
   });
@@ -137,6 +142,7 @@ describe("Lekha Ops Report Delivery Layer (T-019)", () => {
     const webhookUrl = `http://127.0.0.1:${port}/webhook/ops`;
 
     try {
+      (config as any).secretsKey = "test-secret-key-32-chars-long!!";
       const project = createProject({
         clientId: "client-delivery-test",
         title: "Ops Run",
@@ -156,7 +162,11 @@ describe("Lekha Ops Report Delivery Layer (T-019)", () => {
       const stageDefinition = project.agentDefinitionSnapshot.stages.find((s) => s.id === "deliver")!;
       const store = new JsonProjectStore();
 
-      // Configure reporting profile with webhook delivery in store
+      // Configure report-webhook credential and reporting profile in store
+      store.setConnectorCredentials("client-delivery-test", "report-webhook", {
+        url: webhookUrl,
+        secret: "secret-key-123",
+      });
       store.setOpsProfile({
         clientId: "client-delivery-test",
         businessName: "Test Business",
@@ -164,8 +174,7 @@ describe("Lekha Ops Report Delivery Layer (T-019)", () => {
         binding: { connectors: [], overlapRules: [] },
         delivery: {
           channel: "webhook",
-          webhookUrl,
-          webhookSecret: "secret-key-123",
+          credentialRef: "report-webhook",
         },
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -200,18 +209,23 @@ describe("Lekha Ops Report Delivery Layer (T-019)", () => {
       const parsed = JSON.parse(receipt.content);
       assert.equal(parsed.status, "sent");
       assert.equal(parsed.channel, "webhook");
-      assert.equal(parsed.url, webhookUrl);
+      assert.equal(parsed.destinationHost, "127.0.0.1");
+      assert.equal(parsed.credentialRef, "report-webhook");
+      assert.equal(parsed.url, undefined);
+      assert.equal(parsed.recipients, undefined);
       assert.ok(parsed.timestamp);
       assert.ok(parsed.artifactHash.startsWith("sha256-"));
-      assert.equal(parsed.providerResponse.statusCode, 200);
-      assert.ok(parsed.providerResponse.body.includes("ack_999"));
+      assert.equal(parsed.statusCode, 200);
 
-      // Check audit
+      // Check audit: destinationHost only, no raw URL
       const auditEntry = audit.records.find((r) => r.type === "report_delivered");
       assert.ok(auditEntry);
       assert.equal(auditEntry.data.status, "sent");
       assert.equal(auditEntry.data.statusCode, 200);
+      assert.equal(auditEntry.data.destinationHost, "127.0.0.1");
+      assert.equal((auditEntry.data as any).url, undefined);
     } finally {
+      (config as any).secretsKey = originalSecretsKey;
       server.close();
     }
   });
@@ -227,6 +241,7 @@ describe("Lekha Ops Report Delivery Layer (T-019)", () => {
     const webhookUrl = `http://127.0.0.1:${port}/webhook/ops-fail`;
 
     try {
+      (config as any).secretsKey = "test-secret-key-32-chars-long!!";
       const project = createProject({
         clientId: "client-delivery-fail",
         title: "Ops Run",
@@ -246,6 +261,11 @@ describe("Lekha Ops Report Delivery Layer (T-019)", () => {
       const stageDefinition = project.agentDefinitionSnapshot.stages.find((s) => s.id === "deliver")!;
       const store = new JsonProjectStore();
 
+      // Configure report-webhook credential and reporting profile
+      store.setConnectorCredentials("client-delivery-fail", "report-webhook", {
+        url: webhookUrl,
+        secret: "secret-key-123",
+      });
       store.setOpsProfile({
         clientId: "client-delivery-fail",
         businessName: "Test Business",
@@ -253,7 +273,7 @@ describe("Lekha Ops Report Delivery Layer (T-019)", () => {
         binding: { connectors: [], overlapRules: [] },
         delivery: {
           channel: "webhook",
-          webhookUrl,
+          credentialRef: "report-webhook",
         },
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -289,13 +309,66 @@ describe("Lekha Ops Report Delivery Layer (T-019)", () => {
       assert.equal(parsed.status, "failed");
       assert.notEqual(parsed.status, "sent");
       assert.equal(parsed.channel, "webhook");
-      assert.equal(parsed.providerResponse?.statusCode, 502);
+      assert.equal(parsed.destinationHost, "127.0.0.1");
+      assert.equal(parsed.credentialRef, "report-webhook");
+      assert.equal(parsed.url, undefined);
+      assert.equal(parsed.recipients, undefined);
+      assert.equal(parsed.statusCode, 502);
+      assert.equal(parsed.errorCode, "http_5xx");
 
       const auditEntry = audit.records.find((r) => r.type === "error");
       assert.ok(auditEntry);
       assert.equal(auditEntry.data.status, "failed");
+      assert.equal(auditEntry.data.destinationHost, "127.0.0.1");
+      assert.equal(auditEntry.data.credentialRef, "report-webhook");
+      assert.equal((auditEntry.data as any).url, undefined);
     } finally {
+      (config as any).secretsKey = originalSecretsKey;
       server.close();
     }
+  });
+
+  it("fails closed when report-webhook credentials are missing or corrupted", async () => {
+    const project = createProject({
+      clientId: "client-missing-creds",
+      title: "Ops Run",
+      definition: opsReportingDefinition,
+    });
+    const composeStage = project.stages["compose"]!;
+    composeStage.artifacts.push({
+      stage: "compose",
+      kind: "ops_report",
+      title: "Operations Report",
+      content: "# Operations Summary",
+      version: 1,
+      createdAt: new Date().toISOString(),
+    });
+    const stageDefinition = project.agentDefinitionSnapshot.stages.find((s) => s.id === "deliver")!;
+    const store = new JsonProjectStore();
+    store.setOpsProfile({
+      clientId: "client-missing-creds",
+      businessName: "Test Business",
+      kpiSpec: { kpis: [] },
+      binding: { connectors: [], overlapRules: [] },
+      delivery: { channel: "webhook", credentialRef: "report-webhook" },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    const audit = new AuditLogger(project.id, config.auditDir);
+    const ctx: StageContext = {
+      project,
+      stageId: "deliver",
+      stageDefinition,
+      audit,
+      provider: new SequenceProvider([]),
+      io: { say: () => undefined, ask: async () => "" },
+      store,
+    };
+
+    await assert.rejects(
+      async () => runOpsDeliver(ctx),
+      (err: any) => err instanceof StageFailedClosedError,
+    );
   });
 });

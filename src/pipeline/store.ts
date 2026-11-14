@@ -29,8 +29,7 @@ import { scoreSource } from "./research/sourceQuality.js";
 
 export interface DeliveryConfig {
   channel: "none" | "webhook";
-  webhookUrl?: string;
-  webhookSecret?: string;
+  credentialRef?: "report-webhook";
 }
 
 export interface OpsReportingProfile {
@@ -487,7 +486,17 @@ export class JsonProjectStore implements ProjectStore {
     const dir = clientDir(profile.clientId);
     mkdirSync(dir, { recursive: true });
     const file = join(dir, "ops-profile.json");
-    atomicWriteFileSync(file, JSON.stringify(profile, null, 2));
+    const sanitizedDelivery: DeliveryConfig = {
+      channel: profile.delivery?.channel === "webhook" ? "webhook" : "none",
+      ...(profile.delivery?.channel === "webhook"
+        ? { credentialRef: profile.delivery.credentialRef ?? "report-webhook" }
+        : {}),
+    };
+    const sanitizedProfile: OpsReportingProfile = {
+      ...profile,
+      delivery: sanitizedDelivery,
+    };
+    atomicWriteFileSync(file, JSON.stringify(sanitizedProfile, null, 2));
   }
 
   getOpsProfile(clientId: string): OpsReportingProfile | null {
@@ -495,7 +504,20 @@ export class JsonProjectStore implements ProjectStore {
     const file = join(clientDir(clientId), "ops-profile.json");
     if (!existsSync(file)) return null;
     try {
-      return JSON.parse(readFileSync(file, "utf8")) as OpsReportingProfile;
+      const raw = JSON.parse(readFileSync(file, "utf8")) as any;
+      if (raw && raw.delivery) {
+        if (raw.delivery.webhookUrl || raw.delivery.webhookSecret) {
+          raw.delivery = { channel: "none" };
+        } else {
+          raw.delivery = {
+            channel: raw.delivery.channel === "webhook" ? "webhook" : "none",
+            ...(raw.delivery.channel === "webhook"
+              ? { credentialRef: raw.delivery.credentialRef ?? "report-webhook" }
+              : {}),
+          };
+        }
+      }
+      return raw as OpsReportingProfile;
     } catch {
       return null;
     }

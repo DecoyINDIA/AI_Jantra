@@ -29,7 +29,7 @@ describe("Admin & Tenant Credential Routes (T-018)", () => {
     },
     delivery: {
       channel: "webhook",
-      webhookUrl: "https://example.com/hooks/report",
+      credentialRef: "report-webhook",
     },
   };
 
@@ -84,14 +84,19 @@ describe("Admin & Tenant Credential Routes (T-018)", () => {
       assert.equal(okBody.clientId, "tenant-x");
       assert.equal(okBody.connector, "stripe");
 
-      // GET admin credentials
+      // GET admin credentials returns metadata only, never secret values
       const resGet = await app.inject({
         method: "GET",
         url: "/v1/admin/clients/tenant-x/credentials/stripe",
         headers: { "x-jantra-admin-token": adminToken },
       });
       assert.equal(resGet.statusCode, 200);
-      assert.deepEqual(resGet.json().credentials, { STRIPE_API_KEY: "sk_test_123" });
+      const getJson = resGet.json();
+      assert.equal(getJson.clientId, "tenant-x");
+      assert.equal(getJson.connector, "stripe");
+      assert.equal(getJson.configured, true);
+      assert.equal(getJson.credentials, undefined);
+      assert(!JSON.stringify(getJson).includes("sk_test_123"), "secret must not appear in response");
 
       // GET admin credentials for non-existent client -> 404
       const resGetMissing = await app.inject({
@@ -214,7 +219,7 @@ describe("Admin & Tenant Credential Routes (T-018)", () => {
       });
       assert.equal(resPublic.statusCode, 403);
 
-      // Full key manages credentials for tenant-alpha
+      // Tenant PUT/GET/DELETE must reject with 403 Forbidden
       const resPut = await app.inject({
         method: "PUT",
         url: "/v1/credentials/stripe",
@@ -224,17 +229,28 @@ describe("Admin & Tenant Credential Routes (T-018)", () => {
         },
         payload: { credentials: { STRIPE_API_KEY: "sk_alpha_secret" } },
       });
-      assert.equal(resPut.statusCode, 200);
-      assert.equal(resPut.json().clientId, "tenant-alpha");
+      assert.equal(resPut.statusCode, 403);
+      assert(!JSON.stringify(resPut.json()).includes("sk_alpha_secret"));
 
-      // GET credentials
       const resGet = await app.inject({
         method: "GET",
         url: "/v1/credentials/stripe",
         headers: { "Authorization": "Bearer full_key_alpha" },
       });
-      assert.equal(resGet.statusCode, 200);
-      assert.deepEqual(resGet.json().credentials, { STRIPE_API_KEY: "sk_alpha_secret" });
+      assert.equal(resGet.statusCode, 403);
+
+      // Store credentials via admin/store for tenant-alpha
+      store.setConnectorCredentials("tenant-alpha", "stripe", { STRIPE_API_KEY: "sk_alpha_secret" });
+
+      // Tenant GET /v1/credentials lists only configured connector ids, no secrets
+      const resList = await app.inject({
+        method: "GET",
+        url: "/v1/credentials",
+        headers: { "Authorization": "Bearer full_key_alpha" },
+      });
+      assert.equal(resList.statusCode, 200);
+      assert.deepEqual(resList.json(), { clientId: "tenant-alpha", connectors: ["stripe"] });
+      assert(!JSON.stringify(resList.json()).includes("sk_alpha_secret"), "no secrets in list response");
 
       await app.close();
       store.close();

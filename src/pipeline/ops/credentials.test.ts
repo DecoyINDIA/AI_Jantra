@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
@@ -40,8 +40,7 @@ describe("Per-Client Connector Credentials & Ops Profiles (T-018)", () => {
     },
     delivery: {
       channel: "webhook",
-      webhookUrl: "https://example.com/webhooks/ops-report",
-      webhookSecret: "whsec_test_secret",
+      credentialRef: "report-webhook",
     },
     confirmedAt: "2026-11-14T00:00:00.000Z",
     confirmedBy: "operator@xolver.in",
@@ -90,6 +89,12 @@ describe("Per-Client Connector Credentials & Ops Profiles (T-018)", () => {
       assert.deepEqual(store.listConnectorCredentials("tenant-alpha"), ["shopify", "stripe"]);
       assert.deepEqual(store.listConnectorCredentials("tenant-beta"), ["stripe"]);
 
+      // Verify disk storage does not contain plaintext secrets
+      const credFile = join(dir, "tenant-alpha", "credentials.json");
+      const credContent = readFileSync(credFile, "utf8");
+      assert(!credContent.includes("sk_test_alpha_stripe"), "plaintext secret must not appear in JSON file");
+      assert(!credContent.includes("shpat_alpha_token"), "plaintext secret must not appear in JSON file");
+
       // Verify deleting credentials
       assert.equal(store.deleteConnectorCredentials("tenant-alpha", "stripe"), true);
       assert.equal(store.getConnectorCredentials("tenant-alpha", "stripe"), null);
@@ -133,6 +138,11 @@ describe("Per-Client Connector Credentials & Ops Profiles (T-018)", () => {
       // Verify listing connectors
       assert.deepEqual(store.listConnectorCredentials("tenant-alpha"), ["shopify", "stripe"]);
       assert.deepEqual(store.listConnectorCredentials("tenant-beta"), ["stripe"]);
+
+      // Verify disk storage does not contain plaintext secrets
+      const sqliteContent = readFileSync(sqlitePath, "utf8");
+      assert(!sqliteContent.includes("sk_test_alpha_stripe"), "plaintext secret must not appear in SQLite database");
+      assert(!sqliteContent.includes("shpat_alpha_token"), "plaintext secret must not appear in SQLite database");
 
       // Verify deleting credentials
       assert.equal(store.deleteConnectorCredentials("tenant-alpha", "stripe"), true);
@@ -182,7 +192,9 @@ describe("Per-Client Connector Credentials & Ops Profiles (T-018)", () => {
       assert.equal(loaded.businessName, "Alpha Retailers");
       assert.equal(loaded.kpiSpec.kpis[0]!.id, "revenue");
       assert.equal(loaded.delivery?.channel, "webhook");
-      assert.equal(loaded.delivery?.webhookUrl, "https://example.com/webhooks/ops-report");
+      assert.equal(loaded.delivery?.credentialRef, "report-webhook");
+      assert.equal((loaded.delivery as any).webhookUrl, undefined);
+      assert.equal((loaded.delivery as any).webhookSecret, undefined);
 
       // Non-existent client returns null
       assert.equal(store.getOpsProfile("unknown-client"), null);

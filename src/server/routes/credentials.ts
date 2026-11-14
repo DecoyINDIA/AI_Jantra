@@ -26,50 +26,15 @@ export function registerCredentialRoutes(
   app: FastifyInstance,
   deps: CredentialsRouteDeps,
 ): void {
+  // Tenant routes must never accept, return, or delete raw credentials.
   app.put("/v1/credentials/:connector", async (request, reply) => {
     noStore(reply);
-    if (request.identity?.scope === "public") {
-      throw forbidden("Public keys cannot manage connector credentials.");
-    }
-
-    const clientId = requestClientId(request, deps.clientId);
-    const params = parseWith(connectorParamsSchema, request.params);
-    const body = parseWith(setConnectorCredentialsBodySchema, request.body);
-
-    if (!deps.store.setConnectorCredentials) {
-      throw new Error("Store does not support connector credentials.");
-    }
-
-    deps.store.setConnectorCredentials(clientId, params.connector, body.credentials);
-
-    new AuditLogger(CREDENTIALS_AUDIT_RUN_ID, config.auditDir).record("approval", {
-      clientId,
-      action: "connector_credentials_updated",
-      connector: params.connector,
-    });
-
-    return { ok: true, clientId, connector: params.connector };
+    throw forbidden("Tenant routes cannot manage connector credentials. Use admin endpoints.");
   });
 
   app.get("/v1/credentials/:connector", async (request, reply) => {
     noStore(reply);
-    if (request.identity?.scope === "public") {
-      throw forbidden("Public keys cannot read connector credentials.");
-    }
-
-    const clientId = requestClientId(request, deps.clientId);
-    const params = parseWith(connectorParamsSchema, request.params);
-
-    if (!deps.store.getConnectorCredentials) {
-      throw notFound("Connector credentials not found.");
-    }
-
-    const credentials = deps.store.getConnectorCredentials(clientId, params.connector);
-    if (!credentials) {
-      throw notFound(`Credentials for connector "${params.connector}" not found.`);
-    }
-
-    return { clientId, connector: params.connector, credentials };
+    throw forbidden("Tenant routes cannot read connector credentials.");
   });
 
   app.get("/v1/credentials", async (request, reply) => {
@@ -88,29 +53,7 @@ export function registerCredentialRoutes(
 
   app.delete("/v1/credentials/:connector", async (request, reply) => {
     noStore(reply);
-    if (request.identity?.scope === "public") {
-      throw forbidden("Public keys cannot delete connector credentials.");
-    }
-
-    const clientId = requestClientId(request, deps.clientId);
-    const params = parseWith(connectorParamsSchema, request.params);
-
-    if (!deps.store.deleteConnectorCredentials) {
-      return { ok: false };
-    }
-
-    const deleted = deps.store.deleteConnectorCredentials(clientId, params.connector);
-    if (!deleted) {
-      throw notFound(`Credentials for connector "${params.connector}" not found.`);
-    }
-
-    new AuditLogger(CREDENTIALS_AUDIT_RUN_ID, config.auditDir).record("approval", {
-      clientId,
-      action: "connector_credentials_deleted",
-      connector: params.connector,
-    });
-
-    return { ok: true, clientId, connector: params.connector };
+    throw forbidden("Tenant routes cannot delete connector credentials. Use admin endpoints.");
   });
 
   // Tenant-scoped ops profile routes
