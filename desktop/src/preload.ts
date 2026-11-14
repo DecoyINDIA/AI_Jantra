@@ -13,6 +13,10 @@ contextBridge.exposeInMainWorld("JANTRA_DESKTOP", {
 
 contextBridge.exposeInMainWorld("jantraDesktop", {
   writeGeminiKey: (secret: string) => ipcRenderer.invoke("jantra:write-gemini-key", secret),
+  writeOpenAiKey: (secret: string) => ipcRenderer.invoke("jantra:write-openai-key", secret),
+  readProviderConfig: () => ipcRenderer.invoke("jantra:read-provider-config"),
+  writeProviderConfig: (cfg: unknown) => ipcRenderer.invoke("jantra:write-provider-config", cfg),
+  getCredentialsStatus: () => ipcRenderer.invoke("jantra:get-credentials-status"),
   licenseStatus: () => ipcRenderer.invoke("jantra:license-status"),
   activateLicense: (key: string) => ipcRenderer.invoke("jantra:activate-license", key),
   collectDiagnostics: () => ipcRenderer.invoke("jantra:collect-diagnostics"),

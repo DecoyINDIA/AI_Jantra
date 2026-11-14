@@ -7,8 +7,9 @@ import { randomBytes } from "node:crypto";
 import { createAuditExport, createBackupArchive, restoreBackupArchive } from "./backup.js";
 import { collectDiagnostics } from "./diagnostics.js";
 import { activateLicense, licenseStatus } from "./licensing.js";
-import { desktopAuditDir, desktopDatabasePath, desktopProjectDir } from "./paths.js";
-import { readGeminiKey, writeGeminiKey } from "./secrets.js";
+import { desktopAuditDir, desktopDatabasePath, desktopLicensePath, desktopProjectDir } from "./paths.js";
+import { readProviderConfig, writeProviderConfig, type DesktopProviderConfig } from "./providerConfig.js";
+import { readCredentials, readGeminiKey, writeCredentials, writeGeminiKey, writeOpenAiKey } from "./secrets.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -31,8 +32,33 @@ function configureAutoUpdater(): void {
 async function startApi(): Promise<ApiHandle> {
   process.env.JANTRA_PROJECT_DIR = desktopProjectDir();
   process.env.JANTRA_AUDIT_DIR = desktopAuditDir();
-  const key = await readGeminiKey();
-  if (key) process.env.GEMINI_API_KEY = key;
+  process.env.JANTRA_LICENSE_PATH = desktopLicensePath();
+
+  const providerConfig = await readProviderConfig();
+  const credentials = await readCredentials();
+
+  if (credentials.geminiApiKey) {
+    process.env.GEMINI_API_KEY = credentials.geminiApiKey;
+  }
+  if (credentials.openAiApiKey) {
+    process.env.JANTRA_API_KEY = credentials.openAiApiKey;
+  }
+
+  process.env.JANTRA_PROVIDER = providerConfig.provider;
+  if (providerConfig.provider === "openai-compatible") {
+    if (providerConfig.baseUrl) {
+      process.env.JANTRA_BASE_URL = providerConfig.baseUrl;
+    }
+    if (providerConfig.modelFlash) {
+      process.env.JANTRA_MODEL = providerConfig.modelFlash;
+    }
+    if (providerConfig.modelPro) {
+      process.env.JANTRA_MODEL_PRO = providerConfig.modelPro;
+    }
+    if (providerConfig.dataCollection) {
+      process.env.JANTRA_DATA_COLLECTION = providerConfig.dataCollection;
+    }
+  }
 
   const serverModulePath = "../../dist/server/app.js";
   const sqliteModulePath = "../../dist/pipeline/store/sqlite.js";
@@ -54,6 +80,7 @@ async function startApi(): Promise<ApiHandle> {
     clientId: "xolver",
     store: new SqliteProjectStore(desktopDatabasePath()),
     adminToken: process.env.JANTRA_ADMIN_TOKEN,
+    licenseEnforcement: true,
   });
 }
 
@@ -97,6 +124,21 @@ async function createMainWindow(api: ApiHandle): Promise<void> {
 ipcMain.handle("jantra:write-gemini-key", async (_event, secret: string) => {
   await writeGeminiKey(secret);
   return { ok: true };
+});
+ipcMain.handle("jantra:write-openai-key", async (_event, secret: string) => {
+  await writeOpenAiKey(secret);
+  return { ok: true };
+});
+ipcMain.handle("jantra:read-provider-config", () => readProviderConfig());
+ipcMain.handle("jantra:write-provider-config", (_event, cfg: unknown) =>
+  writeProviderConfig(cfg as Partial<DesktopProviderConfig>),
+);
+ipcMain.handle("jantra:get-credentials-status", async () => {
+  const creds = await readCredentials();
+  return {
+    hasGeminiKey: Boolean(creds.geminiApiKey),
+    hasOpenAiKey: Boolean(creds.openAiApiKey),
+  };
 });
 ipcMain.handle("jantra:license-status", () => licenseStatus());
 ipcMain.handle("jantra:activate-license", (_event, key: string) => activateLicense(key));

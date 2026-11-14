@@ -16,3 +16,15 @@ export function desktopDatabasePath(): string {
 export function desktopSecretPath(): string {
   return join(app.getPath("userData"), "gemini-key.bin");
 }
+
+export function desktopCredentialsPath(): string {
+  return join(app.getPath("userData"), "credentials.bin");
+}
+
+export function desktopProviderConfigPath(): string {
+  return join(app.getPath("userData"), "provider-config.json");
+}
+
+export function desktopLicensePath(): string {
+  return join(app.getPath("userData"), "license.json");
+}
