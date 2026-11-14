@@ -10,8 +10,10 @@ import {
   reloadModelCatalog,
   resolveCatalog,
   isCatalogModelAvailable,
+  checkCatalogModels,
   type CatalogModel,
 } from "./catalog.js";
+import { config } from "../config.js";
 
 describe("Model Catalog (T-026)", () => {
   it("builtin catalog passes schema validation", () => {
@@ -99,5 +101,75 @@ describe("Model Catalog (T-026)", () => {
     };
     // Under mock provider, models are available
     assert.equal(isCatalogModelAvailable(mockModel), true);
+  });
+
+  it("createServer with checkCatalogModels: false never invokes the catalog probe", async () => {
+    const { createServer } = await import("../server/app.js");
+    let fetchCalled = false;
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: unknown, init?: unknown) => {
+      fetchCalled = true;
+      return new Response(JSON.stringify({ data: [] }), { status: 200 });
+    }) as typeof fetch;
+
+    try {
+      const app = createServer({
+        loopbackToken: "test-token",
+        checkCatalogModels: false,
+      });
+      await app.ready();
+      assert.equal(fetchCalled, false, "Catalog probe must not be invoked when checkCatalogModels: false");
+      await app.close();
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it("checkCatalogModels with mocked endpoint validates configured model ids against available models", async () => {
+    const origFetch = globalThis.fetch;
+    const origConfig = { ...config };
+    let requestedUrl = "";
+
+    (config as any).provider = "openai-compatible";
+    (config as any).baseUrl = "https://mock.openrouter.test/api/v1";
+    (config as any).llmApiKey = "test-mock-key";
+
+    globalThis.fetch = (async (input: unknown) => {
+      requestedUrl = String(input);
+      return new Response(
+        JSON.stringify({
+          data: [{ id: "meta-llama/llama-3.3-70b-instruct" }],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }) as typeof fetch;
+
+    try {
+      const testCatalog: CatalogModel[] = [
+        {
+          id: "present-model",
+          label: "Present Model",
+          provider: "openai-compatible",
+          model: "meta-llama/llama-3.3-70b-instruct",
+          tier: "flash",
+          supportsTools: true,
+        },
+        {
+          id: "missing-model",
+          label: "Missing Model",
+          provider: "openai-compatible",
+          model: "unlisted-vendor/unlisted-model-v1",
+          tier: "pro",
+          supportsTools: true,
+        },
+      ];
+
+      const unlisted = await checkCatalogModels(testCatalog);
+      assert.equal(requestedUrl, "https://mock.openrouter.test/api/v1/models");
+      assert.deepEqual(unlisted, ["missing-model"], "Missing model should be detected as unlisted");
+    } finally {
+      globalThis.fetch = origFetch;
+      Object.assign(config, origConfig);
+    }
   });
 });

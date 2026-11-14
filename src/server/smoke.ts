@@ -15,6 +15,7 @@ const app = createServer({
   loopbackToken: token,
   clientId: "xolver",
   allowedOrigins: ["http://127.0.0.1:5173"],
+  checkCatalogModels: false,
 });
 
 const auth = { authorization: `Bearer ${token}`, host: "127.0.0.1:4317" };

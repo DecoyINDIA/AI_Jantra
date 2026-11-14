@@ -45,6 +45,7 @@ describe("Admin & Tenant Credential Routes (T-018)", () => {
         adminToken,
         store,
         apiKeyStore: store,
+        checkCatalogModels: false,
       });
 
       // No admin token -> 401
@@ -142,6 +143,7 @@ describe("Admin & Tenant Credential Routes (T-018)", () => {
         adminToken,
         store,
         apiKeyStore: store,
+        checkCatalogModels: false,
       });
 
       // PUT ops-profile
@@ -193,6 +195,7 @@ describe("Admin & Tenant Credential Routes (T-018)", () => {
         loopbackToken: "",
         store,
         apiKeyStore: store,
+        checkCatalogModels: false,
         apiKeys: [
           {
             key: "full_key_alpha",
