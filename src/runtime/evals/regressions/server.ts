@@ -29,7 +29,7 @@ export async function verifyRejectRoutePersistsReason(): Promise<void> {
   const clientId = `eval-reject-${Date.now()}`;
   const auth = { authorization: `Bearer ${token}`, host: "127.0.0.1:4317" };
   const store = new JsonProjectStore();
-  const app = createServer({ loopbackToken: token, clientId, store });
+  const app = createServer({ loopbackToken: token, clientId, store, checkCatalogModels: false });
   try {
     const created = await app.inject({
       method: "POST",
@@ -146,7 +146,7 @@ export function verifyRateLimiterFixedWindow(): void {
 export async function verifyRateLimiterProxyTrust(): Promise<void> {
   const token = "rate-limit-token";
   // Create a remote mode server which enables the rate limiter
-  const app = createServer({ loopbackToken: token, mode: "remote" });
+  const app = createServer({ loopbackToken: token, mode: "remote", checkCatalogModels: false });
 
   const res1 = await app.inject({
     method: "GET",
@@ -248,6 +248,7 @@ export async function verifyErrorEnvelopeNoLeak(): Promise<void> {
     mode: "local",
     loopbackToken: "test-token",
     store: storeStub,
+    checkCatalogModels: false,
   });
 
   try {
@@ -271,7 +272,7 @@ export async function verifyLeadRunLinkAndWebhooks(): Promise<void> {
   const token = "lead-webhook-token";
   const auth = { authorization: `Bearer ${token}`, host: "127.0.0.1:4317" };
   const store = new JsonProjectStore();
-  const app = createServer({ loopbackToken: token, store });
+  const app = createServer({ loopbackToken: token, store, checkCatalogModels: false });
 
   try {
     // 1. Create a run for client-alpha
@@ -323,6 +324,7 @@ export async function verifyLeadRunLinkAndWebhooks(): Promise<void> {
       loopbackToken: "",
       apiKeys: [{ key: "beta-key", clientId: "client-beta", subject: "beta" }],
       store,
+      checkCatalogModels: false,
     });
     try {
       const crossTenantLead = await appBeta.inject({
@@ -354,6 +356,7 @@ export async function verifyPromoteIntakeToPlan(): Promise<void> {
     loopbackToken: token,
     clientId,
     store,
+    checkCatalogModels: false,
   });
 
   try {
@@ -441,6 +444,7 @@ export async function verifyPromoteIntakeToPlan(): Promise<void> {
       loopbackToken: "",
       apiKeys: [{ key: "pub-key", clientId, subject: "web" }],
       store,
+      checkCatalogModels: false,
     });
     try {
       const publicPromote = await remoteApp.inject({
@@ -462,7 +466,7 @@ export async function verifyClientReadyExport(): Promise<void> {
   const clientId = `eval-export-${Date.now()}`;
   const auth = { authorization: `Bearer ${token}`, host: "127.0.0.1:4317" };
   const store = new JsonProjectStore();
-  const app = createServer({ loopbackToken: token, clientId, store });
+  const app = createServer({ loopbackToken: token, clientId, store, checkCatalogModels: false });
 
   try {
     const project = createProject({
@@ -622,6 +626,7 @@ export async function verifySqliteMigrationsAndStores(): Promise<void> {
     adminToken,
     clientId,
     store,
+    checkCatalogModels: false,
   });
 
   try {
@@ -738,6 +743,7 @@ export async function verifyAsyncStageExecution(): Promise<void> {
     loopbackToken: "",
     store,
     jobPollIntervalMs: 20,
+    checkCatalogModels: false,
   });
 
   try {
@@ -850,6 +856,7 @@ export async function verifyModelCatalogFromConfig(): Promise<void> {
     const app = createServer({
       mode: "local",
       loopbackToken: "test-token",
+      checkCatalogModels: false,
     });
 
     const res = await app.inject({
@@ -898,6 +905,7 @@ export async function verifyLeadRetentionAndDeletion(): Promise<void> {
     mode: "remote",
     loopbackToken: "",
     store,
+    checkCatalogModels: false,
   });
 
   try {
@@ -1142,6 +1150,7 @@ export async function verifyDesktopLicensingEnforcement(): Promise<void> {
     store,
     licenseManager,
     licenseEnforcement: true,
+    checkCatalogModels: false,
   });
 
   const ownerPrivateKey = testKeyPair.privateKey;

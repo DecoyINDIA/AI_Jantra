@@ -50,6 +50,7 @@ export interface CreateServerOptions {
   jobPollIntervalMs?: number;
   licenseManager?: LicenseManager;
   licenseEnforcement?: boolean;
+  checkCatalogModels?: boolean;
 }
 
 export interface StartedLocalApi {
@@ -196,7 +197,11 @@ export function createServer(options: CreateServerOptions): FastifyInstance {
 
   registerAgentRoutes(app, registry);
   registerModelRoutes(app);
-  void checkCatalogModels();
+  const shouldCheckCatalog =
+    options.checkCatalogModels ?? (options.mode === "remote");
+  if (shouldCheckCatalog) {
+    void checkCatalogModels();
+  }
   registerRunRoutes(app, { clientId, registry, store, jobWorker });
   registerInteractionRoutes(app, { clientId, store, jobWorker });
   registerArtifactRoutes(app, { clientId, store });
@@ -277,6 +282,7 @@ export async function startRemoteApi(options: Omit<CreateServerOptions, "loopbac
     mode: "remote",
     loopbackToken: "",
     apiKeys: options.apiKeys,
+    checkCatalogModels: options.checkCatalogModels ?? true,
   });
   const address = await app.listen({ host: options.host, port: options.port });
   return {

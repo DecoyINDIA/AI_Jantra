@@ -28,7 +28,7 @@ export async function verifyClientDailyIdeationBudget(): Promise<void> {
     "Daily ideation spend did not reset by UTC day key.",
   );
   const auth = { authorization: `Bearer ${token}`, host: "127.0.0.1:4317" };
-  const app = createServer({ loopbackToken: token, clientId, store });
+  const app = createServer({ loopbackToken: token, clientId, store, checkCatalogModels: false });
   try {
     const blocked = await app.inject({
       method: "POST",
@@ -70,7 +70,7 @@ export async function verifyClientDailyIdeationBudget(): Promise<void> {
   }
 
   const freshClientId = `${clientId}-fresh`;
-  const freshApp = createServer({ loopbackToken: token, clientId: freshClientId, store });
+  const freshApp = createServer({ loopbackToken: token, clientId: freshClientId, store, checkCatalogModels: false });
   try {
     const allowed = await freshApp.inject({
       method: "POST",
@@ -154,7 +154,7 @@ export async function verifyGatewayDailyBudget(): Promise<void> {
   const token = "gateway-budget-token";
   const clientId = `eval-gateway-${Date.now()}`;
   const store = new JsonProjectStore();
-  const app = createServer({ loopbackToken: token, clientId, store });
+  const app = createServer({ loopbackToken: token, clientId, store, checkCatalogModels: false });
 
   const auth = { authorization: `Bearer ${token}` };
 

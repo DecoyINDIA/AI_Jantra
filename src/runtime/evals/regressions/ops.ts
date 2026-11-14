@@ -326,6 +326,7 @@ export async function verifyNoSecretsInResponsesOrDisk(): Promise<void> {
       adminToken,
       store,
       apiKeyStore: store,
+      checkCatalogModels: false,
       apiKeys: [
         { key: "key_alpha", clientId: "tenant-alpha", subject: "user-alpha" },
         { key: "key_beta", clientId: "tenant-beta", subject: "user-beta" },

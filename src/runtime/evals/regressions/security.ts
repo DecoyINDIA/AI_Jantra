@@ -188,6 +188,7 @@ export async function verifyPublicKeyScope(): Promise<void> {
     mode: "remote",
     loopbackToken: "",
     store,
+    checkCatalogModels: false,
     apiKeys: [
       { key: "pub-key", clientId: "t1", subject: "web" },
       { key: "full-key", clientId: "t1", subject: "ops" },

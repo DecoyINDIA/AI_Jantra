@@ -81,6 +81,7 @@ async function startApi(): Promise<ApiHandle> {
     store: new SqliteProjectStore(desktopDatabasePath()),
     adminToken: process.env.JANTRA_ADMIN_TOKEN,
     licenseEnforcement: true,
+    checkCatalogModels: false,
   });
 }
 
