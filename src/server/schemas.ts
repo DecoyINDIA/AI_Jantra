@@ -164,6 +164,115 @@ export const createLeadBodySchema = z.object({
     .optional(),
 });
 
+export const activateLicenseBodySchema = z.object({
+  token: z.string().trim().min(1).max(10_000),
+});
+
+export const adminClientConnectorParamsSchema = z.object({
+  clientId: z
+    .string()
+    .trim()
+    .min(1)
+    .max(API_KEY_CLIENT_ID_MAX_CHARS)
+    .regex(
+      /^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/,
+      "clientId must start with a letter or digit and use only letters, digits, underscore or hyphen.",
+    ),
+  connector: z
+    .string()
+    .trim()
+    .min(1)
+    .max(64)
+    .regex(/^[A-Za-z0-9_-]+$/, "connector must use slug-safe characters."),
+});
+
+export const adminClientParamsSchema = z.object({
+  clientId: z
+    .string()
+    .trim()
+    .min(1)
+    .max(API_KEY_CLIENT_ID_MAX_CHARS)
+    .regex(
+      /^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/,
+      "clientId must start with a letter or digit and use only letters, digits, underscore or hyphen.",
+    ),
+});
+
+export const connectorParamsSchema = z.object({
+  connector: z
+    .string()
+    .trim()
+    .min(1)
+    .max(64)
+    .regex(/^[A-Za-z0-9_-]+$/, "connector must use slug-safe characters."),
+});
+
+export const setConnectorCredentialsBodySchema = z.object({
+  credentials: z.record(z.string().trim().min(1).max(128), z.string().max(4096)),
+});
+
+export const setOpsProfileBodySchema = z.object({
+  businessName: z.string().trim().min(1).max(200),
+  description: z.string().trim().max(2000).optional(),
+  currency: z.string().trim().max(10).optional(),
+  fiscalCalendar: z.string().trim().max(100).optional(),
+  knownEvents: z
+    .array(
+      z.object({
+        name: z.string().trim().min(1).max(100),
+        date: z.string().trim().min(4).max(30),
+        type: z.enum(["promo", "holiday", "one-off"]),
+        description: z.string().trim().max(500).optional(),
+      }),
+    )
+    .optional(),
+  kpiSpec: z.object({
+    kpis: z.array(
+      z.object({
+        id: z.string().trim().min(1).max(64),
+        name: z.string().trim().min(1).max(128),
+        formula: z.string().trim().min(1).max(1000),
+        minHistoryPeriods: z.number().int().min(1),
+        target: z.number().optional(),
+        unit: z.string().trim().max(32).optional(),
+      }),
+    ),
+    anomalyConfig: z
+      .object({
+        sensitivity: z.enum(["low", "medium", "high"]).optional(),
+        suppressionList: z.array(z.string().trim()).optional(),
+        alertBudget: z.number().int().positive().optional(),
+      })
+      .optional(),
+  }),
+  binding: z.object({
+    connectors: z.array(
+      z.object({
+        id: z.string().trim().min(1).max(64),
+        type: z.enum(["stripe", "shopify", "quickbooks", "xero", "csv"]),
+        role: z.enum(["sales", "expenses", "subscriptions", "invoices"]),
+        config: z.record(z.string(), z.any()).default({}),
+      }),
+    ),
+    overlapRules: z
+      .array(
+        z.object({
+          primarySource: z.string().trim(),
+          secondarySource: z.string().trim(),
+          action: z.enum(["dedup-by-id", "keep-both"]),
+        }),
+      )
+      .default([]),
+  }),
+  delivery: z
+    .object({
+      channel: z.enum(["none", "webhook"]).default("none"),
+      webhookUrl: z.string().url().max(2048).optional(),
+      webhookSecret: z.string().trim().max(512).optional(),
+    })
+    .optional(),
+});
+
 export function parseWith<T>(schema: z.ZodType<T>, value: unknown): T {
   const parsed = schema.safeParse(value);
   if (!parsed.success) {
