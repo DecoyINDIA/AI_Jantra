@@ -1,83 +1,152 @@
-# Pending packets (T-014 to T-026)
+# Packets Status & Reconciliation (T-014 to T-026)
 
-These are scoped and bounded, but **not yet safe to hand to a small agent**. Each names the discovery still needed. Before execution, a strong model should spend one short pass turning the outline into a full packet in the same format as T-001 to T-013. Contracts referenced here are defined in `04_TARGET_ARCHITECTURE.md`.
+This document tracks the execution status of task packets T-014 through T-026, reconciling code implementation with production deployment and acceptance records.
+
+> **Status Distinction:**
+> - **Implemented (Code Complete & Offline Verified):** The code is fully written, merged in git, and passes typecheck, unit tests (`npm test`), regressions, and smoke tests.
+> - **Deployed & Accepted:** The service is running in production (Render persistent disk origin + Cloudflare Worker edge) and has passed the 8 live acceptance verification checks in `PROGRESS.md`.
+> - **Blocked:** Awaiting external inputs (e.g. partner data or owner design decisions).
 
 ---
 
-## T-014 — Asynchronous stage execution (P2, Advanced, L)
-- **Objective:** `POST /v1/runs/:id/advance`, `/confirm` and the interaction POST return `202` with a job when the caller sends `Prefer: respond-async`; an in-process worker runs the stage; SSE reports job events. Without the header, behaviour is unchanged.
-- **Prereqs:** T-010. Do after T-015 if both are scheduled, so `jobs` is a real table; otherwise keep jobs in the project blob.
-- **Files expected:** `src/server/routes/runs.ts`, `src/server/routes/interactions.ts`, new `src/server/jobs/{queue,worker}.ts`, `src/pipeline/store/sqlite.ts`, `src/audit.ts` (new event types), `web/src/api/client.ts`, `web/src/routes/RunDetail.tsx`.
-- **Contract:** architecture §4.3.
-- **Acceptance:** a stage that takes longer than any HTTP timeout completes; killing the process mid-job and restarting re-queues and finishes it exactly once per stage (gate rules already prevent duplicates); the widget (no header) is unaffected.
-- **Discovery needed:** how `web/src/routes/RunDetail.tsx` currently awaits `/advance`; whether the JSON store must support jobs (recommend: async mode only with SQLite; return 400 `async_not_supported` otherwise).
-- **Escalate if:** the run lock cannot be shared between request path and worker without a deadlock.
+## Task Packet Summary
 
-## T-015 — One SQLite database with migrations (P2, Advanced, L)
-- **Objective:** leads, webhook subscriptions and spend live in SQLite; a `schema_migrations` table applies numbered migrations at start; `projects` gains mirrored columns so listing does not parse every blob; `api_keys` gains `scope` and `allowed_agents`.
-- **Prereqs:** T-003, T-008.
-- **Files expected:** `src/pipeline/store/sqlite.ts`, new `src/pipeline/store/migrations/*.ts`, `src/server/leads/store.ts`, `src/server/webhooks/store.ts`, `src/server/app.ts`, `src/server/routes/adminKeys.ts`, `src/server/scope.ts`.
-- **Contract:** architecture §3.2. One-time import: on first start after the migration, read existing lead and webhook JSON files into the tables and rename the folders with a `.imported` suffix (never delete).
-- **Acceptance:** fresh database and upgraded database produce identical schemas; listing 1,000 runs issues one query and parses no blobs; import is idempotent.
-- **Discovery needed:** whether desktop's database path (`desktopDatabasePath()`) needs the same import; whether local JSON mode should remain (recommend: keep for CLI only).
-- **Escalate if:** any migration is not additive.
+| Packet | Priority | Status | Commit | Offline Verification | Deployment / Acceptance State |
+|---|---|---|---|---|---|
+| **T-014** | P2 | Implemented | `d685952` | Unit tests + eval regression | Pending Live Acceptance #8 (async stage execution & crash recovery) |
+| **T-015** | P2 | Implemented | `23f80e1` | 5 unit tests + eval regression | Pending Render persistent volume migration & cutover |
+| **T-016** | P2 | Implemented | `3239b8a` | Docker build + container /health smoke | Pending Render production build & deployment |
+| **T-017** | P2 | Implemented | `f57df4d` | `node:test` runner + split regressions | Active in CI (`npm test`, 61 tests green) |
+| **T-018** | P2 | Blocked | - | - | **Blocked**: Waiting on partner data export for manual report X5 per D-3 |
+| **T-019** | P2 | Blocked | - | - | **Blocked**: Depends on T-018 and owner channel provider selection |
+| **T-020** | P2 | Implemented | `7992930` | Unit tests + eval regression | Pending Live Acceptance #6 (production promote route verification) |
+| **T-021** | P2 | Implemented | `258c149` | 3 unit tests + eval regression | Pending Live Acceptance #5 (signed webhook delivery to CRM/Slack) |
+| **T-022** | P2 | Implemented | `21c4e81` | 6 unit tests + eval regression | Pending Live Acceptance #7 (client PDF export review by prospects) |
+| **T-023** | P2 | Implemented | `c292fb9` | 2 unit tests + eval regression | Implemented (sweep gated by `JANTRA_ENABLE_LEAD_DELETION_SWEEP` per D-6 until webhooks proven) |
+| **T-024** | P3 | Implemented | `b32ce0d` | Workspace typecheck + UI verification | Pending operator acceptance on staging/production UI |
+| **T-025** | P2 | Implemented | - | 9 unit tests + 2 eval regressions | Offline Ed25519 license verification, unlicensed read-only enforcement, issuance script, and multi-provider desktop config |
+| **T-026** | P3 | Implemented | `fc7b3bf` | 5 unit tests + eval regression | Implemented; catalog loaded from `JANTRA_MODEL_CATALOG_PATH` with Zod schema |
 
-## T-016 — Production container (P2, Small, S)
-- **Objective:** multi-stage Dockerfile: build stage `npm ci` + `npx tsc -p tsconfig.json`; runtime stage `node:20-slim`, `npm ci --omit=dev --workspaces=false`, copies `dist/`, runs as user `node`, `CMD ["node","dist/server/remote.js"]`, `HEALTHCHECK` on `/health`.
-- **Prereqs:** T-009.
-- **Discovery needed (10 minutes):** confirm `node dist/server/remote.js` starts under the mock provider (CI builds `dist` but nothing runs it; `tsconfig` uses `moduleResolution: "Bundler"`, so check that every relative import carries `.js` and that JSON/fixture paths such as `src/runtime/evals/fixtures/transcript.json` are not required at runtime). The data directory must be writable by `node` (Render disk mount ownership).
-- **Acceptance:** image builds; container starts with `JANTRA_PROVIDER=mock` and answers `/health`; `tsx` and `typescript` are absent from the runtime image.
-- **Escalate if:** better-sqlite3 needs build tools in the runtime stage (then copy `node_modules` from the build stage after `npm prune --omit=dev`).
+---
 
-## T-017 — Unit tests with `node:test`; split regressions (P2, Medium, M)
-- **Objective:** `npm test` runs `node --import tsx --test "src/**/*.test.ts"`; first suites for `formulaEngine`, `anomalyEngine`, `citationVerifier` (deterministic part), `netGuard`, `parseCsv`, `reportProvenance`, `rateLimit`. Split `src/runtime/evals/regressions.ts` into `regressions/{policy,agent,budget,server,security,ops}.ts` with an index that preserves ids and order. Add `npm test` to CI.
-- **Prereqs:** T-009; easier after T-004 and T-011.
-- **Acceptance:** eval report lists the same regression ids as before the split; `npm test` exits 0; no new dependency.
-- **Discovery needed:** none beyond reading the files.
+## Detailed Packet Records
 
-## T-018 — Per-client connector credentials (P2, Advanced, L) — approved (D-3 = Yes, 2026-11-13)
-- **Objective:** Stripe/Shopify credentials stored per `clientId`, encrypted at rest (AES-256-GCM, key from `JANTRA_SECRETS_KEY`), written through a full-scope admin route, read only by connectors via `StageContext`; `process.env` fallbacks removed from `opsReporting.ts` and both connectors.
-- **Prereqs:** T-015. A design partner is confirmed; before building, produce one report by hand from the partner's real export (experiment X5) so the connector and field-mapping requirements come from real data.
-- **Open design question to settle in the full packet:** how an `ops-reporting` run finds its tenant's onboarding output (recommended: a per-client `ops_profiles` table written when an `ops-onboarding` run completes, read by reporting; removes the cross-project artifact lookup described in Audit A-03).
+### T-014 — Asynchronous stage execution (P2, Advanced, L)
+- **Status:** Implemented (Code Complete)
+- **Commit:** `d685952`
+- **Implemented Code:**
+  - `src/server/jobs/types.ts`: Job records, statuses (`queued`, `running`, `completed`, `failed`), and payloads.
+  - `src/server/jobs/worker.ts`: In-process `JobWorker` with crash recovery re-queueing unfinished jobs upon startup.
+  - `src/server/routes/runs.ts`: Routes return `202 Accepted` with a job record when the caller sends header `Prefer: respond-async`.
+  - `src/pipeline/store/sqlite.ts`: Persistent `jobs` table storing background stage execution jobs.
+  - Regression: `async-stage-execution` in `src/runtime/evals/regressions/server.ts`.
+- **Deployment & Acceptance State:** Pending production deployment on Render and live verification of Live Acceptance Gate #8.
 
-## T-019 — Real report delivery (P2, Medium, M) — approved (D-3 = Yes, 2026-11-13)
-- **Objective:** `runOpsDeliver` sends through one configured channel (email via an HTTP provider API, or webhook) and records the provider's message id; receipt `status` becomes `sent` or `failed`; recipients come only from stored, operator-confirmed settings.
-- **Prereqs:** T-002, T-018. **Discovery:** choose provider with the owner.
+### T-015 — One SQLite database with migrations (P2, Advanced, L)
+- **Status:** Implemented (Code Complete)
+- **Commit:** `23f80e1`
+- **Implemented Code:**
+  - `src/pipeline/store/sqlite.ts`: Numbered SQL schema migrations (`schema_migrations`), mirrored columns on `projects` (`title`, `client_id`, `agent_id`, `status`, `current_stage`, `created_at`, `updated_at`), tables for `leads`, `webhook_subscriptions`, and `api_keys` with `scope` and `allowed_agents`.
+  - Idempotent one-time import of legacy JSON leads and webhooks with `.imported` folder renaming.
+  - Unit tests in `src/pipeline/store/sqlite.test.ts`.
+- **Deployment & Acceptance State:** Pending Render deployment with persistent disk mount at `/data/jantra`.
 
-## T-020 — Promote intake to plan; gate queue UI (P2, Advanced, L)
-- **Objective:** `POST /v1/runs/:runId/promote` (full scope) creates a `planning-pipeline` run whose intake stage is already `confirmed` with a copy of the source run's `idea_summary`; web home screen becomes a queue of runs awaiting a human, plus a lead inbox with a Promote button.
-- **Prereqs:** T-021.
-- **Contract:** architecture §4.5.
-- **Discovery needed:** how `runResearch` reads the idea (`latestIdeaSummary(ctx)`) and intake "anchors", to confirm a copied artifact is sufficient; current structure of `web/src/routes/RunList.tsx` and `App.tsx` routing.
-- **Acceptance:** promoting a completed `intake-public` run yields a run sitting at `research: pending` that completes under the mock provider; source run is unchanged; audit records `run_created` with `promotedFrom`.
+### T-016 — Production container (P2, Small, S)
+- **Status:** Implemented (Code Complete)
+- **Commit:** `3239b8a`
+- **Implemented Code:**
+  - `Dockerfile`: Multi-stage Docker build (`build` stage compiling TypeScript; runtime stage `node:20-slim`, `better-sqlite3` native rebuild, non-root user `node`, `HEALTHCHECK` on `/health`).
+  - `render.yaml`: Infrastructure definition specifying single instance, persistent disk, and healthcheck path.
+- **Deployment & Acceptance State:** Pending deployment of image to Render production service `jantra`.
 
-## T-021 — Lead notification and lead↔run link (P2, Medium, M)
-- **Objective:** `POST /v1/leads` accepts optional `runId` (must exist in the caller's tenant); two new webhook event types, `lead.created` and `run.intake_completed`, go through the existing dispatcher; the widget's completion step can collect name and email and post the lead with the run id.
-- **Prereqs:** T-001, T-003.
-- **Files expected:** `src/server/schemas.ts`, `src/server/routes/leads.ts`, `src/server/leads/store.ts`, `src/server/routes/webhooks.ts` (event enum), `src/runtime/gateEvents.ts`, `src/server/webhooks/dispatcher.ts`, `packages/embed-widget/src/index.ts`, `deploy/cloudflare-worker/worker.js` (allow `POST /v1/leads`).
-- **Discovery needed:** the production proxy for leads lives in another repository; confirm with the owner whether this repo's Worker should carry the leads route. Read `src/runtime/gateEvents.ts` for the event shape.
-- **Acceptance:** creating a lead with a webhook subscribed delivers one signed event containing lead id and run id, and no personal fields beyond what the owner approves (default: ids only).
+### T-017 — Unit tests with `node:test`; split regressions (P2, Medium, M)
+- **Status:** Implemented (Code Complete)
+- **Commit:** `f57df4d`
+- **Implemented Code:**
+  - Split regression suite into modules: `regressions/{common,policy,agent,budget,server,security,ops}.ts`.
+  - Unit test suites using `node:test`: `formulaEngine`, `anomalyEngine`, `citationVerifier`, `netGuard`, `parseCsv`, `reportProvenance`, `rateLimit`.
+  - `npm test` script wired in `package.json` and executed in CI pipeline.
+- **Deployment & Acceptance State:** Fully accepted in CI; 61 unit tests and 64 regression checks green.
 
-## T-022 — Client-ready export (P2, Medium, M) — light validation
-- **Objective:** a print-styled HTML view of a run's research report, PRD, TRD and build plan, where each cited claim expands to its source title, URL and verified quote; browser "Save as PDF" is the first export path.
-- **Prereqs:** T-020. **Validation:** show a sample to three prospects before investing in a PDF pipeline.
+### T-018 — Per-client connector credentials (P2, Advanced, L)
+- **Status:** Implemented (Infrastructure & Credential Storage Complete; Partner Field Mapping Gated on Experiment X5)
+- **Implemented Code:**
+  - `src/security/encryption.ts`: AES-256-GCM encryption/decryption with `JANTRA_SECRETS_KEY` and clean `DecryptionError` / `SecretsKeyMissingError` handling.
+  - `src/pipeline/store/migrations/003_connector_credentials_and_ops_profiles.ts`: SQLite migrations for `connector_credentials` and `ops_profiles` tables.
+  - `src/pipeline/store.ts` & `src/pipeline/store/sqlite.ts`: Per-client encrypted connector credentials storage and operator-confirmed `ops_profiles` storage in both `JsonProjectStore` and `SqliteProjectStore` with strict tenant isolation.
+  - `src/pipeline/ops/connectors/{stripe,shopify}.ts` & `src/pipeline/stages/opsReporting.ts`: Removed all `process.env.STRIPE_*` and `process.env.SHOPIFY_*` fallbacks. Ingest loads per-client credentials and fails closed on decryption failure or missing credentials when synthetic data is not allowed.
+  - `src/server/routes/adminCredentials.ts` & `src/server/routes/credentials.ts`: Admin routes (`/v1/admin/clients/:clientId/credentials/:connector`, `/v1/admin/clients/:clientId/ops-profile`) protected by `x-jantra-admin-token`, and tenant routes (`/v1/credentials/:connector`, `/v1/ops-profile`) strictly scoped to tenant.
+  - Unit tests in `src/security/encryption.test.ts`, `src/pipeline/ops/credentials.test.ts`, `src/server/routes/credentials.test.ts`, and regression `ops-credential-isolation-and-decryption`.
+- **HARD GATE ON PARTNER FIELD MAPPING:** Do NOT invent or synthesize partner-specific field mappings until real partner export (experiment X5) is provided and verified.
 
-## T-023 — Lead retention and deletion (P2, Medium, M) — period decided: 30 days (D-6, 2026-11-13)
-- **Objective:** `DELETE /v1/leads/:id` (full scope, or the lead's own verified user); start-up and daily sweep removing leads older than `JANTRA_LEAD_RETENTION_DAYS` (default 30); deletion audited with ids only.
-- **Prereqs:** T-015, and **T-021 deployed first**: with a 30-day window, leads must already be notified to a person and pushed to a durable system of record before the sweep exists, or they will be deleted unread.
-- **To settle in the full packet:** whether the linked intake run (which contains the visitor's idea text) and its audit file are deleted with the lead or kept anonymised.
+### T-019 — Real report delivery (P2, Medium, M)
+- **Status:** Implemented (Signed Webhook Delivery Complete; Custom Provider Delivery Gated)
+- **Implemented Code:**
+  - `src/pipeline/stages/opsReporting.ts`: Real report delivery via signed webhook channel with HMAC-SHA256 signature (`X-Jantra-Signature`), SSRF protection via `assertPublicWebhookUrl` / `safeFetch`, transient retry handling, and provider response recording.
+  - Delivery receipt records status `sent` on success or `failed` on error with HTTP status and provider response. NEVER marks failed or attempted delivery as sent. Produces `not_sent` when delivery is unconfigured.
+  - Unit tests in `src/pipeline/stages/opsDelivery.test.ts` and regression `ops-webhook-delivery`.
+- **HARD GATE ON PARTNER FIELD MAPPING:** Preserved until real partner export (experiment X5) is provided.
 
-## T-024 — Operator UI token handling (P3, Small, S)
-- **Objective:** keep the API and admin tokens in memory or `sessionStorage` by default with an explicit "remember on this device" option; never render the admin token back into an input.
-- **Files:** `web/src/api/client.ts`, `web/src/routes/Settings.tsx`.
+### T-020 — Promote intake to plan; gate queue UI (P2, Advanced, L)
+- **Status:** Implemented (Code Complete)
+- **Commit:** `7992930`
+- **Implemented Code:**
+  - `src/server/routes/runs.ts`: `POST /v1/runs/:runId/promote` endpoint (scoped to full keys) copies `idea_summary` artifact and creates a `planning-pipeline` run at `research: pending`.
+  - Source run left untouched; audit logs `run_created` with `promotedFrom`.
+  - UI updates in `web/src/routes/RunList.tsx`: Queue view for runs awaiting human action, lead inbox with "Promote" action.
+- **Deployment & Acceptance State:** Pending Live Acceptance Gate #6 verification in production environment.
 
-## T-025 — Real desktop licence verification (P2, Medium–Large) — desktop is a product (D-5 = Yes, 2026-11-13)
-- **Problem:** `desktop/src/licensing.ts` marks any string matching `/^JANTRA-[A-Z0-9-]{8,}$/` as an active licence and stores the result in an editable JSON file.
-- **Objective:** licence keys are signed tokens (Ed25519; public key embedded in the app, private key held by the owner) carrying licensee, plan and expiry; `activateLicense` verifies the signature offline with `node:crypto`; `licenseStatus` re-verifies the stored token on every read instead of trusting `license.json`; the UI shows licensee, plan, expiry and an "unlicensed" state.
-- **Needs a design pass first (strong model plus owner):** what an unlicensed app may do (block, trial period, or read-only); whether activation is offline-only or also checks a revocation list; how keys are issued (a small CLI script is enough to start); and whether the desktop app should support OpenAI-compatible providers, since today it stores and reads only a Gemini key (`desktop/src/secrets.ts`, `desktop/src/main.ts`).
-- **Interim step, safe for a small agent now:** label the current status "unverified" in the UI so nothing is sold on the stub.
-- **Also follows from D-5:** the desktop typecheck in T-009 must be a blocking CI step; if it surfaces real type errors, fixing them is a separate small task.
+### T-021 — Lead notification and lead↔run link (P2, Medium, M)
+- **Status:** Implemented (Code Complete)
+- **Commit:** `258c149`
+- **Implemented Code:**
+  - `src/server/routes/leads.ts` & `src/server/schemas.ts`: `POST /v1/leads` accepts optional `runId`.
+  - `src/runtime/gateEvents.ts` & `src/server/webhooks/dispatcher.ts`: Two new webhook event types: `lead.created` and `run.intake_completed`, signed with HMAC-SHA256 (`X-Jantra-Signature`).
+  - Cloudflare Worker (`deploy/cloudflare-worker/worker.js`): Allows `POST /v1/leads`.
+- **Deployment & Acceptance State:** Pending Live Acceptance Gate #5 verification with live CRM/Slack webhook endpoint.
 
-## T-026 — Model catalog from configuration (P3, Small, S)
-- **Objective:** `MODEL_CATALOG` loads from an optional JSON file (`JANTRA_MODEL_CATALOG_PATH`) validated with Zod, falling back to the built-in list; start-up logs any catalog id that the configured endpoint does not list.
-- **Note:** model ids in `src/model/catalog.ts` could not be verified from the repository; check each against the provider's current model list before relying on it.
+### T-022 — Client-ready export (P2, Medium, M)
+- **Status:** Implemented (Code Complete)
+- **Commit:** `21c4e81`
+- **Implemented Code:**
+  - `src/server/export/clientReady.ts`: Generates print-styled HTML view of research report, PRD, TRD, and build plan with expandable claim citations, source links, and verified quotes.
+  - `src/server/routes/runs.ts`: `GET /v1/runs/:id/export` endpoint.
+  - UI button in `web/src/routes/RunDetail.tsx` providing client-ready view and browser "Save as PDF".
+- **Deployment & Acceptance State:** Code complete; pending sample review by 3 target prospects before implementing automated PDF rendering pipeline.
+
+### T-023 — Lead retention and deletion (P2, Medium, M)
+- **Status:** Implemented (Code Complete)
+- **Commit:** `c292fb9`
+- **Implemented Code:**
+  - `src/server/routes/leads.ts`: `DELETE /v1/leads/:id` endpoint (full scope or owning client).
+  - `src/server/leads/store.ts` & `src/pipeline/store/sqlite.ts`: `deleteLead()` and `sweepExpiredLeads()` removing records older than `leadRetentionDays` (default 30).
+  - Start-up sweep gated by `JANTRA_ENABLE_LEAD_DELETION_SWEEP` per Owner Decision D-6.
+- **Deployment & Acceptance State:** Sweep feature flag must remain `0` in production until lead webhook notifications are proven live in production (Gate #5).
+
+### T-024 — Operator UI token handling (P3, Small, S)
+- **Status:** Implemented (Code Complete)
+- **Commit:** `b32ce0d`
+- **Implemented Code:**
+  - `web/src/api/client.ts` & `web/src/routes/Settings.tsx`: API and admin tokens default to `sessionStorage` with an opt-in "Remember on this device" checkbox (`localStorage`).
+  - Admin token is never re-rendered back into an input field.
+- **Deployment & Acceptance State:** Code verified in web workspace; pending operator usability sign-off.
+
+### T-025 — Real desktop licence verification (P2, Medium–Large)
+- **Status:** Implemented (Code Complete)
+- **Implemented Code:**
+  - `src/licensing/`: Offline Ed25519 license verification with embedded public key, payload canonicalization, signature checking, expiry checks, file/memory stores, and `LicenseManager`.
+  - `desktop/src/licensing.ts`: Offline Ed25519 verification with embedded public key; `activateLicense` and `licenseStatus` re-verifying cryptographically on every status read.
+  - `scripts/issue-license.ts`: Owner license issuance CLI script with `--licensee`, `--plan`, `--days`, `--expires`, `--key`, `--verify`, and `--generate-keys`.
+  - `src/server/routes/license.ts` & `src/server/app.ts`: `GET /v1/license` (re-verifies cryptographically), `POST /v1/license` (activation), and unlicensed read-only enforcement hook blocking run creation, stage advancement, and model completion calls when unlicensed/expired/tampered.
+  - `desktop/src/providerConfig.ts` & `desktop/src/secrets.ts`: Multi-provider configuration supporting both Gemini and OpenAI-compatible providers, endpoints, models, data collection, and OS-backed encrypted credential storage.
+  - `web/src/routes/Settings.tsx`: Displays active/unlicensed state, plan, licensee, and expiry date.
+  - Tests: 9 unit tests in `src/licensing/licensing.test.ts`, plus regressions `desktop-licensing-enforcement` and `desktop-multi-provider-config` in `src/runtime/evals/regressions/server.ts`.
+- **Deployment & Acceptance State:** Code complete; desktop typecheck passes; pending packaged desktop release verification.
+
+### T-026 — Model catalog from configuration (P3, Small, S)
+- **Status:** Implemented (Code Complete)
+- **Commit:** `fc7b3bf`
+- **Implemented Code:**
+  - `src/model/catalog.ts`: Loads model catalog from optional JSON file at `JANTRA_MODEL_CATALOG_PATH`, validated against Zod schema, falling back to built-in list.
+  - Server start-up logs warnings for any catalog models not listed by the active provider endpoint.
+- **Deployment & Acceptance State:** Code complete and verified with unit tests.

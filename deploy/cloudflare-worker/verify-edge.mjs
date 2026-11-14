@@ -1,9 +1,18 @@
-const baseUrl = (process.env.JANTRA_EDGE_URL ?? "http://127.0.0.1:8787").replace(/\/$/, "");
+import http from "node:http";
+import os from "node:os";
+import fs from "node:fs";
+import path from "node:path";
+
+let baseUrl = (process.env.JANTRA_EDGE_URL ?? "http://127.0.0.1:8787").replace(/\/$/, "");
 const allowedOrigin = process.env.JANTRA_EDGE_TEST_ORIGIN ?? "http://localhost:5176";
 const badOrigin = process.env.JANTRA_EDGE_BAD_ORIGIN ?? "https://blocked.example";
 const expectRateLimit = process.env.JANTRA_EDGE_EXPECT_RATE_LIMIT !== "0";
 const rateLimitAttempts = Number(process.env.JANTRA_EDGE_RATE_LIMIT_ATTEMPTS ?? "25");
 const testIp = `198.51.100.${Math.floor(Math.random() * 200) + 1}`;
+const isLocal =
+  process.argv.includes("--local") ||
+  process.env.JANTRA_EDGE_LOCAL === "1" ||
+  !process.env.JANTRA_EDGE_URL;
 
 const results = [];
 
@@ -50,7 +59,98 @@ async function expectBlocked(label, response) {
   return body.json;
 }
 
+async function startLocalHarness() {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "jantra-edge-verify-"));
+  process.env.JANTRA_DATA_DIR = tmpDir;
+  process.env.JANTRA_PROVIDER = "mock";
+  process.env.JANTRA_MOCK_FIXTURE = path.resolve("src/runtime/evals/fixtures/transcript.json");
+
+  const { createServer } = await import("../../src/server/app.js");
+  const { JsonProjectStore } = await import("../../src/pipeline/store.js");
+  const { parseApiKeyRecords } = await import("../../src/server/auth/apiKeys.js");
+  const worker = (await import("./worker.js")).default;
+
+  const originApiKey = "edge-test-key";
+  const store = new JsonProjectStore(tmpDir);
+  const originServer = createServer({
+    mode: "remote",
+    loopbackToken: "unused-token",
+    apiKeys: parseApiKeyRecords(`${originApiKey}:xolver:web`),
+    store,
+  });
+  await originServer.listen({ host: "127.0.0.1", port: 0 });
+  const originPort = originServer.server.address().port;
+  const originUrl = `http://127.0.0.1:${originPort}`;
+
+  const counts = new Map();
+  const workerEnv = {
+    JANTRA_ORIGIN: originUrl,
+    ALLOWED_ORIGINS: allowedOrigin,
+    JANTRA_API_KEY: originApiKey,
+    RATE_LIMITER: {
+      async limit({ key }) {
+        const count = (counts.get(key) ?? 0) + 1;
+        counts.set(key, count);
+        return { success: count <= 15 };
+      },
+    },
+  };
+
+  const workerServer = http.createServer(async (req, res) => {
+    try {
+      const fullUrl = `http://${req.headers.host || "127.0.0.1"}${req.url}`;
+      const chunks = [];
+      for await (const chunk of req) {
+        chunks.push(chunk);
+      }
+      const body = chunks.length > 0 ? Buffer.concat(chunks) : undefined;
+      const webHeaders = new Headers();
+      for (const [k, v] of Object.entries(req.headers)) {
+        if (v !== undefined) {
+          if (Array.isArray(v)) {
+            for (const item of v) webHeaders.append(k, item);
+          } else {
+            webHeaders.set(k, v);
+          }
+        }
+      }
+      const webRequest = new Request(fullUrl, {
+        method: req.method,
+        headers: webHeaders,
+        body: ["GET", "HEAD"].includes(req.method) ? undefined : body,
+        duplex: "half",
+      });
+
+      const webResponse = await worker.fetch(webRequest, workerEnv);
+      res.statusCode = webResponse.status;
+      for (const [k, v] of webResponse.headers.entries()) {
+        res.setHeader(k, v);
+      }
+      const arrayBuffer = await webResponse.arrayBuffer();
+      res.end(Buffer.from(arrayBuffer));
+    } catch (err) {
+      res.statusCode = 500;
+      res.end(String(err));
+    }
+  });
+
+  await new Promise((resolve) => workerServer.listen(0, "127.0.0.1", resolve));
+  const workerPort = workerServer.address().port;
+  baseUrl = `http://127.0.0.1:${workerPort}`;
+
+  return async function cleanup() {
+    await new Promise((resolve) => workerServer.close(resolve));
+    await originServer.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  };
+}
+
 async function main() {
+  let cleanup;
+  if (isLocal) {
+    cleanup = await startLocalHarness();
+  }
+  try {
   const created = await expectStatus(
     "create_run",
     await edgeFetch("/v1/runs", {
@@ -181,6 +281,9 @@ async function main() {
       2,
     ),
   );
+  } finally {
+    if (cleanup) await cleanup();
+  }
 }
 
 main().catch((error) => {

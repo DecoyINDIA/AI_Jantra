@@ -28,7 +28,8 @@
     "desktop:build": "npm run build && npm run web:build && npm run build -w @jantra/desktop && npm run dist -w @jantra/desktop",
     "client:build": "npm run build -w @jantra/client",
     "embed:build": "npm run build -w @jantra/embed-widget",
-    "edge:verify": "node deploy/cloudflare-worker/verify-edge.mjs",
+    "edge:verify": "node --import tsx deploy/cloudflare-worker/verify-edge.mjs",
+    "edge:verify:local": "node --import tsx deploy/cloudflare-worker/verify-edge.mjs --local",
     "eval": "node --import tsx src/runtime/evals/index.ts",
     "smoke": "node --import tsx src/runtime/evals/smoke.ts",
     "test": "node --import tsx --test \"src/**/*.test.ts\""

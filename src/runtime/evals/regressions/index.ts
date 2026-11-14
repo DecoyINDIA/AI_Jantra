@@ -15,12 +15,15 @@ import {
   verifyGatewayDailyBudget,
   verifyGatewayReserveSettle,
   verifyIntakeSessionBudget,
+  verifyOfflineMockComplete,
   verifyVisitorDailyBudget,
 } from "./budget.js";
 import {
   verifyCsvDirectoryResolve,
+  verifyOpsCredentialIsolationAndDecryption,
   verifyOpsDeliveryHonest,
   verifyOpsNoSilentSynthetic,
+  verifyOpsWebhookDelivery,
 } from "./ops.js";
 import {
   verifyAgentPolicyArgs,
@@ -54,6 +57,8 @@ import {
   verifyRunIdPathTraversalRejected,
   verifyVisitorHeaderIgnoredForFullKeys,
   verifyVisitorRateLimit,
+  verifyDesktopLicensingEnforcement,
+  verifyDesktopMultiProviderConfiguration,
 } from "./server.js";
 
 export { runRegression } from "./common.js";
@@ -83,6 +88,8 @@ export async function runRegressionEvals(): Promise<StageEvalResult[]> {
     await runRegression("injection-content-neutralized", verifyInjectionContentNeutralized),
     await runRegression("ops-delivery-honest", verifyOpsDeliveryHonest),
     await runRegression("ops-no-silent-synthetic", verifyOpsNoSilentSynthetic),
+    await runRegression("ops-credential-isolation-and-decryption", verifyOpsCredentialIsolationAndDecryption),
+    await runRegression("ops-webhook-delivery", verifyOpsWebhookDelivery),
     await runRegression("public-key-scope", verifyPublicKeyScope),
     await runRegression("safe-fetch-redirect", verifySafeFetchRedirect),
     await runRegression("error-envelope-no-leak", verifyErrorEnvelopeNoLeak),
@@ -103,5 +110,8 @@ export async function runRegressionEvals(): Promise<StageEvalResult[]> {
     await runRegression("async-stage-execution", verifyAsyncStageExecution),
     await runRegression("model-catalog-from-config", verifyModelCatalogFromConfig),
     await runRegression("lead-retention-and-deletion", verifyLeadRetentionAndDeletion),
+    await runRegression("offline-mock-complete-and-judge-gate", verifyOfflineMockComplete),
+    await runRegression("desktop-licensing-enforcement", verifyDesktopLicensingEnforcement),
+    await runRegression("desktop-multi-provider-config", verifyDesktopMultiProviderConfiguration),
   ];
 }

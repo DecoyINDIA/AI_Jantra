@@ -366,3 +366,6 @@ export async function judgeEvaluatorLoopRefinement(): Promise<StageEvalResult> {
       : "Evaluator loop did not record the expected refine or fail-closed behavior.",
   };
 }
+
+export { runModelJudgeEvals } from "./modelJudge.js";
+

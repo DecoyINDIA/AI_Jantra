@@ -100,9 +100,15 @@ wrangler dev worker.js --local --port 8787 \
   --var JANTRA_API_KEY:edge-test-key
 ```
 
-In another shell from the repo root:
+In another shell from the repo root (or standalone via the built-in local test harness):
 
 ```bash
+# Automatic in-process local test harness (starts local mock server + worker on free ports):
+npm run edge:verify:local
+# or simply:
+npm run edge:verify
+
+# Or to test against a running wrangler / deployed edge:
 JANTRA_EDGE_URL=http://127.0.0.1:8787 \
 JANTRA_EDGE_TEST_ORIGIN=http://localhost:5176 \
 npm run edge:verify
