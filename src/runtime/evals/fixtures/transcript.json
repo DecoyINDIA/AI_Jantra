@@ -243,6 +243,16 @@
       "stage": "planning",
       "purpose": "build_plan_critic",
       "text": "{\"scores\":{\"completeness\":5,\"internalConsistency\":5,\"grounding\":5,\"technicalSoundness\":5,\"actionability\":5},\"passed\":true,\"notes\":\"The build plan covers every PRD requirement with milestones and acceptance criteria.\"}"
+    },
+    {
+      "stage": "complete",
+      "purpose": "default",
+      "text": "Mock gateway completion response."
+    },
+    {
+      "stage": "complete",
+      "purpose": "gateway_completion",
+      "text": "Mock gateway completion response."
     }
   ]
 }
