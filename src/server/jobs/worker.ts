@@ -60,6 +60,10 @@ export class JobWorker {
         try {
           job = this.deps.store.claimNextJob();
         } catch (err) {
+          if (String(err).includes("database connection is not open")) {
+            this.stop();
+            break;
+          }
           console.warn("Error claiming next job:", err);
         }
 
