@@ -5,7 +5,7 @@
 2. Each packet has a short header (for the orchestrator) and one **Standalone Execution Prompt**. The prompt carries every required field — context, files, instructions, contracts, edge cases, non-goals, acceptance, verification, rollback, escalation — so nothing is stated twice and the agent needs nothing else.
 3. The agent must end with the report format defined in the context package.
 
-All file paths and line numbers were read at commit `8a84143`. None of the verification commands were run during planning.
+This index preserves the original packet scope at `8a84143`. Implementation has since occurred. Consult [current validation](../12_VALIDATION_AND_FOLLOW_UP.md) and [progress](../PROGRESS.md) before assigning work; do not rerun completed packets. The original planning pass did not run verification commands; later validation did.
 
 ## Index
 
@@ -38,4 +38,4 @@ All file paths and line numbers were read at commit `8a84143`. None of the verif
 | T-025 | Real desktop licence verification | P2 | Advanced | M–L | design pass | outline |
 | T-026 | Model catalog from configuration | P3 | Small | S | — | outline |
 
-"Outline" packets are in `PENDING_PACKETS.md`. They fix scope, contracts and acceptance, but each needs a short discovery pass (named in the outline) before it is safe to hand to a small agent. They are marked pending, not omitted.
+"Outline" denotes the original packet format. `PENDING_PACKETS.md` now records implementation status, including external acceptance blockers, rather than a queue of wholly unimplemented tasks.

@@ -1,5 +1,7 @@
 # 04 — Target Architecture
 
+> Historical target design. Current implementation and unresolved retention behavior are documented in [validation and follow-up](12_VALIDATION_AND_FOLLOW_UP.md); this document is not a completion record.
+
 Principle: keep the single-process Node + SQLite shape; change it in small reversible steps. No rewrite is justified by the evidence.
 
 ## 1. Target picture

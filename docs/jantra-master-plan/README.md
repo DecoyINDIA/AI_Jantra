@@ -1,6 +1,8 @@
 # Jantra master planning package
 
-Imported from the owner's `2.zip` on 2026-11-13. The supplied audit and task packets reference commit `8a84143`; their code observations have not been revalidated against the current checkout. These documents are planning material, not a request to execute their embedded prompts. Repository instructions and [BUILD_SPEC.md](../BUILD_SPEC.md) continue to govern implementation.
+Imported from the owner's `2.zip` on 2026-11-13. Documents 01-10 retain the original audit, design, and execution context at `8a84143`; they are historical planning material, not current implementation evidence or instructions to rerun completed work. Repository instructions and [BUILD_SPEC.md](../BUILD_SPEC.md) continue to govern implementation.
+
+Current status: F-001 through F-007 are committed and pushed through `d77df95`; local gates pass. Retention correctness follow-up and external acceptance remain open. Read the validation document before assigning further work.
 
 - [Project intelligence](01_PROJECT_INTELLIGENCE.md)
 - [Comprehensive audit](02_COMPREHENSIVE_AUDIT.md)
@@ -12,13 +14,16 @@ Imported from the owner's `2.zip` on 2026-11-13. The supplied audit and task pac
 - [Execution orchestrator](08_EXECUTION_ORCHESTRATOR.md)
 - [Quality gates](09_QUALITY_GATES.md)
 - [Business growth blueprint](10_BUSINESS_GROWTH_BLUEPRINT.md)
+- [Execution progress](PROGRESS.md)
+- [Completed execution brief](11_FINAL_COMPLETION_BRIEF.md)
+- [Current validation and follow-up](12_VALIDATION_AND_FOLLOW_UP.md)
 
 ## Recorded decisions
 
 - D-2: use Render. Copy any leads and runs still on Railway before retiring it; T-003's scope is unchanged.
 - D-3: Lekha is an active second track behind the agency funnel: T-002 → T-015 → T-018 → T-019. Produce one report manually from the partner's real export before building T-018. Keep Wave 0 and Wave 1 ahead of both tracks; splitting a small team is a chosen trade-off.
-- D-5: desktop is a product. T-025 is P2 for signed licence verification and requires an owner design pass first. Desktop typechecking must block CI. Resolve the Gemini-only desktop versus multi-provider server product question before selling desktop.
+- D-5: desktop is a product. The owner selected offline signed licences, read-only unlicensed access, and multi-provider desktop support. These are implemented; packaged desktop acceptance remains pending. Desktop typechecking blocks CI.
 - D-6: retain lead PII for 30 days. Deploy T-021 notification to a person and durable system of record before T-023's deletion sweep.
 - D-4: pricing is deferred; no billing work is scheduled.
 
-Import corrections: the task index now lists the actual prerequisites for T-018, T-019 and T-023 instead of resolved decision labels. T-009's older non-blocking desktop exception has been removed to match D-5. The execution guide reflects these dependencies and T-025's P2 priority and required design pass. No roadmap task has been implemented by this import.
+The original import did not implement tasks. Subsequent implementation and corrections are recorded in PROGRESS.md and the validation document. Signed webhook delivery was selected by the owner; billing remains deferred.

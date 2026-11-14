@@ -3,7 +3,7 @@
 Give this file to every implementing agent together with its task packet. It replaces reading the repository. Verified against commit `8a84143`.
 
 ## Project in five lines
-Jantra AI is a TypeScript agent runtime with a Fastify API. Runs ("projects") move through stages with human gates. The live use is a public intake chat widget on xolver.in that captures leads; operators also run a three-stage planning pipeline (intake → research → planning). Everything is audited to JSONL and cost-tracked. Trust is the product: never fabricate, never fail open on verification.
+Jantra AI is a TypeScript agent runtime with a Fastify API. Runs ("projects") move through stages with human gates. Intended uses include a public intake widget and an operator planning pipeline (intake → research → planning). The owner states Jantra is not in production. See [current validation and follow-up](12_VALIDATION_AND_FOLLOW_UP.md) before assigning work; the original packet context below is historical. Everything is audited to JSONL and cost-tracked. Trust is the product: never fabricate, never fail open on verification.
 
 ## Stack
 Node ≥ 20, ESM (`"type": "module"`), TypeScript strict with `noUncheckedIndexedAccess`. Fastify 5, Zod 4, better-sqlite3, `@google/genai`, `jose`. Web: React 19 + Vite + React Query. Desktop: Electron. No test framework; no linter; no ORM.

@@ -1,5 +1,7 @@
 # Jantra Production Deployment & Verification Runbook
 
+> Future deployment procedure, not evidence of deployed resources. As of 2026-11-14 the owner states Jantra is not in production. See [current validation and follow-up](../docs/jantra-master-plan/12_VALIDATION_AND_FOLLOW_UP.md). Keep retention disabled until R-001 through R-003 are fixed as well as live lead delivery accepted. Resource names below are intended configuration and require account discovery before use.
+
 This document defines the production deployment requirements, operational procedures, and live acceptance verification checklist for deploying Jantra on **Render** (private Node origin) and **Cloudflare Workers** (public edge proxy).
 
 ---

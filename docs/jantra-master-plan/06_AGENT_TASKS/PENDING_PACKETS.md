@@ -2,6 +2,8 @@
 
 This document tracks the execution status of task packets T-014 through T-026, reconciling code implementation with production deployment and acceptance records.
 
+Validated against `d77df95` on 2026-11-14. See [current follow-up](../12_VALIDATION_AND_FOLLOW_UP.md) for retention defects R-001 through R-003 and all external inputs. Passing local gates do not establish production acceptance or complete PII erasure.
+
 > **Status Distinction:**
 > - **Implemented (Code Complete & Offline Verified):** The code is fully written, merged in git, and passes typecheck, unit tests (`npm test`), regressions, and smoke tests.
 > - **Deployed & Accepted:** The service is running in production (Render persistent disk origin + Cloudflare Worker edge) and has passed the 8 live acceptance verification checks in `PROGRESS.md`.
@@ -22,7 +24,7 @@ This document tracks the execution status of task packets T-014 through T-026, r
 | **T-020** | P2 | Implemented (Production acceptance pending) | `7992930` | Unit tests + eval regression (95 unit, 70/70 eval) | Pending Live Acceptance #6 (production promote route verification) |
 | **T-021** | P2 | Implemented (Production acceptance pending) | `258c149` | 3 unit tests + eval regression (95 unit, 70/70 eval) | Pending Live Acceptance #5 (signed webhook delivery to CRM/Slack) |
 | **T-022** | P2 | Implemented (Production acceptance pending) | `21c4e81` | 6 unit tests + eval regression (95 unit, 70/70 eval) | Pending Live Acceptance #7 (client PDF export review by prospects) |
-| **T-023** | P2 | Implemented (Production acceptance pending) | `c36d7b0` | 4 unit tests + eval regression (95 unit, 70/70 eval) | Implemented (sweep gated by `JANTRA_ENABLE_LEAD_DELETION_SWEEP=false` per D-6 until webhooks proven) |
+| **T-023** | P2 | Partial: correctness work required | `c36d7b0` | Existing local tests pass | R-001 through R-003: SQLite PII retention, global manual sweep, recoverable linked cleanup; sweep must stay disabled |
 | **T-024** | P3 | Implemented (Production acceptance pending) | `b32ce0d` | Workspace typecheck + UI verification | Pending operator acceptance on staging/production UI |
 | **T-025** | P2 | Implemented (Pushed) | `b385290` | 12 unit tests + 2 eval regressions (95 unit, 70/70 eval) | Offline Ed25519 license verification, unlicensed read-only enforcement, pure issuance library, and multi-provider desktop config |
 | **T-026** | P3 | Implemented (Pushed) | `fc7b3bf` | 7 unit tests + eval regression (95 unit, 70/70 eval) | Implemented; catalog loaded from `JANTRA_MODEL_CATALOG_PATH` with Zod schema and offline test isolation |
@@ -35,7 +37,7 @@ This document tracks the execution status of task packets T-014 through T-026, r
 - **Status:** Implemented (Code Complete)
 - **Commit:** `d685952`
 - **Implemented Code:**
-  - `src/server/jobs/types.ts`: Job records, statuses (`queued`, `running`, `completed`, `failed`), and payloads.
+  - `src/server/jobs/types.ts`: Job records, statuses (`queued`, `running`, `done`, `failed`), and payloads.
   - `src/server/jobs/worker.ts`: In-process `JobWorker` with crash recovery re-queueing unfinished jobs upon startup.
   - `src/server/routes/runs.ts`: Routes return `202 Accepted` with a job record when the caller sends header `Prefer: respond-async`.
   - `src/pipeline/store/sqlite.ts`: Persistent `jobs` table storing background stage execution jobs.
@@ -66,7 +68,7 @@ This document tracks the execution status of task packets T-014 through T-026, r
   - Split regression suite into modules: `regressions/{common,policy,agent,budget,server,security,ops}.ts`.
   - Unit test suites using `node:test`: `formulaEngine`, `anomalyEngine`, `citationVerifier`, `netGuard`, `parseCsv`, `reportProvenance`, `rateLimit`.
   - `npm test` script wired in `package.json` and executed in CI pipeline.
-- **Deployment & Acceptance State:** Fully accepted in CI; 61 unit tests and 64 regression checks green.
+- **Deployment & Acceptance State:** Local baseline passes 95 unit tests and 70 eval checks plus one skipped live judge. CI configuration includes tests; hosted CI results were not inspected in this validation.
 
 ### T-018 — Per-client connector credentials (P2, Advanced, L)
 - **Status:** Implemented (Infrastructure & Credential Storage Complete; Partner Field Mapping Gated on Experiment X5)
@@ -82,8 +84,8 @@ This document tracks the execution status of task packets T-014 through T-026, r
 ### T-019 — Real report delivery (P2, Medium, M)
 - **Status:** Implemented (Signed Webhook Delivery Complete; Custom Provider Delivery Gated)
 - **Implemented Code:**
-  - `src/pipeline/stages/opsReporting.ts`: Real report delivery via signed webhook channel with HMAC-SHA256 signature (`X-Jantra-Signature`), SSRF protection via `assertPublicWebhookUrl` / `safeFetch`, transient retry handling, and provider response recording.
-  - Delivery receipt records status `sent` on success or `failed` on error with HTTP status and provider response. NEVER marks failed or attempted delivery as sent. Produces `not_sent` when delivery is unconfigured.
+  - `src/pipeline/stages/opsReporting.ts`: Signed webhook execution loads URL and secret from encrypted `report-webhook` credentials; profile stores only channel and credential reference. Delivery uses guarded fetch and transient retries.
+  - Receipts record `sent`, `failed`, or `not_sent`, safe destination hostname, HTTP status and normalized error codes. Full URLs, secrets, and arbitrary provider response bodies are excluded. Receiver acceptance remains unverified.
   - Unit tests in `src/pipeline/stages/opsDelivery.test.ts` and regression `ops-webhook-delivery`.
 - **HARD GATE ON PARTNER FIELD MAPPING:** Preserved until real partner export (experiment X5) is provided.
 
@@ -93,7 +95,7 @@ This document tracks the execution status of task packets T-014 through T-026, r
 - **Implemented Code:**
   - `src/server/routes/runs.ts`: `POST /v1/runs/:runId/promote` endpoint (scoped to full keys) copies `idea_summary` artifact and creates a `planning-pipeline` run at `research: pending`.
   - Source run left untouched; audit logs `run_created` with `promotedFrom`.
-  - UI updates in `web/src/routes/RunList.tsx`: Queue view for runs awaiting human action, lead inbox with "Promote" action.
+  - UI updates in `web/src/routes/HomeQueue.tsx`: Queue view for runs awaiting human action, lead inbox with "Promote" action.
 - **Deployment & Acceptance State:** Pending Live Acceptance Gate #6 verification in production environment.
 
 ### T-021 — Lead notification and lead↔run link (P2, Medium, M)
@@ -109,7 +111,7 @@ This document tracks the execution status of task packets T-014 through T-026, r
 - **Status:** Implemented (Code Complete)
 - **Commit:** `21c4e81`
 - **Implemented Code:**
-  - `src/server/export/clientReady.ts`: Generates print-styled HTML view of research report, PRD, TRD, and build plan with expandable claim citations, source links, and verified quotes.
+  - `src/server/export/clientReport.ts`: Generates print-styled HTML view of research report, PRD, TRD, and build plan with expandable claim citations, source links, and verified quotes.
   - `src/server/routes/runs.ts`: `GET /v1/runs/:id/export` endpoint.
   - UI button in `web/src/routes/RunDetail.tsx` providing client-ready view and browser "Save as PDF".
 - **Deployment & Acceptance State:** Code complete; pending sample review by 3 target prospects before implementing automated PDF rendering pipeline.
@@ -120,7 +122,7 @@ This document tracks the execution status of task packets T-014 through T-026, r
 - **Implemented Code:**
   - `src/server/routes/leads.ts`: `DELETE /v1/leads/:id` endpoint (full scope or owning client).
   - `src/server/leads/store.ts` & `src/pipeline/store/sqlite.ts`: `deleteLead()` and `sweepExpiredLeads()` removing records older than `leadRetentionDays` (default 30).
-  - Start-up sweep gated by `JANTRA_ENABLE_LEAD_DELETION_SWEEP` per Owner Decision D-6.
+  - Startup and daily sweeps are gated by `JANTRA_ENABLE_LEAD_DELETION_SWEEP`. SQLite currently sets `deleted_at` while retaining PII; JSON removes lead files. Manual sweeps currently span tenants. Linked cleanup recovery also needs work. See R-001 through R-003; T-023 is partial and must not be enabled yet.
 - **Deployment & Acceptance State:** Sweep feature flag must remain `0` in production until lead webhook notifications are proven live in production (Gate #5).
 
 ### T-024 — Operator UI token handling (P3, Small, S)
@@ -140,7 +142,7 @@ This document tracks the execution status of task packets T-014 through T-026, r
   - `src/server/routes/license.ts` & `src/server/app.ts`: `GET /v1/license` (re-verifies cryptographically), `POST /v1/license` (activation), and unlicensed read-only enforcement hook blocking run creation, stage advancement, and model completion calls when unlicensed/expired/tampered.
   - `desktop/src/providerConfig.ts` & `desktop/src/secrets.ts`: Multi-provider configuration supporting both Gemini and OpenAI-compatible providers, endpoints, models, data collection, and OS-backed encrypted credential storage.
   - `web/src/routes/Settings.tsx`: Displays active/unlicensed state, plan, licensee, and expiry date.
-  - Tests: 9 unit tests in `src/licensing/licensing.test.ts`, plus regressions `desktop-licensing-enforcement` and `desktop-multi-provider-config` in `src/runtime/evals/regressions/server.ts`.
+  - Tests: `src/licensing/licensing.test.ts`, plus regressions `desktop-licensing-enforcement` and `desktop-multi-provider-config` in `src/runtime/evals/regressions/server.ts`. Packaged app behavior and owner signing-key custody remain release acceptance items.
 - **Deployment & Acceptance State:** Code complete; desktop typecheck passes; pending packaged desktop release verification.
 
 ### T-026 — Model catalog from configuration (P3, Small, S)
