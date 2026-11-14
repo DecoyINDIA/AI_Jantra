@@ -95,20 +95,32 @@ Score completeness, balance, and entailment from 1 to 5. This is advisory and do
       maxOutputTokens: 1500,
     });
     const parsed = parseJudge(result.text);
+    const avgScore = Number(average(parsed.scores).toFixed(1));
     return {
       fixtureId: `${fixture.id}-model-judge`,
       stage,
-      score: Number(average(parsed.scores).toFixed(1)),
-      passed: true,
+      score: avgScore,
+      passed: avgScore >= 3.0,
       notes: `Supplementary model judge: ${JSON.stringify(parsed.scores)}. ${parsed.notes}`,
     };
   } catch (err) {
+    if (config.runLiveJudge) {
+      return {
+        fixtureId: `${fixture.id}-model-judge`,
+        stage,
+        score: 0,
+        passed: false,
+        skipped: false,
+        notes: `Live model judge failed: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
     return {
       fixtureId: `${fixture.id}-model-judge`,
       stage,
-      score: 1,
-      passed: false,
-      notes: `Model judge failed: ${err instanceof Error ? err.message : String(err)}`,
+      score: 0,
+      passed: true,
+      skipped: true,
+      notes: `Live model judge unreachable or failed: ${err instanceof Error ? err.message : String(err)}`,
     };
   }
 }
@@ -116,7 +128,7 @@ Score completeness, balance, and entailment from 1 to 5. This is advisory and do
 export async function runModelJudgeEvals(
   fixtures: EvalFixture[],
 ): Promise<StageEvalResult[]> {
-  if (!config.geminiApiKey || config.provider === "mock") {
+  if (!config.runLiveJudge) {
     return [
       {
         fixtureId: "model-judge",
@@ -124,7 +136,20 @@ export async function runModelJudgeEvals(
         score: 0,
         passed: true,
         skipped: true,
-        notes: "GEMINI_API_KEY is not set, supplementary model judges skipped.",
+        notes: "Live model judging is disabled by default (enable with JANTRA_RUN_LIVE_JUDGE=1).",
+      },
+    ];
+  }
+
+  if (!config.geminiApiKey && config.provider !== "openai-compatible") {
+    return [
+      {
+        fixtureId: "model-judge",
+        stage: "research",
+        score: 0,
+        passed: false,
+        skipped: false,
+        notes: "Live model judging is explicitly enabled, but neither GEMINI_API_KEY nor an OpenAI-compatible provider is configured.",
       },
     ];
   }

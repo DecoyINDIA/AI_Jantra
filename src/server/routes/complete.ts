@@ -51,6 +51,7 @@ export function registerCompleteRoutes(app: FastifyInstance, deps: CompleteRoute
     let result;
     try {
       result = await provider.generate({
+        purpose: body.purpose ?? "gateway_completion",
         system: body.system,
         messages: [{ role: "user", content: body.user }],
         responseJsonSchema: body.responseJsonSchema,

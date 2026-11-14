@@ -255,3 +255,68 @@ export function verifyGatewayReserveSettle(): void {
   const concStored = Number(store.getClientDailyGatewaySpend(clientIdConc, day).toFixed(6));
   assert(concStored <= ceiling, `Expected concStored (${concStored}) <= ceiling (${ceiling})`);
 }
+
+export async function verifyOfflineMockComplete(): Promise<void> {
+  const { createProviderForStage } = await import("../../../model/index.js");
+  const { runModelJudgeEvals } = await import("../modelJudge.js");
+  const { config } = await import("../../../config.js");
+  const { ModelProviderError } = await import("../../../runtime/errors.js");
+
+  // 1. Completion provider in mock mode returns deterministic fixture for exact purposes
+  const provider = createProviderForStage("complete");
+  const resDefault = await provider.generate({
+    system: "Test system",
+    messages: [{ role: "user", content: "Test prompt" }],
+  });
+  assert(resDefault.text.length > 0, "Mock provider did not return text for complete stage.");
+  assert(resDefault.provider === "mock", "Provider was not mock.");
+
+  const resGateway = await provider.generate({
+    purpose: "gateway_completion",
+    messages: [{ role: "user", content: "Test prompt" }],
+  });
+  assert(resGateway.text.length > 0, "Mock provider did not return text for gateway_completion.");
+
+  // 2. Mock provider fails closed on missing or unmatched fixture entry
+  let unmatchedThrew = false;
+  try {
+    await provider.generate({
+      purpose: "non_existent_unmatched_purpose",
+      messages: [{ role: "user", content: "Should throw" }],
+    });
+  } catch (err) {
+    if (err instanceof ModelProviderError) {
+      unmatchedThrew = true;
+    }
+  }
+  assert(unmatchedThrew, "Mock provider must fail closed with ModelProviderError on unmatched fixture.");
+
+  // 3. Live judge evals are skipped offline by default
+  const judgeResults = await runModelJudgeEvals([]);
+  assert(judgeResults.length > 0, "runModelJudgeEvals returned empty results.");
+  assert(
+    judgeResults.every((r) => r.skipped && r.passed),
+    "Live model judge was not skipped offline by default.",
+  );
+
+  // 4. When live judging is enabled, missing credentials or judge failure fails closed
+  const origRunLive = config.runLiveJudge;
+  const origGeminiKey = config.geminiApiKey;
+  const origProvider = config.provider;
+  try {
+    (config as Record<string, unknown>).runLiveJudge = true;
+    (config as Record<string, unknown>).geminiApiKey = "";
+    (config as Record<string, unknown>).provider = "gemini";
+    const enabledResults = await runModelJudgeEvals([]);
+    assert(enabledResults.length > 0, "Enabled model judge returned empty results.");
+    const failedGate = enabledResults[0]!;
+    assert(
+      !failedGate.passed && !failedGate.skipped,
+      `Enabled live judge must fail gate when unconfigured, got passed=${failedGate.passed}, skipped=${failedGate.skipped}`,
+    );
+  } finally {
+    (config as Record<string, unknown>).runLiveJudge = origRunLive;
+    (config as Record<string, unknown>).geminiApiKey = origGeminiKey;
+    (config as Record<string, unknown>).provider = origProvider;
+  }
+}
