@@ -1211,7 +1211,7 @@ export async function verifyDesktopLicensingEnforcement(): Promise<void> {
     });
     assert(sourcesRes.statusCode === 200, `GET /v1/runs/:id/sources must be allowed: ${sourcesRes.body}`);
 
-    // 3. Mutating execution MUST be blocked while unlicensed
+    // 3. Mutating execution MUST be blocked while unlicensed across all model/stage trigger routes
     const startRunRes = await app.inject({
       method: "POST",
       url: "/v1/runs",
@@ -1226,6 +1226,7 @@ export async function verifyDesktopLicensingEnforcement(): Promise<void> {
       `Starting run while unlicensed must be blocked with 403, got ${startRunRes.statusCode}`,
     );
     assert(startRunRes.json().error.code === "unlicensed", "Expected error.code to be 'unlicensed'");
+    assert(!startRunRes.body.includes("signature"), "403 error must not leak signature or token data");
 
     const advanceRes = await app.inject({
       method: "POST",
@@ -1237,6 +1238,52 @@ export async function verifyDesktopLicensingEnforcement(): Promise<void> {
       `Advancing run while unlicensed must be blocked with 403, got ${advanceRes.statusCode}`,
     );
     assert(advanceRes.json().error.code === "unlicensed", "Expected error.code to be 'unlicensed'");
+
+    const interactRes = await app.inject({
+      method: "POST",
+      url: `/v1/runs/${existingProject.id}/interactions/int-test-123`,
+      headers: { ...auth, "content-type": "application/json" },
+      payload: { answers: { field: "value" } },
+    });
+    assert(
+      interactRes.statusCode === 403,
+      `Answering interaction while unlicensed must be blocked with 403, got ${interactRes.statusCode}`,
+    );
+    assert(interactRes.json().error.code === "unlicensed", "Expected error.code to be 'unlicensed'");
+
+    const confirmRes = await app.inject({
+      method: "POST",
+      url: `/v1/runs/${existingProject.id}/confirm`,
+      headers: auth,
+    });
+    assert(
+      confirmRes.statusCode === 403,
+      `Confirming gate while unlicensed must be blocked with 403, got ${confirmRes.statusCode}`,
+    );
+    assert(confirmRes.json().error.code === "unlicensed", "Expected error.code to be 'unlicensed'");
+
+    const rejectRes = await app.inject({
+      method: "POST",
+      url: `/v1/runs/${existingProject.id}/reject`,
+      headers: { ...auth, "content-type": "application/json" },
+      payload: { reason: "test rejection" },
+    });
+    assert(
+      rejectRes.statusCode === 403,
+      `Rejecting gate while unlicensed must be blocked with 403, got ${rejectRes.statusCode}`,
+    );
+    assert(rejectRes.json().error.code === "unlicensed", "Expected error.code to be 'unlicensed'");
+
+    const promoteRes = await app.inject({
+      method: "POST",
+      url: `/v1/runs/${existingProject.id}/promote`,
+      headers: auth,
+    });
+    assert(
+      promoteRes.statusCode === 403,
+      `Promoting run while unlicensed must be blocked with 403, got ${promoteRes.statusCode}`,
+    );
+    assert(promoteRes.json().error.code === "unlicensed", "Expected error.code to be 'unlicensed'");
 
     const completeRes = await app.inject({
       method: "POST",
@@ -1310,6 +1357,32 @@ export async function verifyDesktopLicensingEnforcement(): Promise<void> {
       payload: { agentId: "planning-pipeline", title: "Expired Block" },
     });
     assert(blockOnExpired.statusCode === 403, "Expired license must block run creation");
+
+    // 5b. Activation requires server authentication
+    const unauthActivateRes = await app.inject({
+      method: "POST",
+      url: "/v1/license",
+      headers: { host: "127.0.0.1:4317", "content-type": "application/json" },
+      payload: { token: validToken },
+    });
+    assert(
+      unauthActivateRes.statusCode === 401,
+      `Unauthenticated license activation must be rejected with 401, got ${unauthActivateRes.statusCode}`,
+    );
+
+    // 5c. Wrong-key token: signed with valid Ed25519 key, but not the server's configured public key
+    const wrongKeyPair = generateLicenseKeyPair();
+    const wrongKeyToken = createLicenseToken(validPayload, wrongKeyPair.privateKey);
+    const activateWrongKeyRes = await app.inject({
+      method: "POST",
+      url: "/v1/license",
+      headers: { ...auth, "content-type": "application/json" },
+      payload: { token: wrongKeyToken },
+    });
+    assert(
+      activateWrongKeyRes.statusCode === 400,
+      `Activation of wrong-key token must return 400, got ${activateWrongKeyRes.statusCode}`,
+    );
 
     // 6. Valid license activation: transitions to active and allows execution
     const activateValidRes = await app.inject({
@@ -1419,6 +1492,18 @@ export async function verifyDesktopMultiProviderConfiguration(): Promise<void> {
     fs.writeFileSync(configPath, JSON.stringify(geminiConfig, null, 2), "utf8");
     const loadedGeminiConfig = JSON.parse(fs.readFileSync(configPath, "utf8")) as typeof geminiConfig;
     assert(loadedGeminiConfig.provider === "gemini", "Expected provider gemini");
+
+    // 5. Renderer-facing credential status exposure returns only booleans and never exposes secret strings
+    const rendererCredentialsStatus = {
+      hasGeminiKey: Boolean(loadedCreds.geminiApiKey),
+      hasOpenAiKey: Boolean(loadedCreds.openAiApiKey),
+    };
+    assert(
+      rendererCredentialsStatus.hasGeminiKey === true && rendererCredentialsStatus.hasOpenAiKey === true,
+      "Renderer credentials status mismatch",
+    );
+    assert(!JSON.stringify(rendererCredentialsStatus).includes("AIzaSyTestGeminiKey123"), "Renderer status must not include Gemini secret");
+    assert(!JSON.stringify(rendererCredentialsStatus).includes("sk-or-v1-testOpenAiKey456"), "Renderer status must not include OpenAI secret");
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

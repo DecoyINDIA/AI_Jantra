@@ -265,6 +265,87 @@ describe("Offline Ed25519 Licensing", () => {
     assert.equal(customOpenAiConfig.dataCollection, "deny");
   });
 
+  it("LicenseManager.assertActive fails closed with 403 UnlicensedError across all inactive states without token leakage", async () => {
+    const store = new MemoryLicenseStore();
+    const manager = new LicenseManager(store, { publicKey: testSuiteKeyPair.publicKey, enforcement: true });
+
+    // 1. Missing token -> unlicensed
+    await assert.rejects(
+      async () => manager.assertActive("Run execution"),
+      (err: any) => {
+        assert(err instanceof UnlicensedError);
+        assert.equal(err.statusCode, 403);
+        assert.equal(err.code, "unlicensed");
+        assert.equal(err.status?.state, "unlicensed");
+        assert(!JSON.stringify(err).includes("signature"));
+        return true;
+      },
+    );
+
+    // 2. Tampered token -> tampered
+    await store.saveLicenseToken("tampered-token-not-valid");
+    await assert.rejects(
+      async () => manager.assertActive("Run execution"),
+      (err: any) => {
+        assert(err instanceof UnlicensedError);
+        assert.equal(err.statusCode, 403);
+        assert.equal(err.code, "unlicensed");
+        assert.equal(err.status?.state, "invalid_format");
+        return true;
+      },
+    );
+
+    // 3. Expired token -> expired
+    const expiredPayload: LicensePayload = {
+      licensee: "Expired Test",
+      plan: "pro",
+      expiresAt: new Date(Date.now() - 60000).toISOString(),
+      issuedAt: new Date(Date.now() - 120000).toISOString(),
+    };
+    const expiredToken = createLicenseToken(expiredPayload, testSuiteKeyPair.privateKey);
+    await store.saveLicenseToken(expiredToken);
+    await assert.rejects(
+      async () => manager.assertActive("Run execution"),
+      (err: any) => {
+        assert(err instanceof UnlicensedError);
+        assert.equal(err.statusCode, 403);
+        assert.equal(err.code, "unlicensed");
+        assert.equal(err.status?.state, "expired");
+        assert(!JSON.stringify(err).includes(expiredToken));
+        return true;
+      },
+    );
+
+    // 4. Wrong-key token -> tampered
+    const roguePair = generateLicenseKeyPair();
+    const validFuturePayload: LicensePayload = {
+      licensee: "Rogue Signer",
+      plan: "enterprise",
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      issuedAt: new Date().toISOString(),
+    };
+    const wrongKeyToken = createLicenseToken(validFuturePayload, roguePair.privateKey);
+    await store.saveLicenseToken(wrongKeyToken);
+    await assert.rejects(
+      async () => manager.assertActive("Run execution"),
+      (err: any) => {
+        assert(err instanceof UnlicensedError);
+        assert.equal(err.statusCode, 403);
+        assert.equal(err.code, "unlicensed");
+        assert.equal(err.status?.state, "tampered");
+        assert(!JSON.stringify(err).includes(wrongKeyToken));
+        return true;
+      },
+    );
+
+    // 5. Valid token -> succeeds
+    const validToken = createLicenseToken(validFuturePayload, testSuiteKeyPair.privateKey);
+    await store.saveLicenseToken(validToken);
+    const activeStatus = await manager.assertActive("Run execution");
+    assert.equal(activeStatus.active, true);
+    assert.equal(activeStatus.state, "valid");
+  });
+
   it("resolvePrivateKey is pure and ignores environment variables", () => {
     const origEnv = process.env.JANTRA_LICENSE_PRIVATE_KEY;
     try {
