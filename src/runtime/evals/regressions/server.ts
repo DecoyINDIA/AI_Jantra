@@ -146,7 +146,12 @@ export function verifyRateLimiterFixedWindow(): void {
 export async function verifyRateLimiterProxyTrust(): Promise<void> {
   const token = "rate-limit-token";
   // Create a remote mode server which enables the rate limiter
-  const app = createServer({ loopbackToken: token, mode: "remote", checkCatalogModels: false });
+  const app = createServer({
+    loopbackToken: token,
+    mode: "remote",
+    apiKeys: [{ key: token, clientId: "test-client", subject: "test" }],
+    checkCatalogModels: false,
+  });
 
   const res1 = await app.inject({
     method: "GET",
