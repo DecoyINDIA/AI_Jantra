@@ -99,8 +99,25 @@ describe("Model Catalog (T-026)", () => {
       tier: "flash",
       supportsTools: true,
     };
-    // Under mock provider, models are available
-    assert.equal(isCatalogModelAvailable(mockModel), true);
+    const origProvider = config.provider;
+    const origGeminiKey = config.geminiApiKey;
+    try {
+      // Under mock provider, models are available
+      (config as any).provider = "mock";
+      assert.equal(isCatalogModelAvailable(mockModel), true);
+
+      // Under gemini without key, not available
+      (config as any).provider = "gemini";
+      (config as any).geminiApiKey = "";
+      assert.equal(isCatalogModelAvailable(mockModel), false);
+
+      // Under gemini with key, available
+      (config as any).geminiApiKey = "test-key";
+      assert.equal(isCatalogModelAvailable(mockModel), true);
+    } finally {
+      (config as any).provider = origProvider;
+      (config as any).geminiApiKey = origGeminiKey;
+    }
   });
 
   it("createServer with checkCatalogModels: false never invokes the catalog probe", async () => {
