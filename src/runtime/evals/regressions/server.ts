@@ -1338,7 +1338,7 @@ export async function verifyDesktopLicensingEnforcement(): Promise<void> {
     assert(startRunSuccess.statusCode === 200, `Licensed run creation failed: ${startRunSuccess.body}`);
 
     // 6. License issuance tool fails closed without explicit key or secret
-    const { resolvePrivateKey } = await import("../../../../scripts/issue-license.js");
+    const { resolvePrivateKey } = await import("../../../licensing/index.js");
     const origEnvKey = process.env.JANTRA_LICENSE_PRIVATE_KEY;
     delete process.env.JANTRA_LICENSE_PRIVATE_KEY;
     let issuanceThrew = false;

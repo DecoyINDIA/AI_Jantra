@@ -1,6 +1,24 @@
 import crypto from "node:crypto";
+import fs from "node:fs";
 import { canonicalizePayload } from "./verify.js";
 import type { LicenseEnvelope, LicensePayload } from "./types.js";
+
+export function resolvePrivateKey(keyOption?: string | boolean): string {
+  if (typeof keyOption === "string" && keyOption.trim()) {
+    const keyPath = keyOption.trim();
+    if (!fs.existsSync(keyPath)) {
+      throw new Error(`Private key file not found: ${keyPath}`);
+    }
+    return fs.readFileSync(keyPath, "utf8");
+  }
+  const envKey = process.env.JANTRA_LICENSE_PRIVATE_KEY;
+  if (envKey && envKey.trim()) {
+    return envKey.trim();
+  }
+  throw new Error(
+    "License issuance requires an Ed25519 private key. Provide --key <path> or set the JANTRA_LICENSE_PRIVATE_KEY environment variable.",
+  );
+}
 
 export function createLicenseToken(
   payload: LicensePayload,
