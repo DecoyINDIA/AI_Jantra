@@ -5,18 +5,17 @@ import type { LicenseEnvelope, LicensePayload } from "./types.js";
 
 export function resolvePrivateKey(keyOption?: string | boolean): string {
   if (typeof keyOption === "string" && keyOption.trim()) {
-    const keyPath = keyOption.trim();
-    if (!fs.existsSync(keyPath)) {
-      throw new Error(`Private key file not found: ${keyPath}`);
+    const trimmed = keyOption.trim();
+    if (trimmed.includes("-----BEGIN") || trimmed.includes("PRIVATE KEY")) {
+      return trimmed;
     }
-    return fs.readFileSync(keyPath, "utf8");
-  }
-  const envKey = process.env.JANTRA_LICENSE_PRIVATE_KEY;
-  if (envKey && envKey.trim()) {
-    return envKey.trim();
+    if (fs.existsSync(trimmed)) {
+      return fs.readFileSync(trimmed, "utf8");
+    }
+    throw new Error(`Private key file not found: ${trimmed}`);
   }
   throw new Error(
-    "License issuance requires an Ed25519 private key. Provide --key <path> or set the JANTRA_LICENSE_PRIVATE_KEY environment variable.",
+    "License issuance requires an Ed25519 private key. Provide an explicit key path or PEM string.",
   );
 }
 
