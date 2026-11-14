@@ -3,7 +3,7 @@ import { AuditLogger } from "../../audit.js";
 import { config } from "../../config.js";
 import type { ProjectStore } from "../../pipeline/store.js";
 import { timingSafeStringEqual } from "../constantTime.js";
-import { notFound, unauthorized } from "../errors.js";
+import { HttpError, notFound, unauthorized } from "../errors.js";
 import {
   adminClientConnectorParamsSchema,
   adminClientParamsSchema,
@@ -45,6 +45,17 @@ export function registerAdminCredentialRoutes(
     const params = parseWith(adminClientConnectorParamsSchema, request.params);
     const body = parseWith(setConnectorCredentialsBodySchema, request.body);
 
+    if (params.connector === "report-webhook") {
+      if (!body.credentials.url || !body.credentials.secret) {
+        throw new HttpError(400, "bad_request", "report-webhook credentials require 'url' and 'secret'.");
+      }
+      try {
+        new URL(body.credentials.url);
+      } catch {
+        throw new HttpError(400, "bad_request", "report-webhook 'url' must be a valid URL.");
+      }
+    }
+
     if (!deps.store.setConnectorCredentials) {
       throw new Error("Store does not support connector credentials.");
     }
@@ -74,7 +85,7 @@ export function registerAdminCredentialRoutes(
       throw notFound(`Credentials for connector "${params.connector}" not found.`);
     }
 
-    return { clientId: params.clientId, connector: params.connector, credentials };
+    return { clientId: params.clientId, connector: params.connector, configured: true };
   });
 
   app.get("/v1/admin/clients/:clientId/credentials", async (request, reply) => {

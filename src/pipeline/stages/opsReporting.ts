@@ -791,8 +791,9 @@ export interface WebhookDeliveryOutcome {
   ok: boolean;
   statusCode?: number;
   statusText?: string;
-  body?: string;
+  errorCode?: "unsafe_destination" | "timeout" | "network_error" | "http_4xx" | "http_5xx";
   error?: string;
+  providerMessageId?: string;
 }
 
 export type ReportFetchFn = (
@@ -803,7 +804,7 @@ export type ReportFetchFn = (
 
 export async function deliverReportWebhook(
   url: string,
-  secret: string | undefined,
+  secret: string,
   payload: Record<string, unknown>,
   attempts = 3,
   fetchFn: ReportFetchFn = safeFetch,
@@ -811,20 +812,18 @@ export async function deliverReportWebhook(
   if (fetchFn === safeFetch) {
     try {
       await assertPublicWebhookUrl(url);
-    } catch (err: any) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    } catch {
+      return { ok: false, errorCode: "unsafe_destination", error: "unsafe_destination" };
     }
   }
 
   const body = JSON.stringify(payload);
-  const signature = secret
-    ? createHmac("sha256", secret).update(body).digest("hex")
-    : undefined;
+  const signature = createHmac("sha256", secret).update(body).digest("hex");
 
-  let lastError: string | undefined;
   let lastStatus: number | undefined;
   let lastStatusText: string | undefined;
-  let lastResponseBody: string | undefined;
+  let lastErrorCode: "unsafe_destination" | "timeout" | "network_error" | "http_4xx" | "http_5xx" | undefined;
+  let providerMessageId: string | undefined;
 
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
@@ -835,7 +834,7 @@ export async function deliverReportWebhook(
           headers: {
             "Content-Type": "application/json",
             "X-Jantra-Event": "ops.report_delivered",
-            ...(signature ? { "X-Jantra-Signature": signature } : {}),
+            "X-Jantra-Signature": signature,
             "X-Jantra-Delivery": String(payload.id || randomUUID()),
           },
           body,
@@ -845,16 +844,17 @@ export async function deliverReportWebhook(
 
       lastStatus = response.status;
       lastStatusText = response.statusText;
-      try {
-        lastResponseBody = (await response.text()).slice(0, 2048);
-      } catch {}
+      const msgId = response.headers.get("x-delivery-id") || response.headers.get("x-request-id");
+      if (msgId) {
+        providerMessageId = msgId.slice(0, 128);
+      }
 
       if (response.ok) {
         return {
           ok: true,
           statusCode: lastStatus,
           statusText: lastStatusText,
-          body: lastResponseBody,
+          providerMessageId,
         };
       }
 
@@ -864,19 +864,25 @@ export async function deliverReportWebhook(
           ok: false,
           statusCode: lastStatus,
           statusText: lastStatusText,
-          body: lastResponseBody,
-          error: `Webhook delivery failed with non-retryable HTTP ${response.status}.`,
+          errorCode: "http_4xx",
+          error: "http_4xx",
+          providerMessageId,
         };
       }
 
-      lastError = `Webhook delivery failed with HTTP ${response.status}.`;
+      lastErrorCode = response.status >= 500 ? "http_5xx" : "http_4xx";
       if (attempt < attempts) {
         await new Promise((resolve) => setTimeout(resolve, 50 * attempt));
       }
     } catch (err: any) {
-      lastError = err.message || String(err);
       if (err instanceof UnsafeUrlError) {
-        return { ok: false, error: `Unsafe webhook URL: ${err.message}` };
+        return { ok: false, errorCode: "unsafe_destination", error: "unsafe_destination" };
+      }
+      const msg = String(err?.message || err).toLowerCase();
+      if (msg.includes("timeout") || msg.includes("timed out") || msg.includes("abort")) {
+        lastErrorCode = "timeout";
+      } else {
+        lastErrorCode = "network_error";
       }
       if (attempt < attempts) {
         await new Promise((resolve) => setTimeout(resolve, 50 * attempt));
@@ -888,8 +894,9 @@ export async function deliverReportWebhook(
     ok: false,
     statusCode: lastStatus,
     statusText: lastStatusText,
-    body: lastResponseBody,
-    error: lastError || "Webhook delivery failed after retries.",
+    errorCode: lastErrorCode || "network_error",
+    error: lastErrorCode || "network_error",
+    providerMessageId,
   };
 }
 
@@ -917,7 +924,29 @@ export const runOpsDeliver: StageRunner = async (ctx) => {
   const opsProfile = ctx.store.getOpsProfile ? ctx.store.getOpsProfile(ctx.project.clientId) : null;
   const deliveryConfig = opsProfile?.delivery;
 
-  if (deliveryConfig?.channel === "webhook" && deliveryConfig.webhookUrl) {
+  if (deliveryConfig?.channel === "webhook") {
+    const credentialRef = deliveryConfig.credentialRef ?? "report-webhook";
+    let creds: Record<string, string> | null = null;
+    try {
+      creds = ctx.store.getConnectorCredentials
+        ? ctx.store.getConnectorCredentials(ctx.project.clientId, credentialRef)
+        : null;
+    } catch {
+      throw new StageFailedClosedError("Webhook delivery credentials could not be decrypted.");
+    }
+
+    if (!creds || !creds.url || !creds.secret) {
+      throw new StageFailedClosedError("Webhook delivery credentials missing or incomplete.");
+    }
+
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(creds.url);
+    } catch {
+      throw new StageFailedClosedError("Webhook delivery credential URL is invalid.");
+    }
+
+    const destinationHost = parsedUrl.hostname;
     const deliveryId = randomUUID();
     const payload = {
       id: deliveryId,
@@ -936,8 +965,8 @@ export const runOpsDeliver: StageRunner = async (ctx) => {
 
     const fetchFn = (ctx as any).fetchFn ?? safeFetch;
     const deliveryOutcome = await deliverReportWebhook(
-      deliveryConfig.webhookUrl,
-      deliveryConfig.webhookSecret,
+      creds.url,
+      creds.secret,
       payload,
       3,
       fetchFn,
@@ -946,13 +975,15 @@ export const runOpsDeliver: StageRunner = async (ctx) => {
     const timestamp = new Date().toISOString();
 
     if (deliveryOutcome.ok) {
-      ctx.io.say(`Operations report delivered via signed webhook to ${deliveryConfig.webhookUrl}.`);
+      ctx.io.say("Operations report delivered via signed webhook.");
       ctx.audit.record("report_delivered", {
         clientId: ctx.project.clientId,
         projectId: ctx.project.id,
         stage: ctx.stageId,
         channel: "webhook",
-        url: deliveryConfig.webhookUrl,
+        destinationHost,
+        credentialRef,
+        deliveryId,
         status: "sent",
         statusCode: deliveryOutcome.statusCode,
         artifactHash: hash,
@@ -967,16 +998,14 @@ export const runOpsDeliver: StageRunner = async (ctx) => {
             {
               status: "sent",
               channel: "webhook",
-              url: deliveryConfig.webhookUrl,
-              recipients: [deliveryConfig.webhookUrl],
+              destinationHost,
+              credentialRef,
+              deliveryId,
               timestamp,
               artifactHash: hash,
               dataOrigin,
-              providerResponse: {
-                statusCode: deliveryOutcome.statusCode,
-                statusText: deliveryOutcome.statusText,
-                body: deliveryOutcome.body,
-              },
+              statusCode: deliveryOutcome.statusCode,
+              ...(deliveryOutcome.providerMessageId ? { providerMessageId: deliveryOutcome.providerMessageId } : {}),
             },
             null,
             2,
@@ -986,16 +1015,18 @@ export const runOpsDeliver: StageRunner = async (ctx) => {
         },
       ];
     } else {
-      ctx.io.say(`Report delivery failed to ${deliveryConfig.webhookUrl}: ${deliveryOutcome.error}`);
+      ctx.io.say(`Report delivery failed: ${deliveryOutcome.errorCode || "delivery_failed"}.`);
       ctx.audit.record("error", {
         clientId: ctx.project.clientId,
         projectId: ctx.project.id,
         stage: ctx.stageId,
         channel: "webhook",
-        url: deliveryConfig.webhookUrl,
+        destinationHost,
+        credentialRef,
+        deliveryId,
         status: "failed",
         statusCode: deliveryOutcome.statusCode,
-        error: deliveryOutcome.error,
+        errorCode: deliveryOutcome.errorCode || "network_error",
         artifactHash: hash,
       });
 
@@ -1008,17 +1039,14 @@ export const runOpsDeliver: StageRunner = async (ctx) => {
             {
               status: "failed",
               channel: "webhook",
-              url: deliveryConfig.webhookUrl,
-              recipients: [deliveryConfig.webhookUrl],
+              destinationHost,
+              credentialRef,
+              deliveryId,
               timestamp,
               artifactHash: hash,
               dataOrigin,
-              error: deliveryOutcome.error,
-              providerResponse: deliveryOutcome.statusCode ? {
-                statusCode: deliveryOutcome.statusCode,
-                statusText: deliveryOutcome.statusText,
-                body: deliveryOutcome.body,
-              } : undefined,
+              statusCode: deliveryOutcome.statusCode,
+              errorCode: deliveryOutcome.errorCode || "network_error",
             },
             null,
             2,

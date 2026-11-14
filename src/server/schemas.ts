@@ -267,8 +267,7 @@ export const setOpsProfileBodySchema = z.object({
   delivery: z
     .object({
       channel: z.enum(["none", "webhook"]).default("none"),
-      webhookUrl: z.string().url().max(2048).optional(),
-      webhookSecret: z.string().trim().max(512).optional(),
+      credentialRef: z.literal("report-webhook").optional(),
     })
     .optional(),
 });

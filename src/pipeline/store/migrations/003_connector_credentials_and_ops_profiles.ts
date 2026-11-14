@@ -28,4 +28,22 @@ export function up(db: Database.Database): void {
       updated_at text not null
     );
   `);
+
+  // 3. Sanitize legacy plaintext delivery settings if any exist
+  try {
+    const rows = db.prepare("select client_id, data from ops_profiles").all() as Array<{
+      client_id: string;
+      data: string;
+    }>;
+    const updateStmt = db.prepare("update ops_profiles set data = ? where client_id = ?");
+    for (const row of rows) {
+      try {
+        const parsed = JSON.parse(row.data);
+        if (parsed.delivery && (parsed.delivery.webhookUrl || parsed.delivery.webhookSecret)) {
+          parsed.delivery = { channel: "none" };
+          updateStmt.run(JSON.stringify(parsed), row.client_id);
+        }
+      } catch {}
+    }
+  } catch {}
 }

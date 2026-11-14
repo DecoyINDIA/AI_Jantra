@@ -20,6 +20,7 @@ import {
 } from "./budget.js";
 import {
   verifyCsvDirectoryResolve,
+  verifyNoSecretsInResponsesOrDisk,
   verifyOpsCredentialIsolationAndDecryption,
   verifyOpsDeliveryHonest,
   verifyOpsNoSilentSynthetic,
@@ -89,6 +90,7 @@ export async function runRegressionEvals(): Promise<StageEvalResult[]> {
     await runRegression("ops-delivery-honest", verifyOpsDeliveryHonest),
     await runRegression("ops-no-silent-synthetic", verifyOpsNoSilentSynthetic),
     await runRegression("ops-credential-isolation-and-decryption", verifyOpsCredentialIsolationAndDecryption),
+    await runRegression("ops-secrets-redacted-and-fail-closed", verifyNoSecretsInResponsesOrDisk),
     await runRegression("ops-webhook-delivery", verifyOpsWebhookDelivery),
     await runRegression("public-key-scope", verifyPublicKeyScope),
     await runRegression("safe-fetch-redirect", verifySafeFetchRedirect),
