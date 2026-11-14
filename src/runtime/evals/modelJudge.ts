@@ -141,7 +141,11 @@ export async function runModelJudgeEvals(
     ];
   }
 
-  if (!config.geminiApiKey && config.provider !== "openai-compatible") {
+  const hasCredentials =
+    (config.provider === "gemini" && Boolean(config.geminiApiKey)) ||
+    (config.provider === "openai-compatible" && Boolean(config.llmApiKey));
+
+  if (!hasCredentials) {
     return [
       {
         fixtureId: "model-judge",
@@ -149,7 +153,7 @@ export async function runModelJudgeEvals(
         score: 0,
         passed: false,
         skipped: false,
-        notes: "Live model judging is explicitly enabled, but neither GEMINI_API_KEY nor an OpenAI-compatible provider is configured.",
+        notes: `Live model judging is explicitly enabled, but no valid API credentials are configured for provider "${config.provider}".`,
       },
     ];
   }
