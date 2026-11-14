@@ -1,12 +1,20 @@
 import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
+import { existsSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import { z } from "zod";
 
 import { createLeadBodySchema, parseWith } from "../schemas.js";
 import { requestClientId } from "../tenancy.js";
 import { forbidden, notFound, unauthorized } from "../errors.js";
 import { verifyOptionalUser, type VerifiedUser } from "../auth/logtoUser.js";
-import { defaultLeadStore, type LeadRecord, type LeadStore } from "../leads/store.js";
+import {
+  defaultLeadStore,
+  JsonLeadStore,
+  SqliteLeadStore,
+  type LeadRecord,
+  type LeadStore,
+} from "../leads/store.js";
 import { defaultStore, type ProjectStore } from "../../pipeline/store.js";
 import { defaultWebhookStore, type WebhookSubscriptionStore } from "../webhooks/store.js";
 import { dispatchWebhookEvent } from "../webhooks/dispatcher.js";
@@ -17,11 +25,12 @@ const leadParamsSchema = z.object({
   id: z.string().min(1).max(96).regex(/^[A-Za-z0-9_-]+$/, "id must use slug-safe characters."),
 });
 
-interface LeadRouteDeps {
+export interface LeadRouteDeps {
   clientId: string;
   leadStore?: LeadStore;
   projectStore?: ProjectStore;
   webhookStore?: WebhookSubscriptionStore;
+  sweepIntervalMs?: number;
 }
 
 async function resolveUser(request: Parameters<typeof verifyOptionalUser>[0]): Promise<VerifiedUser | null> {
@@ -38,6 +47,48 @@ export function registerLeadRoutes(app: FastifyInstance, deps: LeadRouteDeps): v
   const leadStore = deps.leadStore ?? defaultLeadStore;
   const projectStore = deps.projectStore ?? defaultStore;
   const webhookStore = deps.webhookStore ?? defaultWebhookStore;
+
+  if (config.enableLeadDeletionSweep && typeof leadStore.sweepExpiredLeads === "function") {
+    const sweepIntervalMs = deps.sweepIntervalMs ?? 24 * 60 * 60 * 1000;
+    const sweepTimer = setInterval(() => {
+      try {
+        leadStore.sweepExpiredLeads?.(config.leadRetentionDays, {
+          deleteLinkedRuns: config.leadDeleteLinkedRuns,
+          projectStore,
+        });
+      } catch (err) {
+        console.warn("Daily lead retention sweep failed:", err);
+      }
+    }, sweepIntervalMs);
+
+    if (typeof sweepTimer.unref === "function") {
+      sweepTimer.unref();
+    }
+
+    app.addHook("onClose", async () => {
+      clearInterval(sweepTimer);
+    });
+  }
+
+  // Trigger a lead retention sweep on demand. Full-scope callers only.
+  // Gated by JANTRA_ENABLE_LEAD_DELETION_SWEEP.
+  app.post("/v1/leads/sweep", async (request) => {
+    const identity = request.identity;
+    if (identity?.scope !== "full") {
+      throw forbidden("Full scope is required to trigger lead retention sweep.");
+    }
+    if (!config.enableLeadDeletionSweep) {
+      throw forbidden("Lead deletion sweep is disabled by configuration.");
+    }
+    if (typeof leadStore.sweepExpiredLeads !== "function") {
+      return { status: "ok", sweptLeads: 0 };
+    }
+    const swept = leadStore.sweepExpiredLeads(config.leadRetentionDays, {
+      deleteLinkedRuns: config.leadDeleteLinkedRuns,
+      projectStore,
+    });
+    return { status: "ok", sweptLeads: swept, retentionDays: config.leadRetentionDays };
+  });
 
   // Capture a lead. Works for anonymous visitors and logged-in users alike; the
   // owning account is taken only from the verified token, never the body.
@@ -132,6 +183,7 @@ export function registerLeadRoutes(app: FastifyInstance, deps: LeadRouteDeps): v
   app.delete("/v1/leads/:id", async (request, reply) => {
     const clientId = requestClientId(request, deps.clientId);
     const params = parseWith(leadParamsSchema, request.params);
+    const query = request.query as Record<string, string | undefined> | undefined;
     const identity = request.identity;
 
     const existing = leadStore.getLead?.(clientId, params.id);
@@ -146,17 +198,44 @@ export function registerLeadRoutes(app: FastifyInstance, deps: LeadRouteDeps): v
       }
     }
 
-    const deleted = leadStore.deleteLead?.(clientId, params.id) ?? false;
+    const deleteLinkedRun =
+      query?.deleteLinkedRun === "true" ||
+      query?.deleteLinkedRun === "1" ||
+      query?.deleteRun === "true" ||
+      query?.deleteRun === "1" ||
+      config.leadDeleteLinkedRuns;
+
+    const deleted = leadStore.deleteLead?.(clientId, params.id, {
+      deleteLinkedRun,
+      projectStore,
+    }) ?? false;
     if (!deleted) {
       throw notFound(`Lead ${params.id} was not found.`);
     }
 
-    const audit = new AuditLogger(existing.runId ?? "system", config.auditDir);
-    audit.record("lead_deleted", {
-      clientId,
-      leadId: params.id,
-      runId: existing.runId ?? null,
-    });
+    // Explicit tenant-scoped linked run cleanup if not handled by store
+    if (deleteLinkedRun && existing.runId) {
+      const existingProject = projectStore.loadProject(clientId, existing.runId);
+      if (existingProject && existingProject.clientId === clientId) {
+        projectStore.deleteProject?.(clientId, existing.runId);
+        const auditFile = join(config.auditDir, `${existing.runId}.jsonl`);
+        if (existsSync(auditFile)) {
+          try {
+            rmSync(auditFile, { force: true });
+          } catch {}
+        }
+      }
+    }
+
+    if (!(leadStore instanceof SqliteLeadStore || leadStore instanceof JsonLeadStore)) {
+      const audit = new AuditLogger("system", config.auditDir);
+      audit.record("lead_deleted", {
+        clientId,
+        leadId: params.id,
+        runId: existing.runId ?? null,
+        action: "delete",
+      });
+    }
 
     reply.code(200);
     return { status: "deleted", id: params.id };
