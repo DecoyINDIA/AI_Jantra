@@ -1,11 +1,14 @@
 import { z } from "zod";
-import { createHash } from "node:crypto";
+import { createHash, createHmac, randomUUID } from "node:crypto";
 import { config } from "../../config.js";
 import type { ModelMessage } from "../../model/provider.js";
 import { makeEvalScore } from "../../runtime/evaluator.js";
 import { SchemaValidationError, StageFailedClosedError, CostCeilingExceededError } from "../../runtime/errors.js";
 import { trackStageModelCall } from "../../runtime/telemetry.js";
 import { loadStageExecutionState, saveStageExecutionState } from "../executionState.js";
+import { DecryptionError } from "../../security/encryption.js";
+import { assertPublicWebhookUrl } from "../../server/webhooks/urlGuard.js";
+import { safeFetch, UnsafeUrlError } from "../../util/safeFetch.js";
 import type {
   Artifact,
   EvalScore,
@@ -53,6 +56,13 @@ function parseCritique<T>(text: string, schema: z.Schema<T>): T {
 // STAGE 1: Data Ingest (Model-flow runner)
 // ==========================================
 
+/**
+ * HARD GATE (T-018 / T-019):
+ * Do NOT invent or synthesize partner field mappings until real partner export
+ * (experiment X5) is provided. Real connector schemas and field mappings must remain
+ * grounded in real validated partner data.
+ */
+
 export function syntheticDataAllowed(provider: string, optIn: boolean): boolean {
   return provider === "mock" || optIn;
 }
@@ -60,9 +70,9 @@ export function syntheticDataAllowed(provider: string, optIn: boolean): boolean 
 export const runOpsIngest: StageRunner = async (ctx) => {
   const clientId = ctx.project.clientId;
 
-  // 1. Load Source Binding to check rules and config
-  const bindingArtifact = ctx.project.stages["source-binding"]?.artifacts.at(-1);
-  let binding: SourceBinding = {
+  // 1. Load Source Binding to check rules and config (check operator-confirmed profile first)
+  const opsProfile = ctx.store.getOpsProfile ? ctx.store.getOpsProfile(clientId) : null;
+  let binding: SourceBinding = opsProfile?.binding ?? {
     connectors: [
       { id: "stripe-sub", type: "stripe", role: "subscriptions", config: {} },
       { id: "qb-expense", type: "quickbooks", role: "expenses", config: {} },
@@ -73,7 +83,8 @@ export const runOpsIngest: StageRunner = async (ctx) => {
     ],
   };
 
-  if (bindingArtifact) {
+  const bindingArtifact = ctx.project.stages["source-binding"]?.artifacts.at(-1);
+  if (!opsProfile?.binding && bindingArtifact) {
     try {
       const jsonMatch = bindingArtifact.content.match(/<!-- binding_json:\s*([\s\S]+?)\s*-->/);
       if (jsonMatch) {
@@ -106,14 +117,42 @@ export const runOpsIngest: StageRunner = async (ctx) => {
     if (["stripe", "shopify", "csv"].includes(conn.type)) {
       try {
         const connector = defaultConnectorRegistry.get(conn.type, conn.id);
+        let credentials: Record<string, string> | undefined = undefined;
+
+        if (conn.type === "stripe" || conn.type === "shopify") {
+          try {
+            const creds = ctx.store.getConnectorCredentials
+              ? ctx.store.getConnectorCredentials(clientId, conn.type)
+              : null;
+            if (creds && Object.keys(creds).length > 0) {
+              credentials = creds;
+            }
+          } catch (err: any) {
+            // Fail closed immediately on decryption error
+            ctx.audit.record("error", {
+              clientId,
+              projectId: ctx.project.id,
+              stage: ctx.stageId,
+              message: `Credential decryption failed for connector ${conn.id} (${conn.type}): ${err.message}`,
+            });
+            throw new StageFailedClosedError(
+              `Failed to decrypt credentials for connector ${conn.id} (${conn.type}): ${err.message}`,
+              { clientId, connectorId: conn.id, connectorType: conn.type },
+            );
+          }
+
+          if (!credentials && !syntheticDataAllowed(config.provider, config.opsAllowSynthetic)) {
+            throw new StageFailedClosedError(
+              `Missing credentials for connector ${conn.id} (${conn.type}) for client ${clientId}.`,
+              { clientId, connectorId: conn.id, connectorType: conn.type },
+            );
+          }
+        }
+
         const data = await connector.fetch({
           clientId,
           config: { ...conn.config, role: conn.role },
-          credentials: {
-            STRIPE_API_KEY: process.env.STRIPE_API_KEY || "",
-            SHOPIFY_SHOP_NAME: process.env.SHOPIFY_SHOP_NAME || "",
-            SHOPIFY_ACCESS_TOKEN: process.env.SHOPIFY_ACCESS_TOKEN || "",
-          },
+          credentials,
         });
 
         if (data.orders) snapshot.orders.push(...data.orders);
@@ -155,6 +194,9 @@ export const runOpsIngest: StageRunner = async (ctx) => {
           fetchedAny = true;
         }
       } catch (err: any) {
+        if (err instanceof StageFailedClosedError) {
+          throw err;
+        }
         ctx.audit.record("error", {
           clientId,
           projectId: ctx.project.id,
@@ -268,46 +310,51 @@ export const runOpsIngest: StageRunner = async (ctx) => {
 // ==========================================
 
 export const runOpsAnalyze: StageRunner = async (ctx) => {
-  // Load spec & snapshot
-  const specArtifact = ctx.project.stages["kpi-design"]?.artifacts.at(-1);
   const snapshotArtifact = ctx.project.stages["ingest"]?.artifacts.find((a) => a.kind === "data_snapshot");
-
-  if (!specArtifact || !snapshotArtifact) {
-    throw new StageFailedClosedError("Required onboarding or ingest artifacts are missing.");
+  if (!snapshotArtifact) {
+    throw new StageFailedClosedError("Required ingest snapshot artifact is missing.");
   }
 
-  // Parse kpi_spec via hidden JSON comment
-  let kpiSpec: any;
-  let kpisList: any[] = [];
-  try {
-    const jsonMatch = specArtifact.content.match(/<!-- kpis_json:\s*([\s\S]+?)\s*-->/);
-    if (jsonMatch) {
-      kpiSpec = JSON.parse(jsonMatch[1]!);
-    } else {
-      const kpiJsonText = specArtifact.content.slice(specArtifact.content.indexOf("{"), specArtifact.content.lastIndexOf("}") + 1);
-      kpiSpec = JSON.parse(kpiJsonText);
+  // Load KPI spec & profile: first check operator-confirmed reporting profile in store
+  const opsProfile = ctx.store.getOpsProfile ? ctx.store.getOpsProfile(ctx.project.clientId) : null;
+  let kpiSpec: any = opsProfile?.kpiSpec ?? null;
+  let kpisList: any[] = kpiSpec?.kpis ?? [];
+  let knownEvents: any[] = opsProfile?.knownEvents ?? [];
+
+  if (!kpiSpec) {
+    const specArtifact = ctx.project.stages["kpi-design"]?.artifacts.at(-1);
+    if (!specArtifact) {
+      throw new StageFailedClosedError("Required onboarding reporting profile or KPI design artifacts are missing.");
     }
-    kpisList = kpiSpec.kpis || [];
-  } catch (err) {
-    throw new StageFailedClosedError("KPI specifications JSON metadata was not found or failed parsing in the KPI artifact.");
-  }
 
-  const snapshot = JSON.parse(snapshotArtifact.content);
+    try {
+      const jsonMatch = specArtifact.content.match(/<!-- kpis_json:\s*([\s\S]+?)\s*-->/);
+      if (jsonMatch) {
+        kpiSpec = JSON.parse(jsonMatch[1]!);
+      } else {
+        const kpiJsonText = specArtifact.content.slice(specArtifact.content.indexOf("{"), specArtifact.content.lastIndexOf("}") + 1);
+        kpiSpec = JSON.parse(kpiJsonText);
+      }
+      kpisList = kpiSpec.kpis || [];
+    } catch (err) {
+      throw new StageFailedClosedError("KPI specifications JSON metadata was not found or failed parsing in the KPI artifact.");
+    }
 
-  // Extract known events from profile metadata
-  const profileArtifact = ctx.project.stages.profile?.artifacts.at(-1);
-  let knownEvents: any[] = [];
-  if (profileArtifact) {
-    const jsonMatch = profileArtifact.content.match(/<!-- profile_json:\s*([\s\S]+?)\s*-->/);
-    if (jsonMatch) {
-      try {
-        const profileData = JSON.parse(jsonMatch[1]!);
-        knownEvents = profileData.knownEvents || [];
-      } catch {
-        // ignore
+    const profileArtifact = ctx.project.stages.profile?.artifacts.at(-1);
+    if (profileArtifact) {
+      const jsonMatch = profileArtifact.content.match(/<!-- profile_json:\s*([\s\S]+?)\s*-->/);
+      if (jsonMatch) {
+        try {
+          const profileData = JSON.parse(jsonMatch[1]!);
+          knownEvents = profileData.knownEvents || [];
+        } catch {
+          // ignore
+        }
       }
     }
   }
+
+  const snapshot = JSON.parse(snapshotArtifact.content);
 
   // 1. Get unique sorted month list (from calendar dates: YYYY-MM)
   const monthsSet = new Set<string>();
@@ -637,18 +684,21 @@ export const runOpsCompose: StageRunner = async (ctx) => {
     });
   }
 
-  // Retrieve alert budget from design spec if available
-  const specArtifact = ctx.project.stages["kpi-design"]?.artifacts.at(-1);
-  let alertBudget = 5;
-  if (specArtifact) {
-    try {
-      const jsonMatch = specArtifact.content.match(/<!-- kpis_json:\s*([\s\S]+?)\s*-->/);
-      if (jsonMatch) {
-        const kpiSpec = JSON.parse(jsonMatch[1]!);
-        alertBudget = kpiSpec.anomalyConfig?.alertBudget || 5;
+  // Retrieve alert budget from stored profile or design spec if available
+  const opsProfile = ctx.store.getOpsProfile ? ctx.store.getOpsProfile(ctx.project.clientId) : null;
+  let alertBudget = opsProfile?.kpiSpec?.anomalyConfig?.alertBudget ?? 5;
+  if (!opsProfile?.kpiSpec?.anomalyConfig?.alertBudget) {
+    const specArtifact = ctx.project.stages["kpi-design"]?.artifacts.at(-1);
+    if (specArtifact) {
+      try {
+        const jsonMatch = specArtifact.content.match(/<!-- kpis_json:\s*([\s\S]+?)\s*-->/);
+        if (jsonMatch) {
+          const kpiSpec = JSON.parse(jsonMatch[1]!);
+          alertBudget = kpiSpec.anomalyConfig?.alertBudget || 5;
+        }
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
     }
   }
 
@@ -737,11 +787,115 @@ Rules:
 // STAGE 4: Report Delivery (Tool loop)
 // ==========================================
 
+export interface WebhookDeliveryOutcome {
+  ok: boolean;
+  statusCode?: number;
+  statusText?: string;
+  body?: string;
+  error?: string;
+}
+
+export type ReportFetchFn = (
+  url: string,
+  init?: RequestInit,
+  opts?: any,
+) => Promise<Response>;
+
+export async function deliverReportWebhook(
+  url: string,
+  secret: string | undefined,
+  payload: Record<string, unknown>,
+  attempts = 3,
+  fetchFn: ReportFetchFn = safeFetch,
+): Promise<WebhookDeliveryOutcome> {
+  if (fetchFn === safeFetch) {
+    try {
+      await assertPublicWebhookUrl(url);
+    } catch (err: any) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  const body = JSON.stringify(payload);
+  const signature = secret
+    ? createHmac("sha256", secret).update(body).digest("hex")
+    : undefined;
+
+  let lastError: string | undefined;
+  let lastStatus: number | undefined;
+  let lastStatusText: string | undefined;
+  let lastResponseBody: string | undefined;
+
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      const response = await fetchFn(
+        url,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Jantra-Event": "ops.report_delivered",
+            ...(signature ? { "X-Jantra-Signature": signature } : {}),
+            "X-Jantra-Delivery": String(payload.id || randomUUID()),
+          },
+          body,
+        },
+        { timeoutMs: 10_000, maxRedirects: 0, maxBytes: 64_000 },
+      );
+
+      lastStatus = response.status;
+      lastStatusText = response.statusText;
+      try {
+        lastResponseBody = (await response.text()).slice(0, 2048);
+      } catch {}
+
+      if (response.ok) {
+        return {
+          ok: true,
+          statusCode: lastStatus,
+          statusText: lastStatusText,
+          body: lastResponseBody,
+        };
+      }
+
+      // Non-retryable client error (4xx other than 429) -> stop immediately
+      if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+        return {
+          ok: false,
+          statusCode: lastStatus,
+          statusText: lastStatusText,
+          body: lastResponseBody,
+          error: `Webhook delivery failed with non-retryable HTTP ${response.status}.`,
+        };
+      }
+
+      lastError = `Webhook delivery failed with HTTP ${response.status}.`;
+      if (attempt < attempts) {
+        await new Promise((resolve) => setTimeout(resolve, 50 * attempt));
+      }
+    } catch (err: any) {
+      lastError = err.message || String(err);
+      if (err instanceof UnsafeUrlError) {
+        return { ok: false, error: `Unsafe webhook URL: ${err.message}` };
+      }
+      if (attempt < attempts) {
+        await new Promise((resolve) => setTimeout(resolve, 50 * attempt));
+      }
+    }
+  }
+
+  return {
+    ok: false,
+    statusCode: lastStatus,
+    statusText: lastStatusText,
+    body: lastResponseBody,
+    error: lastError || "Webhook delivery failed after retries.",
+  };
+}
+
 export const runOpsDeliver: StageRunner = async (ctx) => {
   const reportArtifact = ctx.project.stages.compose?.artifacts.find((a) => a.kind === "ops_report");
   if (!reportArtifact) throw new StageFailedClosedError("Operations report is missing.");
-
-  ctx.io.say("Report delivery is not configured. The report is ready for manual sending.");
 
   let dataOrigin: "synthetic" | "connectors" | "unknown" = "unknown";
   const qualityArtifact = ctx.project.stages.ingest?.artifacts.find((a) => a.kind === "data_quality_report");
@@ -758,6 +912,125 @@ export const runOpsDeliver: StageRunner = async (ctx) => {
 
   // Calculate actual SHA-256 hash of the report
   const hash = "sha256-" + createHash("sha256").update(reportArtifact.content).digest("hex");
+
+  // Check stored operator-confirmed reporting profile for delivery channel
+  const opsProfile = ctx.store.getOpsProfile ? ctx.store.getOpsProfile(ctx.project.clientId) : null;
+  const deliveryConfig = opsProfile?.delivery;
+
+  if (deliveryConfig?.channel === "webhook" && deliveryConfig.webhookUrl) {
+    const deliveryId = randomUUID();
+    const payload = {
+      id: deliveryId,
+      clientId: ctx.project.clientId,
+      projectId: ctx.project.id,
+      type: "ops.report_delivered",
+      createdAt: new Date().toISOString(),
+      artifactHash: hash,
+      report: {
+        title: reportArtifact.title,
+        content: reportArtifact.content,
+        version: reportArtifact.version,
+      },
+      dataOrigin,
+    };
+
+    const fetchFn = (ctx as any).fetchFn ?? safeFetch;
+    const deliveryOutcome = await deliverReportWebhook(
+      deliveryConfig.webhookUrl,
+      deliveryConfig.webhookSecret,
+      payload,
+      3,
+      fetchFn,
+    );
+
+    const timestamp = new Date().toISOString();
+
+    if (deliveryOutcome.ok) {
+      ctx.io.say(`Operations report delivered via signed webhook to ${deliveryConfig.webhookUrl}.`);
+      ctx.audit.record("report_delivered", {
+        clientId: ctx.project.clientId,
+        projectId: ctx.project.id,
+        stage: ctx.stageId,
+        channel: "webhook",
+        url: deliveryConfig.webhookUrl,
+        status: "sent",
+        statusCode: deliveryOutcome.statusCode,
+        artifactHash: hash,
+      });
+
+      return [
+        {
+          stage: ctx.stageId,
+          kind: "delivery_receipt",
+          title: "Delivery Receipt",
+          content: JSON.stringify(
+            {
+              status: "sent",
+              channel: "webhook",
+              url: deliveryConfig.webhookUrl,
+              recipients: [deliveryConfig.webhookUrl],
+              timestamp,
+              artifactHash: hash,
+              dataOrigin,
+              providerResponse: {
+                statusCode: deliveryOutcome.statusCode,
+                statusText: deliveryOutcome.statusText,
+                body: deliveryOutcome.body,
+              },
+            },
+            null,
+            2,
+          ),
+          version: 1,
+          createdAt: timestamp,
+        },
+      ];
+    } else {
+      ctx.io.say(`Report delivery failed to ${deliveryConfig.webhookUrl}: ${deliveryOutcome.error}`);
+      ctx.audit.record("error", {
+        clientId: ctx.project.clientId,
+        projectId: ctx.project.id,
+        stage: ctx.stageId,
+        channel: "webhook",
+        url: deliveryConfig.webhookUrl,
+        status: "failed",
+        statusCode: deliveryOutcome.statusCode,
+        error: deliveryOutcome.error,
+        artifactHash: hash,
+      });
+
+      return [
+        {
+          stage: ctx.stageId,
+          kind: "delivery_receipt",
+          title: "Delivery Receipt (failed)",
+          content: JSON.stringify(
+            {
+              status: "failed",
+              channel: "webhook",
+              url: deliveryConfig.webhookUrl,
+              recipients: [deliveryConfig.webhookUrl],
+              timestamp,
+              artifactHash: hash,
+              dataOrigin,
+              error: deliveryOutcome.error,
+              providerResponse: deliveryOutcome.statusCode ? {
+                statusCode: deliveryOutcome.statusCode,
+                statusText: deliveryOutcome.statusText,
+                body: deliveryOutcome.body,
+              } : undefined,
+            },
+            null,
+            2,
+          ),
+          version: 1,
+          createdAt: timestamp,
+        },
+      ];
+    }
+  }
+
+  ctx.io.say("Report delivery is not configured. The report is ready for manual sending.");
 
   return [
     {
