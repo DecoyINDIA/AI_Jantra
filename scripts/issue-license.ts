@@ -14,16 +14,19 @@ Jantra License Issuance Tool
 Usage:
   npx tsx scripts/issue-license.ts --licensee "<name>" [options]
   npx tsx scripts/issue-license.ts --verify "<token>"
-  npx tsx scripts/issue-license.ts --generate-keys
+  npx tsx scripts/issue-license.ts --generate-keys --public-out <path> --private-out <path> [--force]
 
 Options:
   --licensee <name>     Name of the licensee / customer (required for issue)
   --plan <plan>         License plan tier (default: "pro")
   --days <number>       Validity duration in days from now (default: 365)
   --expires <ISO-date>  Explicit expiration date (e.g. 2027-12-31T23:59:59Z)
-  --key <file>          Path to Ed25519 private key PEM file
+  --key <file>          Path to Ed25519 private key PEM file (or set JANTRA_LICENSE_PRIVATE_KEY)
   --verify <token>      Verify a base64 license token and print its payload
-  --generate-keys       Generate a new Ed25519 keypair and print SPKI/PKCS#8 PEMs
+  --generate-keys       Generate a new Ed25519 keypair and save to files
+  --public-out <path>   Output path for public key PEM (required with --generate-keys)
+  --private-out <path>  Output path for private key PEM (required with --generate-keys, mode 0600)
+  --force, -f           Overwrite existing key files
   --help                Show this help message
 `);
 }
@@ -38,6 +41,16 @@ function parseArgs(): Record<string, string | boolean> {
       result.help = true;
     } else if (arg === "--generate-keys") {
       result.generateKeys = true;
+    } else if (arg === "--force" || arg === "-f") {
+      result.force = true;
+    } else if (arg === "--public-out") {
+      result.publicOut = args[++i] ?? "";
+    } else if (arg.startsWith("--public-out=")) {
+      result.publicOut = arg.slice("--public-out=".length);
+    } else if (arg === "--private-out") {
+      result.privateOut = args[++i] ?? "";
+    } else if (arg.startsWith("--private-out=")) {
+      result.privateOut = arg.slice("--private-out=".length);
     } else if (arg === "--verify") {
       result.verify = args[++i] ?? "";
     } else if (arg.startsWith("--verify=")) {
@@ -77,12 +90,44 @@ export function main(): void {
   }
 
   if (opts.generateKeys) {
+    const publicOut = typeof opts.publicOut === "string" ? opts.publicOut.trim() : "";
+    const privateOut = typeof opts.privateOut === "string" ? opts.privateOut.trim() : "";
+    const force = Boolean(opts.force);
+
+    if (!publicOut || !privateOut) {
+      console.error("Error: --generate-keys requires both --public-out <path> and --private-out <path>.\n");
+      printUsage();
+      process.exit(1);
+    }
+
+    if (fs.existsSync(publicOut) && !force) {
+      console.error(`Error: Public key file "${publicOut}" already exists. Use --force to overwrite.\n`);
+      process.exit(1);
+    }
+
+    if (fs.existsSync(privateOut) && !force) {
+      console.error(`Error: Private key file "${privateOut}" already exists. Use --force to overwrite.\n`);
+      process.exit(1);
+    }
+
     const pair = generateLicenseKeyPair();
-    console.log("=== Generated New Ed25519 Keypair ===\n");
-    console.log("Public Key (embed in application):");
-    console.log(pair.publicKey);
-    console.log("Private Key (keep secret for signing):");
-    console.log(pair.privateKey);
+
+    fs.writeFileSync(publicOut, pair.publicKey, "utf8");
+
+    try {
+      fs.writeFileSync(privateOut, pair.privateKey, { encoding: "utf8", mode: 0o600 });
+      fs.chmodSync(privateOut, 0o600);
+    } catch {
+      fs.writeFileSync(privateOut, pair.privateKey, "utf8");
+    }
+
+    const fingerprint = crypto.createHash("sha256").update(pair.publicKey).digest("hex");
+
+    console.log("=== Generated New Ed25519 Keypair ===");
+    console.log(`Public Key file:      ${publicOut}`);
+    console.log(`Private Key file:     ${privateOut}`);
+    console.log(`Public Key SHA-256:   ${fingerprint}`);
+    console.log("\nKeep the private key strictly offline and confidential. Never commit private key files.");
     return;
   }
 
@@ -134,8 +179,20 @@ export function main(): void {
   };
 
   let privateKey: string;
+  const rawKeyOption = typeof opts.key === "string" && opts.key.trim()
+    ? opts.key.trim()
+    : process.env.JANTRA_LICENSE_PRIVATE_KEY;
+
+  if (!rawKeyOption || !rawKeyOption.trim()) {
+    console.error(
+      "Error: License issuance requires an Ed25519 private key. Provide --key <path> or set the JANTRA_LICENSE_PRIVATE_KEY environment variable.\n",
+    );
+    printUsage();
+    process.exit(1);
+  }
+
   try {
-    privateKey = resolvePrivateKey(opts.key);
+    privateKey = resolvePrivateKey(rawKeyOption);
   } catch (err) {
     console.error(`Error: ${err instanceof Error ? err.message : String(err)}\n`);
     printUsage();

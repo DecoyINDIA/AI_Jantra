@@ -6,6 +6,7 @@ import path from "node:path";
 import {
   createLicenseToken,
   generateLicenseKeyPair,
+  resolvePrivateKey,
   verifyLicenseToken,
   tokenToLicenseStatus,
   canonicalizePayload,
@@ -262,5 +263,114 @@ describe("Offline Ed25519 Licensing", () => {
     };
     assert.equal(customOpenAiConfig.provider, "openai-compatible");
     assert.equal(customOpenAiConfig.dataCollection, "deny");
+  });
+
+  it("resolvePrivateKey is pure and ignores environment variables", () => {
+    const origEnv = process.env.JANTRA_LICENSE_PRIVATE_KEY;
+    try {
+      process.env.JANTRA_LICENSE_PRIVATE_KEY = testSuiteKeyPair.privateKey;
+      // Without argument, it MUST throw even if JANTRA_LICENSE_PRIVATE_KEY is set in environment
+      assert.throws(
+        () => resolvePrivateKey(undefined),
+        /requires an Ed25519 private key/i,
+      );
+
+      // With explicit PEM content, it returns the trimmed PEM
+      assert.equal(resolvePrivateKey(testSuiteKeyPair.privateKey), testSuiteKeyPair.privateKey.trim());
+    } finally {
+      if (origEnv) process.env.JANTRA_LICENSE_PRIVATE_KEY = origEnv;
+      else delete process.env.JANTRA_LICENSE_PRIVATE_KEY;
+    }
+  });
+
+  it("CLI script issue-license.ts enforces secure key generation and issuance isolation", async () => {
+    const { execFileSync } = await import("node:child_process");
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "jantra-cli-lic-"));
+    const pubFile = path.join(tmpDir, "license.pub");
+    const privFile = path.join(tmpDir, "license.priv");
+    const scriptPath = path.resolve("scripts/issue-license.ts");
+
+    try {
+      // 1. Issuing without key or env exits nonzero
+      assert.throws(
+        () => {
+          execFileSync(
+            process.execPath,
+            ["--import", "tsx", scriptPath, "--licensee", "NoKey Corp"],
+            { env: { ...process.env, JANTRA_LICENSE_PRIVATE_KEY: "" }, stdio: "pipe" },
+          );
+        },
+        (err: any) => err.status === 1,
+      );
+
+      // 2. --generate-keys without output files exits nonzero
+      assert.throws(
+        () => {
+          execFileSync(
+            process.execPath,
+            ["--import", "tsx", scriptPath, "--generate-keys"],
+            { stdio: "pipe" },
+          );
+        },
+        (err: any) => err.status === 1,
+      );
+
+      // 3. --generate-keys writes files and never outputs private key to stdout
+      const genOutput = execFileSync(
+        process.execPath,
+        ["--import", "tsx", scriptPath, "--generate-keys", "--public-out", pubFile, "--private-out", privFile],
+        { encoding: "utf8" },
+      );
+
+      assert(fs.existsSync(pubFile), "public key file must be created");
+      assert(fs.existsSync(privFile), "private key file must be created");
+      assert(!genOutput.includes("BEGIN PRIVATE KEY"), "stdout must not contain private key");
+      assert(!genOutput.includes("BEGIN ED25519 PRIVATE KEY"), "stdout must not contain private key");
+      assert(genOutput.includes("Public Key SHA-256:"), "stdout must contain public key fingerprint");
+
+      // 4. Overwrite without --force fails
+      assert.throws(
+        () => {
+          execFileSync(
+            process.execPath,
+            ["--import", "tsx", scriptPath, "--generate-keys", "--public-out", pubFile, "--private-out", privFile],
+            { stdio: "pipe" },
+          );
+        },
+        (err: any) => err.status === 1,
+      );
+
+      // 5. Overwrite with --force succeeds
+      const forceOutput = execFileSync(
+        process.execPath,
+        ["--import", "tsx", scriptPath, "--generate-keys", "--public-out", pubFile, "--private-out", privFile, "--force"],
+        { encoding: "utf8" },
+      );
+      assert(!forceOutput.includes("BEGIN PRIVATE KEY"), "stdout must not contain private key with --force");
+
+      // 6. Issue license using the newly generated private key file
+      const issueOutput = execFileSync(
+        process.execPath,
+        ["--import", "tsx", scriptPath, "--licensee", "Generated Key Customer", "--key", privFile],
+        { encoding: "utf8" },
+      );
+      assert(issueOutput.includes("Jantra License Token Issued"), "license must be issued");
+      const tokenMatch = issueOutput.match(/License Token \(base64\):\s*\n([A-Za-z0-9+/=]+)/);
+      assert(tokenMatch && tokenMatch[1], "token must be in stdout");
+      const token = tokenMatch[1].trim();
+
+      // Verify with matching public key
+      const pubKeyPem = fs.readFileSync(pubFile, "utf8");
+      const verifyResult = verifyLicenseToken(token, pubKeyPem);
+      assert.equal(verifyResult.valid, true);
+      assert.equal(verifyResult.payload?.licensee, "Generated Key Customer");
+
+      // Verify against embedded key -> tampered
+      const embeddedVerify = verifyLicenseToken(token, EMBEDDED_LICENSE_PUBLIC_KEY);
+      assert.equal(embeddedVerify.valid, false);
+      assert.equal(embeddedVerify.state, "tampered");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 });
