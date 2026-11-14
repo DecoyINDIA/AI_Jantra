@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import process from "node:process";
 import { EMBEDDED_LICENSE_PUBLIC_KEY } from "../src/licensing/keys.js";
-import { createLicenseToken, generateLicenseKeyPair } from "../src/licensing/issue.js";
+import { createLicenseToken, generateLicenseKeyPair, resolvePrivateKey } from "../src/licensing/issue.js";
 import { verifyLicenseToken } from "../src/licensing/verify.js";
 import type { LicensePayload } from "../src/licensing/types.js";
 
@@ -66,23 +66,6 @@ function parseArgs(): Record<string, string | boolean> {
   }
 
   return result;
-}
-
-export function resolvePrivateKey(keyOption?: string | boolean): string {
-  if (typeof keyOption === "string" && keyOption.trim()) {
-    const keyPath = keyOption.trim();
-    if (!fs.existsSync(keyPath)) {
-      throw new Error(`Private key file not found: ${keyPath}`);
-    }
-    return fs.readFileSync(keyPath, "utf8");
-  }
-  const envKey = process.env.JANTRA_LICENSE_PRIVATE_KEY;
-  if (envKey && envKey.trim()) {
-    return envKey.trim();
-  }
-  throw new Error(
-    "License issuance requires an Ed25519 private key. Provide --key <path> or set the JANTRA_LICENSE_PRIVATE_KEY environment variable.",
-  );
 }
 
 export function main(): void {
