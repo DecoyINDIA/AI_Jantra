@@ -1,7 +1,7 @@
 # Jantra Master Plan — Execution Progress Record
 
 Initialized: 2026-11-13
-Status: In Progress
+Status: Implementation pushed through `d77df95`; retention correctness follow-up and external acceptance remain open. See [current validation and follow-up](12_VALIDATION_AND_FOLLOW_UP.md), validated 2026-11-14.
 
 ## Recorded Owner Decisions Applied
 - **D-1**: Default public agent allowlist: `intake-public` (and route restriction).
@@ -24,6 +24,7 @@ Status: In Progress
 | **T-005** | P1 | Completed | - | Read-only | Discovery (Worker/Origin header flow) | Discovery: origin client address (see report below) |
 
 ### T-005 Discovery Findings
+Historical pre-T-006 analysis only. The current Worker replaces the visitor header; these observations are not a current deployment test. No deployed client-address value was obtained during this documentation validation.
 - **Header Analysis:**
   | Header Name | Value Seen Locally | Value Seen Deployed | Client-Controllable? |
   |---|---|---|---|
@@ -33,6 +34,9 @@ Status: In Progress
 - **Answer A:** Is `request.ip` at the origin the visitor's address? **No.** Fastify's `trustProxy: 1` trusts only the immediate reverse-proxy hop (Render proxy). In production, Render's proxy connects to the container socket, resolving `request.ip` to Cloudflare's egress IP; thus, all public edge visitors would share a single IP bucket.
 - **Answer B:** Can a browser client inject `X-Jantra-Client-IP` through the current Worker? **Yes.** `worker.js` creates `new Headers(request.headers)` and deletes only `Origin` and `Cookie`, forwarding any client-supplied `X-Jantra-Client-IP` directly to the origin.
 - **Recommendation:** **CONFIRM** the T-006 design. `worker.js` must delete incoming `X-Jantra-Client-IP` and set it from `request.headers.get("CF-Connecting-IP")`. The origin must trust `X-Jantra-Client-IP` only when authenticated with `public` key scope.
+
+| Task | Priority | Status | Commit | Verified Push | Checks Run | Notes |
+|---|---|---|---|---|---|---|
 | **T-007** | P1 | Completed | 0107546 | Yes | G1 (51/51 eval, typecheck, smoke, server:smoke) | Clean error envelope |
 | **T-008** | P1 | Completed | 0f8fc48 | Yes | G1 (53/53 eval, typecheck, smoke, server:smoke) | Store defects |
 | **T-009** | P1 | Completed | 1c8a17a | Yes | G1 (53/53 eval, typecheck, smoke, server:smoke) | Cross-platform scripts & CI typecheck |
@@ -50,7 +54,7 @@ Status: In Progress
 | **T-014** | P2 | Implemented (Production acceptance pending) | d685952 | Yes | G1 + npm test (95 unit tests, 70/70 eval) | Async stage execution with in-process worker, jobs table, 202 Prefer: respond-async, SSE events implemented; pending live acceptance |
 | **T-018** | P2 | Externally Blocked (Framework Implemented) | a6a1271 | Yes | G1 + npm test (95 unit tests, 70/70 eval) | Framework implemented; acceptance blocked by X5 and live delivery per D-3 |
 | **T-019** | P2 | Externally Blocked (Framework Implemented) | 12c2a63 | Yes | G1 + npm test (95 unit tests, 70/70 eval) | Framework implemented; acceptance blocked by X5 and live delivery |
-| **T-023** | P2 | Implemented (Production acceptance pending) | c36d7b0 | Yes | G1 + npm test (95 unit tests, 70/70 eval) | Lead deletion route, store methods, 30-day retention sweep gated by JANTRA_ENABLE_LEAD_DELETION_SWEEP per D-6 (remains disabled) |
+| **T-023** | P2 | Partial: correctness follow-up required | c36d7b0 | Yes | Local gates pass (95 unit, 70 eval plus one skipped judge) | SQLite soft deletion retains PII; manual sweep spans tenants; cleanup recovery needs work. See R-001 through R-003; keep sweep disabled. |
 | **T-025** | P2 | Implemented (Pushed) | b385290 | Yes | G1 + npm test (95 unit tests, 70/70 eval) | Offline Ed25519 verification, rotated embedded public key, pure issuance library, unlicensed read-only enforcement, multi-provider desktop config |
 | **T-024** | P3 | Implemented (Production acceptance pending) | b32ce0d | Yes | G1 + npm test (95 unit tests, 70/70 eval) | Operator UI token handling: sessionStorage default, remember checkbox, never re-render admin token |
 | **T-026** | P3 | Implemented (Pushed) | fc7b3bf | Yes | G1 + npm test (95 unit tests, 70/70 eval) | Model catalog from JANTRA_MODEL_CATALOG_PATH with Zod validation, endpoint model verification, offline test isolation |
@@ -59,7 +63,7 @@ Status: In Progress
 
 | Task | Priority | Status | Commit | Verified Push | Checks Run | Notes |
 |---|---|---|---|---|---|---|
-| **F-001** | P0 | Completed | 4a79c33 | Yes | Full gate (89/89 unit, 69/69 eval, smoke, server:smoke, edge:verify:local, git diff --check) | Cleaned unpushed Git history (amended 1ef14f7 -> f943e81), removed .agents/ and .claude/skills/world-class-agents/ from index while preserving working files, updated .gitignore, pushed main (HEAD: 4a79c33) |
+| **F-001** | P0 | Executed | f943e81 | Yes | Historical gate record; current baseline in validation document | Rewritten docs commit includes ignore rules and removes accidental local paths. `4a79c33` is the live-judge credential fix, not a cleanup commit. |
 | **F-002** | P0 | Completed | 3fbff34 | Yes | Full gate (90/90 unit, 70/70 eval, smoke, server:smoke, edge:verify:local, git diff --check) | Encrypted report webhook credentials under report-webhook, removed decrypted credentials from responses, safe host-only delivery receipt & audit metadata, fail-closed delivery |
 | **F-003** | P0 | Completed | 7607974 | Yes | Full gate (92/92 unit, 70/70 eval, smoke, server:smoke, edge:verify:local, git diff --check) | Isolated private key handling in scripts/issue-license.ts, made src/licensing/issue.ts pure without process.env, enforced --public-out and --private-out flags with 0600 permissions, never print private key to terminal |
 | **F-004** | P0 | Completed | 65e35b9 | Yes | Full gate (93/93 unit, 70/70 eval, smoke, server:smoke, edge:verify:local, git diff --check) | Verified desktop licence enforcement across all stage/model trigger routes (runs, advance, interactions, confirm, reject, promote, complete), authenticated activation, wrong-key & tampered rejection, provider secret isolation |
@@ -73,14 +77,15 @@ Status: In Progress
 ## Production Deployment Status & Live Acceptance Plan
 
 ### 1. Deployment Topology & Current Status
-- **Architecture:** Two-tier model:
+- **Planned architecture (not verified live):** Two-tier model:
   - **Public Edge:** Cloudflare Worker (`jantra-edge` / `xolver-intake-proxy` at `deploy/cloudflare-worker/`) exposing `https://api.jantra.in` (and `xolver.in` intake proxy).
   - **Private Origin:** Render Web Service (`jantra`, Docker container via `Dockerfile` and `render.yaml`) with 1 GB persistent disk at `/data/jantra`.
 - **Status Distinction:**
-  - **Code Status:** Implemented & Offline-Verified (68/68 evals, unit tests, Docker healthcheck smoke clean).
-  - **Production Deployment Status:** Pending cutover from legacy Railway container (`jantradesktop-production.up.railway.app`, ephemeral disk) to Render persistent disk origin and live Cloudflare Worker.
+  - **Code Status:** Local baseline passes: 95 unit tests, 70 eval checks plus one skipped live judge, both smoke commands, 19 local edge checks. Retention correctness remains open; Docker was not rebuilt in this pass.
+  - **Production Deployment Status:** Owner states Jantra is not in production. Render cutover is future work. Any historical Railway endpoint, data, disk characteristics, or Cloudflare deployment must be inspected before planning a migration; none was verified here.
 
 ### 2. Account & Infrastructure Identification
+The values below are intended configuration from repository files, not discovered account/resource identities.
 - **Render Web Service:**
   - Service Name: `jantra`
   - Region: `singapore`
@@ -128,7 +133,7 @@ To mark production deployment accepted, the following 8 live gates must pass:
 
 ### 6. Retention Sweep Gating (Owner Decision D-6)
 - `JANTRA_ENABLE_LEAD_DELETION_SWEEP` must remain `false` (`0`) in production until lead webhook notifications are proven live and actively delivering leads to a durable system of record.
-- Only after successful delivery is proven in production may `JANTRA_ENABLE_LEAD_DELETION_SWEEP=true` and `JANTRA_LEAD_RETENTION_DAYS=30` be enabled.
+- Only after successful delivery is proven and retention defects R-001 through R-003 are resolved may the owner enable the sweep with a 30-day retention period.
 
 ### 7. External Blockers Remaining Open (Out of Scope for Final Brief)
 - **X-001 (Partner Export & Experiment X5):** No real partner CSV or spreadsheet is available. T-018 and T-019 framework implemented; partner-specific field mapping and live acceptance remain blocked per Decision D-3.

@@ -1,6 +1,6 @@
 # AGENTS.md — operating instructions for coding agents
 
-Jantra AI is a TypeScript agent runtime with a Fastify API. Runs ("projects") move through stages with human gates. The live use is a public intake chat widget on xolver.in that captures leads; operators also run a three-stage planning pipeline (intake → research → planning). Everything is audited to JSONL and cost-tracked. Trust is the product: never fabricate, never fail open on verification.
+Jantra AI is a TypeScript agent runtime with a Fastify API. Runs ("projects") move through stages with human gates. Intended uses include a public intake widget and an operator planning pipeline (intake → research → planning). The owner states Jantra is not in production. Current validation and unresolved work are recorded in `docs/jantra-master-plan/12_VALIDATION_AND_FOLLOW_UP.md`; consult it before assigning roadmap tasks. Everything is audited to JSONL and cost-tracked. Trust is the product: never fabricate, never fail open on verification.
 
 ## Start here
 Read `docs/ARCHITECTURE.md` if present, else this file; then the repository map:

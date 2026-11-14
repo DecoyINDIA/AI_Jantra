@@ -1,5 +1,7 @@
 # 05 — Master Roadmap
 
+> Original initiative scope and dependencies. Current status is in [PROGRESS.md](PROGRESS.md) and [validation and follow-up](12_VALIDATION_AND_FOLLOW_UP.md). F-001 through F-007 have executed; retention correctness and external acceptance remain open. Do not treat milestone exit conditions below as already satisfied.
+
 Audit references (A-xx) are in document 02. Task packets (T-xxx) are in `06_AGENT_TASKS/`. Complexity: S (under half a day for a competent agent), M (about a day), L (several days). Confidence is in the diagnosis and the proposed fix together.
 
 ## Milestones

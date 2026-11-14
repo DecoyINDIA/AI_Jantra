@@ -1,5 +1,7 @@
 # 09 — Quality Gates
 
+> Current local validation: 95 unit tests, 70 passed eval checks plus one skipped live judge, both smokes, and 19 local edge checks at `d77df95` on 2026-11-14. This pass did not install dependencies in a clean clone or validate hosted CI/live deployment. See [follow-up](12_VALIDATION_AND_FOLLOW_UP.md) for correctness gaps not covered by existing tests. Use `npm run edge:verify:local` for the simulated local Worker harness; live edge checks require a separately running target.
+
 A task is complete when the gates pass on the orchestrator's machine, not when an agent says so.
 
 ## 1. Required return from every implementing agent

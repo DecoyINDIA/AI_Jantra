@@ -80,13 +80,15 @@ Gemini key.
 ## Status
 
 Agent readiness:
-- **Production:** `intake-public` (anonymous visitor intake widget deployed on xolver.in capturing leads)
+- **Implemented:** `intake-public` (anonymous visitor intake and lead capture; production acceptance is pending)
 - **Usable:** `planning-pipeline` (human-gated 3-stage intake -> research -> planning pipeline)
 - **Prototype:** `ops-onboarding`, `ops-reporting` (reporting framework implemented; real report delivery blocked by partner export X5 and live delivery)
 - **Demo:** `support-agent` (sample interactive support demo)
 - **Client-specific:** `firebnb-concierge` (hospitality concierge agent)
 
-The eval harness runs without a Gemini key; live model-judge evals are skipped unless a key is present. Live pipeline runs require `GEMINI_API_KEY`.
+The eval harness defaults to mock execution. Live model judging requires `JANTRA_RUN_LIVE_JUDGE=1` and credentials for the selected provider; an enabled judge fails on missing credentials or provider errors. Grounded research requires `GEMINI_API_KEY`.
+
+Current implementation evidence and unresolved work are recorded in [validation and follow-up](docs/jantra-master-plan/12_VALIDATION_AND_FOLLOW_UP.md). Production deployment and acceptance have not been verified.
 
 The [master planning package](docs/jantra-master-plan/README.md) contains the audit, roadmap, task packets, and owner decisions recorded on 2026-11-13.
 

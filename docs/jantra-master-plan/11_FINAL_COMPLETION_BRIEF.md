@@ -1,5 +1,7 @@
 # Jantra Final Completion Brief
 
+> Historical execution brief: F-001 through F-007 were executed and pushed through `d77df95`. The repository-state snapshot and rewrite instructions below describe the pre-execution state and must not be rerun. Current evidence, remaining correctness work, and external blockers are authoritative in [12_VALIDATION_AND_FOLLOW_UP.md](12_VALIDATION_AND_FOLLOW_UP.md).
+
 **Date:** 2026-11-14  
 **Repository:** `DecoyINDIA/AI_Jantra`  
 **Branch:** `main`  
