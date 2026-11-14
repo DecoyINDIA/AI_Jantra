@@ -25,7 +25,7 @@ export default function Settings() {
   useEffect(() => {
     if (desktop?.licenseStatus) {
       void desktop.licenseStatus().then((status) => {
-        setLicenseInfo(status as { active?: boolean; unverified?: boolean });
+        setLicenseInfo(status);
       });
     }
   }, [desktop]);
