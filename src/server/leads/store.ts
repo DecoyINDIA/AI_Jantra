@@ -5,12 +5,14 @@ import {
   readdirSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
 import type Database from "better-sqlite3";
 import { config } from "../../config.js";
-import { assertSafePathSegment } from "../../pipeline/store.js";
+import { assertSafePathSegment, defaultStore, type ProjectStore } from "../../pipeline/store.js";
+import { AuditLogger } from "../../audit.js";
 
 // Lead capture is intentionally a small, self-contained JSON store rather than
 // part of the project ProjectStore: leads are low-volume marketing records with
@@ -47,13 +49,85 @@ export interface LeadRecord {
   createdAt: string;
 }
 
+export interface DeleteLeadOptions {
+  deleteLinkedRun?: boolean;
+  projectStore?: ProjectStore;
+  auditDir?: string;
+}
+
+export interface SweepLeadsOptions {
+  deleteLinkedRuns?: boolean;
+  projectStore?: ProjectStore;
+  auditDir?: string;
+}
+
+export function deleteLinkedRunData(
+  clientId: string,
+  runId: string,
+  options?: { projectStore?: ProjectStore; auditDir?: string; db?: Database.Database },
+): boolean {
+  assertSafePathSegment(clientId, "clientId");
+  assertSafePathSegment(runId, "runId");
+
+  const projectStore = options?.projectStore ?? defaultStore;
+  const auditDir = options?.auditDir ?? config.auditDir;
+
+  // 1. If db is available, check if the run belongs to another client
+  if (options?.db) {
+    try {
+      const row = options.db
+        .prepare("select client_id from projects where project_id = ?")
+        .get(runId) as { client_id: string } | undefined;
+      if (row && row.client_id !== clientId) {
+        return false;
+      }
+    } catch {}
+  }
+
+  // 2. Check projectStore
+  const existingProject = projectStore.loadProject(clientId, runId);
+  if (existingProject && existingProject.clientId !== clientId) {
+    return false;
+  }
+
+  // 3. Inspect audit file if it exists: ensure it doesn't belong to another client
+  const auditFile = join(auditDir, `${runId}.jsonl`);
+  if (existsSync(auditFile)) {
+    try {
+      const firstLine = readFileSync(auditFile, "utf8").split("\n")[0];
+      if (firstLine) {
+        const parsed = JSON.parse(firstLine) as { clientId?: string };
+        if (parsed.clientId && parsed.clientId !== clientId) {
+          return false;
+        }
+      }
+    } catch {}
+  }
+
+  // Idempotently delete project in projectStore
+  if (typeof projectStore.deleteProject === "function") {
+    projectStore.deleteProject(clientId, runId);
+  }
+
+  // Idempotently delete audit file for runId
+  if (existsSync(auditFile)) {
+    try {
+      rmSync(auditFile, { force: true });
+    } catch {
+      // Ignore if already deleted
+    }
+  }
+
+  return true;
+}
+
 export interface LeadStore {
   createLead(record: LeadRecord): LeadRecord;
   getLead?(clientId: string, id: string): LeadRecord | null;
   listLeads(clientId: string): LeadRecord[];
   listLeadsByUser(clientId: string, userSub: string): LeadRecord[];
-  deleteLead?(clientId: string, id: string): boolean;
-  sweepExpiredLeads?(retentionDays: number): number;
+  deleteLead?(clientId: string, id: string, options?: DeleteLeadOptions): boolean;
+  sweepExpiredLeads?(retentionDays: number, options?: SweepLeadsOptions): number;
 }
 
 interface LeadRow {
@@ -137,25 +211,98 @@ export class SqliteLeadStore implements LeadStore {
     return row ? toLeadRecord(row) : null;
   }
 
-  deleteLead(clientId: string, id: string): boolean {
+  deleteLead(clientId: string, id: string, options?: DeleteLeadOptions): boolean {
+    const existing = this.getLead(clientId, id);
+    if (!existing) return false;
+
     const now = new Date().toISOString();
     const result = this.db
       .prepare(
         "update leads set deleted_at = ? where client_id = ? and id = ? and deleted_at is null",
       )
       .run(now, clientId, id);
-    return result.changes > 0;
+    if (result.changes === 0) return false;
+
+    const shouldDeleteLinkedRun =
+      options?.deleteLinkedRun ?? config.leadDeleteLinkedRuns;
+
+    if (shouldDeleteLinkedRun && existing.runId) {
+      const allowed = deleteLinkedRunData(clientId, existing.runId, {
+        projectStore: options?.projectStore,
+        auditDir: options?.auditDir,
+        db: this.db,
+      });
+      if (allowed) {
+        this.db
+          .prepare("delete from projects where client_id = ? and project_id = ?")
+          .run(clientId, existing.runId);
+        this.db
+          .prepare("delete from jobs where client_id = ? and run_id = ?")
+          .run(clientId, existing.runId);
+      }
+    }
+
+    const auditDir = options?.auditDir ?? config.auditDir;
+    const audit = new AuditLogger("system", auditDir);
+    audit.record("lead_deleted", {
+      clientId,
+      leadId: id,
+      runId: existing.runId ?? null,
+      action: "delete",
+    });
+
+    return true;
   }
 
-  sweepExpiredLeads(retentionDays: number): number {
+  sweepExpiredLeads(retentionDays: number, options?: SweepLeadsOptions): number {
     const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
     const now = new Date().toISOString();
-    const result = this.db
+
+    const expiredRows = this.db
+      .prepare(
+        "select id, client_id, run_id from leads where created_at < ? and deleted_at is null",
+      )
+      .all(cutoff) as Array<{ id: string; client_id: string; run_id: string | null }>;
+
+    if (expiredRows.length === 0) return 0;
+
+    this.db
       .prepare(
         "update leads set deleted_at = ? where created_at < ? and deleted_at is null",
       )
       .run(now, cutoff);
-    return result.changes;
+
+    const shouldDeleteLinkedRuns =
+      options?.deleteLinkedRuns ?? config.leadDeleteLinkedRuns;
+    const auditDir = options?.auditDir ?? config.auditDir;
+
+    for (const row of expiredRows) {
+      if (shouldDeleteLinkedRuns && row.run_id) {
+        const allowed = deleteLinkedRunData(row.client_id, row.run_id, {
+          projectStore: options?.projectStore,
+          auditDir,
+          db: this.db,
+        });
+        if (allowed) {
+          this.db
+            .prepare("delete from projects where client_id = ? and project_id = ?")
+            .run(row.client_id, row.run_id);
+          this.db
+            .prepare("delete from jobs where client_id = ? and run_id = ?")
+            .run(row.client_id, row.run_id);
+        }
+      }
+
+      const audit = new AuditLogger("system", auditDir);
+      audit.record("lead_deleted", {
+        clientId: row.client_id,
+        leadId: row.id,
+        runId: row.run_id ?? null,
+        action: "expire",
+      });
+    }
+
+    return expiredRows.length;
   }
 }
 
@@ -179,15 +326,85 @@ export class JsonLeadStore implements LeadStore {
     }
   }
 
-  deleteLead(clientId: string, id: string): boolean {
+  deleteLead(clientId: string, id: string, options?: DeleteLeadOptions): boolean {
+    const existing = this.getLead(clientId, id);
+    if (!existing) return false;
+
     const file = leadFile(clientId, id);
     if (!existsSync(file)) return false;
     rmSync(file, { force: true });
+
+    const shouldDeleteLinkedRun =
+      options?.deleteLinkedRun ?? config.leadDeleteLinkedRuns;
+
+    if (shouldDeleteLinkedRun && existing.runId) {
+      deleteLinkedRunData(clientId, existing.runId, {
+        projectStore: options?.projectStore,
+        auditDir: options?.auditDir,
+      });
+    }
+
+    const auditDir = options?.auditDir ?? config.auditDir;
+    const audit = new AuditLogger("system", auditDir);
+    audit.record("lead_deleted", {
+      clientId,
+      leadId: id,
+      runId: existing.runId ?? null,
+      action: "delete",
+    });
+
     return true;
   }
 
-  sweepExpiredLeads(_retentionDays: number): number {
-    return 0;
+  sweepExpiredLeads(retentionDays: number, options?: SweepLeadsOptions): number {
+    const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
+    if (!existsSync(config.leadDir)) return 0;
+
+    let swept = 0;
+    const shouldDeleteLinkedRuns =
+      options?.deleteLinkedRuns ?? config.leadDeleteLinkedRuns;
+    const auditDir = options?.auditDir ?? config.auditDir;
+
+    for (const clientDirName of readdirSync(config.leadDir)) {
+      const clientPath = join(config.leadDir, clientDirName);
+      try {
+        const stat = statSync(clientPath);
+        if (!stat.isDirectory()) continue;
+      } catch {
+        continue;
+      }
+
+      for (const file of readdirSync(clientPath)) {
+        if (!file.endsWith(".json")) continue;
+        const filePath = join(clientPath, file);
+        try {
+          const lead = JSON.parse(readFileSync(filePath, "utf8")) as LeadRecord;
+          if (lead && lead.createdAt && lead.createdAt < cutoff) {
+            rmSync(filePath, { force: true });
+            swept++;
+
+            if (shouldDeleteLinkedRuns && lead.runId) {
+              deleteLinkedRunData(lead.clientId, lead.runId, {
+                projectStore: options?.projectStore,
+                auditDir,
+              });
+            }
+
+            const audit = new AuditLogger("system", auditDir);
+            audit.record("lead_deleted", {
+              clientId: lead.clientId,
+              leadId: lead.id,
+              runId: lead.runId ?? null,
+              action: "expire",
+            });
+          }
+        } catch {
+          // Skip unparseable files
+        }
+      }
+    }
+
+    return swept;
   }
 
   listLeads(clientId: string): LeadRecord[] {
