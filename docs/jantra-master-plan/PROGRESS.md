@@ -63,6 +63,7 @@ Status: In Progress
 | **F-002** | P0 | Completed | 3fbff34 | Yes | Full gate (90/90 unit, 70/70 eval, smoke, server:smoke, edge:verify:local, git diff --check) | Encrypted report webhook credentials under report-webhook, removed decrypted credentials from responses, safe host-only delivery receipt & audit metadata, fail-closed delivery |
 | **F-003** | P0 | Completed | 7607974 | Yes | Full gate (92/92 unit, 70/70 eval, smoke, server:smoke, edge:verify:local, git diff --check) | Isolated private key handling in scripts/issue-license.ts, made src/licensing/issue.ts pure without process.env, enforced --public-out and --private-out flags with 0600 permissions, never print private key to terminal |
 | **F-004** | P0 | Completed | 65e35b9 | Yes | Full gate (93/93 unit, 70/70 eval, smoke, server:smoke, edge:verify:local, git diff --check) | Verified desktop licence enforcement across all stage/model trigger routes (runs, advance, interactions, confirm, reject, promote, complete), authenticated activation, wrong-key & tampered rejection, provider secret isolation |
+| **F-005** | P0 | Completed | c84f073 | Yes | Full gate (95/95 unit, 70/70 eval, smoke, server:smoke, edge:verify:local, git diff --check) | Added checkCatalogModels to createServer (defaults to true in production remote, false in local tests/smoke/regressions), zero external network calls during gates |
 
 
 ---
