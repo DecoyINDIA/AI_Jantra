@@ -496,6 +496,7 @@ export class SqliteProjectStore
   }
 
   claimNextJob(): JobRecord | null {
+    if (!this.db.open) return null;
     const now = new Date().toISOString();
     const claimTx = this.db.transaction(() => {
       const row = this.db
@@ -531,6 +532,7 @@ export class SqliteProjectStore
   }
 
   requeueRunningJobs(): number {
+    if (!this.db.open) return 0;
     const result = this.db
       .prepare("update jobs set status = 'queued' where status = 'running'")
       .run();
