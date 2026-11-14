@@ -60,6 +60,7 @@ Status: In Progress
 | Task | Priority | Status | Commit | Verified Push | Checks Run | Notes |
 |---|---|---|---|---|---|---|
 | **F-001** | P0 | Completed | 4a79c33 | Yes | Full gate (89/89 unit, 69/69 eval, smoke, server:smoke, edge:verify:local, git diff --check) | Cleaned unpushed Git history (amended 1ef14f7 -> f943e81), removed .agents/ and .claude/skills/world-class-agents/ from index while preserving working files, updated .gitignore, pushed main (HEAD: 4a79c33) |
+| **F-002** | P0 | Completed | 3fbff34 | Yes | Full gate (90/90 unit, 70/70 eval, smoke, server:smoke, edge:verify:local, git diff --check) | Encrypted report webhook credentials under report-webhook, removed decrypted credentials from responses, safe host-only delivery receipt & audit metadata, fail-closed delivery |
 
 
 ---
