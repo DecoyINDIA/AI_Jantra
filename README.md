@@ -82,7 +82,7 @@ Gemini key.
 Agent readiness:
 - **Production:** `intake-public` (anonymous visitor intake widget deployed on xolver.in capturing leads)
 - **Usable:** `planning-pipeline` (human-gated 3-stage intake -> research -> planning pipeline)
-- **Prototype:** `ops-onboarding`, `ops-reporting` (reporting does not send reports and needs real partner data)
+- **Prototype:** `ops-onboarding`, `ops-reporting` (reporting framework implemented; real report delivery blocked by partner export X5 and live delivery)
 - **Demo:** `support-agent` (sample interactive support demo)
 - **Client-specific:** `firebnb-concierge` (hospitality concierge agent)
 
@@ -94,6 +94,6 @@ The [master planning package](docs/jantra-master-plan/README.md) contains the au
 
 `render.yaml` defines the Singapore starter web service and a 1 GB persistent disk mounted at `/data/jantra`. The service exposes the unauthenticated, side-effect-free `/health` readiness route; all `/v1` application routes keep their existing authentication.
 
-Keep `JANTRA_DATA_DIR=/data/jantra`, `JANTRA_PROJECT_DIR=/data/jantra/projects`, `JANTRA_AUDIT_DIR=/data/jantra/audit`, `JANTRA_LEAD_DIR=/data/jantra/leads`, and `JANTRA_OPS_DATA_DIR=/data/jantra/ops`. Captured leads, run state, audit logs, and ops CSV data are persisted under `/data/jantra` on the mounted disk. Note that existing local setups with CSVs under `data/ops` must set `JANTRA_OPS_DATA_DIR=data/ops` or move the folder to `.jantra/ops`. Configure the provider, model, API-key, admin-token, service-token, and cost-ceiling variable names declared in the Blueprint through Render without committing their values.
+Keep `JANTRA_DATA_DIR=/data/jantra`, `JANTRA_PROJECT_DIR=/data/jantra/projects`, `JANTRA_AUDIT_DIR=/data/jantra/audit`, `JANTRA_LEAD_DIR=/data/jantra/leads`, and `JANTRA_OPS_DATA_DIR=/data/jantra/ops`. Captured leads, run state, audit logs, and ops CSV data are persisted under `/data/jantra` on the mounted disk. Note that existing local setups with CSVs under `data/ops` must set `JANTRA_OPS_DATA_DIR=data/ops` or move the folder to `.jantra/ops`. Configure the provider, model, API-key, admin-token, service-token, secrets-key (`JANTRA_SECRETS_KEY`), and cost-ceiling variable names declared in the Blueprint through Render without committing their values.
 
 Before cutover, copy the current Railway `/data/jantra` volume into the Render disk during a brief write pause. Validate SQLite files with `PRAGMA integrity_check`, compare file counts/checksums, then test `/health`, an authenticated agent listing, an existing read-only run lookup, and an intake request. Keep Railway and its volume intact until the rollback window closes. Roll back by directing the intake proxy to the Railway origin; reconcile any writes made on Render before reopening Railway for writes.

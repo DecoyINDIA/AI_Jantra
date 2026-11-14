@@ -38,6 +38,8 @@ services:
         sync: false
       - key: JANTRA_PUBLIC_AGENT_IDS
         sync: false
+      - key: JANTRA_SECRETS_KEY
+        sync: false
       - key: JANTRA_LOGTO_ISSUER
         sync: false
       - key: JANTRA_LOGTO_AUDIENCE
