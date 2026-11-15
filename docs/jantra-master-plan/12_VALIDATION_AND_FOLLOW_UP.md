@@ -6,7 +6,7 @@ Validated on 2026-11-14 against implementation commit `d77df95`. This is the cur
 
 F-001 through F-007 were pushed. T-001 through T-017 and T-020 through T-026 have implementations, with the acceptance limits below. T-018/T-019 have encrypted credential and signed webhook frameworks but remain blocked for partner acceptance. Build remains disabled; billing remains deferred.
 
-The local validation commands are `npm run typecheck`, `npm test`, `npm run eval`, `npm run smoke`, `npm run server:smoke`, and `npm run edge:verify:local`. Baseline: 95 unit tests across 29 suites, 70 passed eval checks plus one intentionally skipped live judge, and 19 local edge checks. The local Worker harness exercises the Worker source and a simulated rate-limit binding; it does not prove deployed Cloudflare behavior. Existing CI configuration is present, but hosted CI runs and branch protection were not inspected.
+The local validation commands are `npm run typecheck`, `npm test`, `npm run eval`, `npm run smoke`, `npm run server:smoke`, and `npm run edge:verify:local`. Baseline after R-001, R-002, and R-003 verification and review findings resolution: 111 unit tests across 29 suites (all passed), 71 passed eval checks plus one intentionally skipped live judge, and 19 local edge checks. The local Worker harness exercises the Worker source and a simulated rate-limit binding; it does not prove deployed Cloudflare behavior. Existing CI configuration is present, but hosted CI runs and branch protection were not inspected.
 
 ## Commit evidence and report corrections
 
@@ -27,25 +27,37 @@ Mechanical searches require interpretation: private-key marker strings occur in 
 
 ## Substantial correctness work: complete before retention enablement
 
-### R-001: SQLite lead deletion retains personal data
+### R-001: SQLite lead deletion retains personal data (Substantively implemented; sweep disabled pending operational verification)
 
-Confirmed in `src/server/leads/store.ts`, `SqliteLeadStore.deleteLead` and `sweepExpiredLeads`: SQL only sets `deleted_at`. Name, email, phone, idea, and user subject remain stored. JSON mode removes its file. Therefore API invisibility is implemented, but SQLite PII erasure and equivalent store semantics are not.
+Resolved in `src/server/leads/store.ts` (`SqliteLeadStore`), `src/pipeline/store/migrations/004_lead_deletion_records_and_requests.ts`, and `SqliteLeadStore.remediateSoftDeletedLeads`:
+- Lead deletion permanently removes the lead row in SQLite and irreversibly purges personal data fields (`name, email, phone, idea, user_sub`) in one transaction.
+- Minimal non-personal deletion audit records (`id, client_id, lead_id, run_id, deleted_at, action`) are stored outside the `leads` table in `lead_deletions` and in `system.jsonl` outside erased run audit trails.
+- Pre-existing soft-deleted rows with residual personal data are remediated on migration and startup by migrating non-personal metadata to `lead_deletions` and purging personal rows.
+- Finding 5 resolved: Silent `try/catch` error swallowing was removed in migration 004 and `remediateSoftDeletedLeads()`. Errors during soft-delete remediation (e.g. database errors or residual soft-deleted records) throw immediately and halt startup/migration, preventing false success claims. Verified with injected trigger errors.
+- Backup/WAL retention runbook documented in `docs/runbooks/lead-retention-and-wal-checkpointing.md`: physical media erasure is not claimed from a SQL `DELETE` alone; operational WAL checkpointing (`PRAGMA wal_checkpoint(TRUNCATE)`) and 30-day backup rotation are formally defined.
 
-Fix: purge the lead row or irreversibly clear all personal fields within a transaction, retaining only a minimal separate deletion audit. Include already soft-deleted rows in the remediation. Verify raw SQL cannot retrieve submitted personal values after deletion/expiry. Define backup/WAL retention in the future operational runbook; do not claim physical media erasure from a SQL DELETE alone.
+### R-002: Manual sweep is global despite tenant authentication (Substantively implemented; sweep disabled pending operational verification)
 
-### R-002: Manual sweep is global despite tenant authentication
+Resolved in `src/server/routes/leads.ts` (`POST /v1/leads/sweep`) and `src/server/leads/store.ts`:
+- `POST /v1/leads/sweep` derives tenant identity strictly with `requestClientId(request, deps.clientId)` and never accepts `clientId` from the request body.
+- `sweepExpiredLeads` accepts `options.clientId`: when supplied, sweeps only records for that tenant. When omitted (scheduled daily cleanup), sweeps remain explicitly global.
+- Multi-tenant isolation verified: tenant A's manual sweep leaves tenant B's expired records and linked artifacts intact in both SQLite and JSON stores.
 
-Confirmed: `POST /v1/leads/sweep` checks full scope but passes no tenant to `sweepExpiredLeads`; SQLite selects expired rows across all tenants and JSON scans every client directory. A full key for tenant A can trigger deletion for tenant B when the sweep flag is enabled.
+### R-003: Linked deletion is not recoverable after partial failure (Substantively implemented; sweep disabled pending operational verification)
 
-Fix: add an explicit tenant filter for the manual endpoint, derived with `requestClientId`; keep the scheduled internal sweep explicitly global. Test tenant A's manual sweep leaves tenant B's expired records and linked artifacts intact in both stores.
-
-### R-003: Linked deletion is not recoverable after partial failure
-
-Confirmed: the lead is soft-deleted (or JSON file removed) before linked project/audit cleanup. Cleanup catches ownership-read and filesystem errors, and expired queries exclude soft-deleted leads. A failed cleanup can leave sensitive linked data without a retry path. Active job execution and multiple leads sharing a run also need explicit coverage before enabling cascades.
-
-Fix: implement a durable deletion request with tenant-scoped targets and retryable steps; verify ownership positively and fail closed on unreadable ownership evidence. Coordinate with run locks/jobs so execution cannot recreate deleted artifacts. Only complete the deletion request when lead, linked project/jobs/files, and audit cleanup finish. Test injected filesystem/database failures, restart recovery, malformed audit ownership, missing runs, shared run links, and running jobs. Keep an ids-only deletion record outside the erased run audit.
-
-These are substantial changes and were documented rather than implemented during the documentation pass. Keep the sweep disabled; do not describe T-023 as complete PII removal until R-001 through R-003 pass.
+Resolved in `src/server/leads/store.ts`, `src/pipeline/orchestrator.ts`, `src/pipeline/store.ts`, `src/pipeline/store/sqlite.ts`, and migration 004:
+- Replaced fragile lead-first deletion with durable deletion requests (`lead_deletion_requests` table and JSON queue) tracking `pending`, `processing`, `completed`, `failed`, and `cancelled` statuses with retry attempts.
+- Finding 1 resolved: Queued `withRunLock` operations coordinate with deletion. `withRunLock` and `isRunLocked` track queue depth (`queueDepths`), while tracking deleted runs (`deletedRuns`). Deletion fails closed while active or queued operations exist; queued operations rejected due to deletion release their queue reservations; and operations queued after deletion reject cleanly.
+- Finding 2 resolved: Durable step machine (`init` → `ownership_verified` → `project_deleted` → `jobs_deleted` → `audit_deleted` → `lead_deleted` → `completed`). Each step is persisted. If project deletion succeeds but subsequent steps fail, retry bypasses project existence/ownership checks (since the project is already gone) and safely completes remaining deletions. Tested failure after every step and recovery on restart.
+- Finding 3 resolved: Safe retry mechanism on store startup retries failed deletion requests with bounded attempts (`maxAttempts: 5`), recovering transient failures while preventing poison requests from causing infinite crash/retry loops.
+- Finding 4 resolved: Malformed JSON deletion queue fails closed with `StageFailedClosedError` and preserves exact original file bytes untouched without overwriting. Writes also guard against overwriting corrupt queue files by writing timestamped backups before failing closed.
+- Finding 5 resolved: Remediation and migration failures surface directly rather than being silently caught and ignored.
+- Review Issue 1 resolved (Startup recovery project store wiring): In `src/pipeline/store/sqlite.ts`, `SqliteProjectStore` passes `projectStore: this` to `SqliteLeadStore` (and `JsonProjectStore` accepts configured `baseDir` matching `projectDir`). During startup recovery, `SqliteLeadStore.processPendingDeletionRequests` uses the owning `SqliteProjectStore` rather than falling back to default store, ensuring artifact, source, and run directories in custom `projectDir` are thoroughly deleted.
+- Review Issue 2 resolved (Surviving run protection & explicit cancellation/recovery): `markRunDeleted(runId)` is deferred until after Step 2 (`project_deleted`) succeeds rather than at `ownership_verified`. If Step 2 fails, `unmarkRunDeleted(runId)` clears any deletion flag, allowing active and queued operations on surviving projects to continue via `withRunLock`. Added explicit recovery (`retryDeletionRequest` with `force: true` bypassing max-attempt limits) and cancellation (`cancelDeletionRequest`, marking status `cancelled` and unmarking deletion lock) paths.
+- Review Recovery Gap resolved (Cancellation refuses if removal has begun): `cancelDeletionRequest` in both `SqliteLeadStore` and `JsonLeadStore` verifies that the lead, the project record, and all linked artifact/source files still exist via `verifyProjectAndLinkedFilesExist`. If removal has begun (e.g. if the process stopped immediately after project deletion but before `project_deleted` was saved, or if artifact files were deleted), cancellation is strictly refused (`returns false`), preventing partially deleted runs and orphaned leads. Artifact inspection uses only the direct run-folder path written by `writeArtifactFile`; a copy in an unsupported subfolder cannot stand in for a missing artifact. Tested with simulated stop immediately after project deletion before step saving, successful cancellation for intact runs, and refusal when only a subfolder copy remains across both SQLite and JSON stores.
+- Error sanitization resolved: Error messages stored in deletion requests and returned in HTTP 409 conflict API responses are sanitized via `sanitizeErrorMessage()` to a fixed safe string (`"Lead deletion failed closed. Retry after operator review."`), preventing any leakage of tokens, API keys, paths, or personal data.
+- Shared run link awareness: checks for other active leads referencing the same `runId`; preserves shared run data still needed by other leads while deleting the target lead.
+- Sweep configuration flag `JANTRA_ENABLE_LEAD_DELETION_SWEEP` remains disabled by default until durable notification acceptance.
 
 ## External inputs and release acceptance
 

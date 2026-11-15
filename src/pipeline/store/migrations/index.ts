@@ -2,6 +2,7 @@ import type Database from "better-sqlite3";
 import { up as up001 } from "./001_baseline.js";
 import { up as up002 } from "./002_add_mirrored_columns_and_tables.js";
 import { up as up003 } from "./003_connector_credentials_and_ops_profiles.js";
+import { up as up004 } from "./004_lead_deletion_records_and_requests.js";
 
 export interface Migration {
   version: number;
@@ -13,6 +14,7 @@ export const ALL_MIGRATIONS: Migration[] = [
   { version: 1, name: "001_baseline", up: up001 },
   { version: 2, name: "002_add_mirrored_columns_and_tables", up: up002 },
   { version: 3, name: "003_connector_credentials_and_ops_profiles", up: up003 },
+  { version: 4, name: "004_lead_deletion_records_and_requests", up: up004 },
 ];
 
 export function runMigrations(db: Database.Database): number {

@@ -6,11 +6,12 @@ import { z } from "zod";
 
 import { createLeadBodySchema, parseWith } from "../schemas.js";
 import { requestClientId } from "../tenancy.js";
-import { forbidden, notFound, unauthorized } from "../errors.js";
+import { conflict, forbidden, notFound, unauthorized } from "../errors.js";
 import { verifyOptionalUser, type VerifiedUser } from "../auth/logtoUser.js";
 import {
   defaultLeadStore,
   JsonLeadStore,
+  sanitizeErrorMessage,
   SqliteLeadStore,
   type LeadRecord,
   type LeadStore,
@@ -80,14 +81,16 @@ export function registerLeadRoutes(app: FastifyInstance, deps: LeadRouteDeps): v
     if (!config.enableLeadDeletionSweep) {
       throw forbidden("Lead deletion sweep is disabled by configuration.");
     }
+    const clientId = requestClientId(request, deps.clientId);
     if (typeof leadStore.sweepExpiredLeads !== "function") {
-      return { status: "ok", sweptLeads: 0 };
+      return { status: "ok", sweptLeads: 0, retentionDays: config.leadRetentionDays, clientId };
     }
     const swept = leadStore.sweepExpiredLeads(config.leadRetentionDays, {
+      clientId,
       deleteLinkedRuns: config.leadDeleteLinkedRuns,
       projectStore,
     });
-    return { status: "ok", sweptLeads: swept, retentionDays: config.leadRetentionDays };
+    return { status: "ok", sweptLeads: swept, retentionDays: config.leadRetentionDays, clientId };
   });
 
   // Capture a lead. Works for anonymous visitors and logged-in users alike; the
@@ -210,21 +213,11 @@ export function registerLeadRoutes(app: FastifyInstance, deps: LeadRouteDeps): v
       projectStore,
     }) ?? false;
     if (!deleted) {
-      throw notFound(`Lead ${params.id} was not found.`);
-    }
-
-    // Explicit tenant-scoped linked run cleanup if not handled by store
-    if (deleteLinkedRun && existing.runId) {
-      const existingProject = projectStore.loadProject(clientId, existing.runId);
-      if (existingProject && existingProject.clientId === clientId) {
-        projectStore.deleteProject?.(clientId, existing.runId);
-        const auditFile = join(config.auditDir, `${existing.runId}.jsonl`);
-        if (existsSync(auditFile)) {
-          try {
-            rmSync(auditFile, { force: true });
-          } catch {}
-        }
+      const failedReq = leadStore.listDeletionRequests?.(clientId, "failed")?.find((r) => r.leadId === params.id);
+      if (failedReq) {
+        throw conflict("lead_deletion_failed", sanitizeErrorMessage(failedReq.error ?? "Lead deletion failed closed."));
       }
+      throw notFound(`Lead ${params.id} was not found.`);
     }
 
     if (!(leadStore instanceof SqliteLeadStore || leadStore instanceof JsonLeadStore)) {
