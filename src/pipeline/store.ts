@@ -169,28 +169,28 @@ export function assertSafePathSegment(value: string, label: string): string {
   return value;
 }
 
-function clientDir(clientId: string): string {
-  return join(config.projectDir, assertSafePathSegment(clientId, "clientId"));
+function clientDir(clientId: string, baseDir: string = config.projectDir): string {
+  return join(baseDir, assertSafePathSegment(clientId, "clientId"));
 }
 
-function projectFile(clientId: string, projectId: string): string {
-  return join(clientDir(clientId), `${assertSafePathSegment(projectId, "projectId")}.json`);
+function projectFile(clientId: string, projectId: string, baseDir: string = config.projectDir): string {
+  return join(clientDir(clientId, baseDir), `${assertSafePathSegment(projectId, "projectId")}.json`);
 }
 
-function namedSpendFile(clientId: string, filename: string): string {
-  return join(clientDir(clientId), filename);
+function namedSpendFile(clientId: string, filename: string, baseDir: string = config.projectDir): string {
+  return join(clientDir(clientId, baseDir), filename);
 }
 
-function projectDir(clientId: string, projectId: string): string {
-  return join(clientDir(clientId), assertSafePathSegment(projectId, "projectId"));
+function projectDir(clientId: string, projectId: string, baseDir: string = config.projectDir): string {
+  return join(clientDir(clientId, baseDir), assertSafePathSegment(projectId, "projectId"));
 }
 
-function artifactDir(clientId: string, projectId: string): string {
-  return projectDir(clientId, projectId);
+function artifactDir(clientId: string, projectId: string, baseDir: string = config.projectDir): string {
+  return projectDir(clientId, projectId, baseDir);
 }
 
-function sourceDir(clientId: string, projectId: string): string {
-  return join(projectDir(clientId, projectId), "sources");
+function sourceDir(clientId: string, projectId: string, baseDir: string = config.projectDir): string {
+  return join(projectDir(clientId, projectId, baseDir), "sources");
 }
 
 const LEGACY_PLANNING_SNAPSHOT = snapshotDefinition(planningPipelineDefinition);
@@ -233,8 +233,12 @@ export function normalizeProject(project: Project): Project {
   return project;
 }
 
-function readNamedSpend(clientId: string, filename: string): Record<string, number> {
-  const file = namedSpendFile(clientId, filename);
+function readNamedSpend(
+  clientId: string,
+  filename: string,
+  baseDir: string = config.projectDir,
+): Record<string, number> {
+  const file = namedSpendFile(clientId, filename, baseDir);
   if (!existsSync(file)) return {};
   const parsed = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
   return Object.fromEntries(
@@ -244,8 +248,13 @@ function readNamedSpend(clientId: string, filename: string): Record<string, numb
   );
 }
 
-function writeNamedSpend(clientId: string, filename: string, spend: Record<string, number>): void {
-  atomicWriteFileSync(namedSpendFile(clientId, filename), JSON.stringify(spend, null, 2));
+function writeNamedSpend(
+  clientId: string,
+  filename: string,
+  spend: Record<string, number>,
+  baseDir: string = config.projectDir,
+): void {
+  atomicWriteFileSync(namedSpendFile(clientId, filename, baseDir), JSON.stringify(spend, null, 2));
 }
 
 export function encodeCursor(project: ProjectSummary): string {
@@ -315,22 +324,24 @@ const NON_PROJECT_FILES = new Set([
 ]);
 
 export class JsonProjectStore implements ProjectStore {
+  constructor(readonly baseDir: string = config.projectDir) {}
+
   saveProject(project: Project): void {
-    mkdirSync(clientDir(project.clientId), { recursive: true });
+    mkdirSync(clientDir(project.clientId, this.baseDir), { recursive: true });
     atomicWriteFileSync(
-      projectFile(project.clientId, project.id),
+      projectFile(project.clientId, project.id, this.baseDir),
       JSON.stringify(normalizeProject(project), null, 2),
     );
   }
 
   loadProject(clientId: string, projectId: string): Project | null {
-    const file = projectFile(clientId, projectId);
+    const file = projectFile(clientId, projectId, this.baseDir);
     if (!existsSync(file)) return null;
     return normalizeProject(JSON.parse(readFileSync(file, "utf8")) as Project);
   }
 
   listProjects(query: ProjectListQuery): ProjectPage {
-    const dir = clientDir(query.clientId);
+    const dir = clientDir(query.clientId, this.baseDir);
     if (!existsSync(dir)) return { items: [] };
     const projects: Project[] = [];
     for (const f of readdirSync(dir)) {
@@ -356,31 +367,31 @@ export class JsonProjectStore implements ProjectStore {
   }
 
   getClientDailyIdeationSpend(clientId: string, dayUtc: string): number {
-    return readNamedSpend(clientId, "spend.json")[dayUtc] ?? 0;
+    return readNamedSpend(clientId, "spend.json", this.baseDir)[dayUtc] ?? 0;
   }
 
   addClientDailyIdeationSpend(clientId: string, dayUtc: string, deltaUsd: number): void {
-    mkdirSync(clientDir(clientId), { recursive: true });
+    mkdirSync(clientDir(clientId, this.baseDir), { recursive: true });
     // JSON storage is single-process today; read-modify-write is acceptable until
     // the public service moves fully to a transactional database.
-    const spend = readNamedSpend(clientId, "spend.json");
+    const spend = readNamedSpend(clientId, "spend.json", this.baseDir);
     spend[dayUtc] = Number(((spend[dayUtc] ?? 0) + deltaUsd).toFixed(6));
-    writeNamedSpend(clientId, "spend.json", spend);
+    writeNamedSpend(clientId, "spend.json", spend, this.baseDir);
   }
 
   getClientDailyGatewaySpend(clientId: string, dayUtc: string): number {
-    return readNamedSpend(clientId, "gateway-spend.json")[dayUtc] ?? 0;
+    return readNamedSpend(clientId, "gateway-spend.json", this.baseDir)[dayUtc] ?? 0;
   }
 
   addClientDailyGatewaySpend(clientId: string, dayUtc: string, deltaUsd: number): void {
-    mkdirSync(clientDir(clientId), { recursive: true });
-    const spend = readNamedSpend(clientId, "gateway-spend.json");
+    mkdirSync(clientDir(clientId, this.baseDir), { recursive: true });
+    const spend = readNamedSpend(clientId, "gateway-spend.json", this.baseDir);
     spend[dayUtc] = Number(((spend[dayUtc] ?? 0) + deltaUsd).toFixed(6));
-    writeNamedSpend(clientId, "gateway-spend.json", spend);
+    writeNamedSpend(clientId, "gateway-spend.json", spend, this.baseDir);
   }
 
   writeArtifactFile(clientId: string, projectId: string, artifact: Artifact): string {
-    const dir = artifactDir(clientId, projectId);
+    const dir = artifactDir(clientId, projectId, this.baseDir);
     mkdirSync(dir, { recursive: true });
     const name = `${artifact.stage}-${artifact.kind}-v${artifact.version}.md`;
     const path = join(dir, name);
@@ -394,7 +405,7 @@ export class JsonProjectStore implements ProjectStore {
     source: Source,
     content: string,
   ): string {
-    const dir = sourceDir(clientId, projectId);
+    const dir = sourceDir(clientId, projectId, this.baseDir);
     mkdirSync(dir, { recursive: true });
     const safeId = source.id.replace(/[^a-zA-Z0-9_-]/g, "_");
     const path = join(dir, `${safeId}.txt`);
@@ -403,8 +414,8 @@ export class JsonProjectStore implements ProjectStore {
   }
 
   deleteProject(clientId: string, projectId: string): boolean {
-    const file = projectFile(clientId, projectId);
-    const dir = projectDir(clientId, projectId);
+    const file = projectFile(clientId, projectId, this.baseDir);
+    const dir = projectDir(clientId, projectId, this.baseDir);
     let deleted = false;
     if (existsSync(file)) {
       rmSync(file, { force: true });
@@ -420,7 +431,7 @@ export class JsonProjectStore implements ProjectStore {
   setConnectorCredentials(clientId: string, connector: string, credentials: Record<string, string>): void {
     assertSafePathSegment(clientId, "clientId");
     assertSafePathSegment(connector, "connector");
-    const dir = clientDir(clientId);
+    const dir = clientDir(clientId, this.baseDir);
     mkdirSync(dir, { recursive: true });
     const file = join(dir, "credentials.json");
     let map: Record<string, string> = {};
@@ -437,7 +448,7 @@ export class JsonProjectStore implements ProjectStore {
   getConnectorCredentials(clientId: string, connector: string): Record<string, string> | null {
     assertSafePathSegment(clientId, "clientId");
     assertSafePathSegment(connector, "connector");
-    const file = join(clientDir(clientId), "credentials.json");
+    const file = join(clientDir(clientId, this.baseDir), "credentials.json");
     if (!existsSync(file)) return null;
     try {
       const map = JSON.parse(readFileSync(file, "utf8")) as Record<string, string>;
@@ -455,7 +466,7 @@ export class JsonProjectStore implements ProjectStore {
 
   listConnectorCredentials(clientId: string): string[] {
     assertSafePathSegment(clientId, "clientId");
-    const file = join(clientDir(clientId), "credentials.json");
+    const file = join(clientDir(clientId, this.baseDir), "credentials.json");
     if (!existsSync(file)) return [];
     try {
       const map = JSON.parse(readFileSync(file, "utf8")) as Record<string, string>;
@@ -468,7 +479,7 @@ export class JsonProjectStore implements ProjectStore {
   deleteConnectorCredentials(clientId: string, connector: string): boolean {
     assertSafePathSegment(clientId, "clientId");
     assertSafePathSegment(connector, "connector");
-    const file = join(clientDir(clientId), "credentials.json");
+    const file = join(clientDir(clientId, this.baseDir), "credentials.json");
     if (!existsSync(file)) return false;
     try {
       const map = JSON.parse(readFileSync(file, "utf8")) as Record<string, string>;
@@ -483,7 +494,7 @@ export class JsonProjectStore implements ProjectStore {
 
   setOpsProfile(profile: OpsReportingProfile): void {
     assertSafePathSegment(profile.clientId, "clientId");
-    const dir = clientDir(profile.clientId);
+    const dir = clientDir(profile.clientId, this.baseDir);
     mkdirSync(dir, { recursive: true });
     const file = join(dir, "ops-profile.json");
     const sanitizedDelivery: DeliveryConfig = {
@@ -501,7 +512,7 @@ export class JsonProjectStore implements ProjectStore {
 
   getOpsProfile(clientId: string): OpsReportingProfile | null {
     assertSafePathSegment(clientId, "clientId");
-    const file = join(clientDir(clientId), "ops-profile.json");
+    const file = join(clientDir(clientId, this.baseDir), "ops-profile.json");
     if (!existsSync(file)) return null;
     try {
       const raw = JSON.parse(readFileSync(file, "utf8")) as any;
@@ -525,7 +536,7 @@ export class JsonProjectStore implements ProjectStore {
 
   deleteOpsProfile(clientId: string): boolean {
     assertSafePathSegment(clientId, "clientId");
-    const file = join(clientDir(clientId), "ops-profile.json");
+    const file = join(clientDir(clientId, this.baseDir), "ops-profile.json");
     if (!existsSync(file)) return false;
     try {
       unlinkSync(file);

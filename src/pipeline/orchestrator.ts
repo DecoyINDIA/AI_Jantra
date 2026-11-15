@@ -136,10 +136,98 @@ export function createProject(
  * a multi-process deployment must move this to the transactional store.
  */
 const runLocks = new Map<string, Promise<unknown>>();
+const activeLocks = new Set<string>();
+const queueDepths = new Map<string, number>();
+const deletedRuns = new Set<string>();
+
+export function isRunDeleted(runId: string): boolean {
+  return deletedRuns.has(runId);
+}
+
+export function markRunDeleted(runId: string): void {
+  deletedRuns.add(runId);
+}
+
+export function unmarkRunDeleted(runId: string): void {
+  deletedRuns.delete(runId);
+}
+
+export function isRunLocked(runId: string): boolean {
+  return activeLocks.has(runId) || (queueDepths.get(runId) ?? 0) > 0;
+}
+
+export function hasActiveOrQueuedOperations(runId: string): boolean {
+  return isRunLocked(runId);
+}
+
+export function tryAcquireRunLock(runId: string, resumeDeletion = false): (() => void) | null {
+  if (deletedRuns.has(runId) && !resumeDeletion) {
+    return null;
+  }
+  if (activeLocks.has(runId) || (queueDepths.get(runId) ?? 0) > 0) {
+    return null;
+  }
+  activeLocks.add(runId);
+  queueDepths.set(runId, 1);
+  let releaseCalled = false;
+  let resolveLock: () => void = () => {};
+  const lockPromise = new Promise<void>((resolve) => {
+    resolveLock = resolve;
+  });
+  const prior = runLocks.get(runId) ?? Promise.resolve();
+  runLocks.set(
+    runId,
+    prior.then(
+      () => lockPromise,
+      () => lockPromise,
+    ),
+  );
+
+  return () => {
+    if (!releaseCalled) {
+      releaseCalled = true;
+      activeLocks.delete(runId);
+      const d = (queueDepths.get(runId) ?? 1) - 1;
+      if (d <= 0) {
+        queueDepths.delete(runId);
+      } else {
+        queueDepths.set(runId, d);
+      }
+      resolveLock();
+    }
+  };
+}
 
 export function withRunLock<T>(runId: string, fn: () => Promise<T>): Promise<T> {
+  if (deletedRuns.has(runId)) {
+    return Promise.reject(
+      new StageFailedClosedError(`Run ${runId} has been deleted.`, {
+        projectId: runId,
+      }),
+    );
+  }
+
+  const currentDepth = queueDepths.get(runId) ?? 0;
+  queueDepths.set(runId, currentDepth + 1);
+
   const prior = runLocks.get(runId) ?? Promise.resolve();
-  const next = prior.then(fn, fn);
+  const next = prior.then(async () => {
+    activeLocks.add(runId);
+    try {
+      if (deletedRuns.has(runId)) {
+        throw new StageFailedClosedError("Run is unavailable after deletion was requested.");
+      }
+      return await fn();
+    } finally {
+      activeLocks.delete(runId);
+      const d = (queueDepths.get(runId) ?? 1) - 1;
+      if (d <= 0) {
+        queueDepths.delete(runId);
+      } else {
+        queueDepths.set(runId, d);
+      }
+    }
+  });
   // Keep the chain alive but swallow rejections so one failure does not poison
   // the lock for subsequent callers.
   runLocks.set(
@@ -150,6 +238,34 @@ export function withRunLock<T>(runId: string, fn: () => Promise<T>): Promise<T> 
     ),
   );
   return next;
+}
+
+export async function coordinateRunDeletion<T>(
+  runId: string,
+  fn: () => Promise<T> | T,
+): Promise<T> {
+  if (deletedRuns.has(runId)) {
+    throw new StageFailedClosedError(`Run ${runId} has already been deleted.`, {
+      projectId: runId,
+    });
+  }
+
+  return withRunLock(runId, async () => {
+    try {
+      const result = await fn();
+      markRunDeleted(runId);
+      return result;
+    } catch (err) {
+      throw err;
+    }
+  });
+}
+
+export function resetRunLocksForTesting(): void {
+  runLocks.clear();
+  activeLocks.clear();
+  queueDepths.clear();
+  deletedRuns.clear();
 }
 
 /**

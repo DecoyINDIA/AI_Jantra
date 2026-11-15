@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import Database from "better-sqlite3";
 import fastify, { type FastifyRequest } from "fastify";
 import { createProject } from "../../../pipeline/orchestrator.js";
 import { JsonProjectStore, type ProjectStore } from "../../../pipeline/store.js";
@@ -1039,8 +1040,10 @@ export async function verifyLeadRetentionAndDeletion(): Promise<void> {
 
     // Enable sweep and verify POST /v1/leads/sweep returns 200
     const prevSweepFlag = config.enableLeadDeletionSweep;
+    const prevDeleteLinked = config.leadDeleteLinkedRuns;
     try {
       (config as { enableLeadDeletionSweep: boolean }).enableLeadDeletionSweep = true;
+      (config as { leadDeleteLinkedRuns: boolean }).leadDeleteLinkedRuns = true;
       const sweepEnabledRes = await app.inject({
         method: "POST",
         url: "/v1/leads/sweep",
@@ -1052,6 +1055,7 @@ export async function verifyLeadRetentionAndDeletion(): Promise<void> {
       assert(typeof sweepEnabledRes.json().sweptLeads === "number", "Expected sweptLeads number in sweep response");
     } finally {
       (config as { enableLeadDeletionSweep: boolean }).enableLeadDeletionSweep = prevSweepFlag;
+      (config as { leadDeleteLinkedRuns: boolean }).leadDeleteLinkedRuns = prevDeleteLinked;
     }
 
     // 8. Strict tenant boundaries: Tenant B cannot delete Tenant A's run
@@ -1131,6 +1135,251 @@ export async function verifyLeadRetentionAndDeletion(): Promise<void> {
       (config as { enableLeadDeletionSweep: boolean }).enableLeadDeletionSweep = prevFlagForTimer;
     }
   } finally {
+    await app.close();
+    store.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+export async function verifyLeadDurableDeletionAndTenantSweeps(): Promise<void> {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "jantra-durable-deletion-eval-"));
+  const dbPath = path.join(dir, "durable.sqlite");
+  const auditDir = path.join(dir, "audit");
+  fs.mkdirSync(auditDir, { recursive: true });
+
+  const prevAuditDir = config.auditDir;
+  (config as { auditDir: string }).auditDir = auditDir;
+
+  const store = new SqliteProjectStore(dbPath, { skipImport: true });
+  const rawKeyA = "jnt_live_durable_a_1234567890abcdef1234567890abcdef";
+  const clientAId = "durable-tenant-a";
+  store.createApiKey({
+    id: "key-durable-a",
+    keyHash: hashApiKey(rawKeyA),
+    prefix: "jnt_live_",
+    clientId: clientAId,
+    subject: "operator",
+    label: "Durable Tenant A key",
+    createdAt: new Date().toISOString(),
+    lastUsedAt: null,
+    revokedAt: null,
+    scope: "full",
+  });
+
+  const rawKeyB = "jnt_live_durable_b_1234567890abcdef1234567890abcdef";
+  const clientBId = "durable-tenant-b";
+  store.createApiKey({
+    id: "key-durable-b",
+    keyHash: hashApiKey(rawKeyB),
+    prefix: "jnt_live_",
+    clientId: clientBId,
+    subject: "operator",
+    label: "Durable Tenant B key",
+    createdAt: new Date().toISOString(),
+    lastUsedAt: null,
+    revokedAt: null,
+    scope: "full",
+  });
+
+  const app = createServer({
+    mode: "remote",
+    loopbackToken: "",
+    store,
+    checkCatalogModels: false,
+  });
+
+  try {
+    // 1. R-001: True personal-data deletion and direct SQL verification
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/v1/leads",
+      headers: {
+        authorization: `Bearer ${rawKeyA}`,
+        "content-type": "application/json",
+      },
+      payload: {
+        name: "Confidential Founder",
+        email: "confidential@tenant-a.test",
+        phone: "+1-555-0100",
+        idea: "Proprietary algorithm",
+        source: "eval",
+      },
+    });
+    assert(createRes.statusCode === 201, `Failed to create lead: ${createRes.body}`);
+    const leadId = createRes.json().id as string;
+
+    const delRes = await app.inject({
+      method: "DELETE",
+      url: `/v1/leads/${leadId}`,
+      headers: {
+        authorization: `Bearer ${rawKeyA}`,
+      },
+    });
+    assert(delRes.statusCode === 200, `Delete failed: ${delRes.body}`);
+
+    // Direct SQL inspection on SQLite database: row is completely purged
+    const db = new Database(dbPath);
+    try {
+      const row = db.prepare("select * from leads where id = ?").get(leadId);
+      assert(row === undefined, "Lead row must be completely removed from leads table");
+
+      const piiCount = db.prepare(`
+        select count(*) as count from leads where email = 'confidential@tenant-a.test' or name = 'Confidential Founder'
+      `).get() as { count: number };
+      assert(piiCount.count === 0, "Personal data must not exist in leads table");
+
+      // Verify minimal non-personal record in lead_deletions
+      const delRecord = db.prepare("select * from lead_deletions where lead_id = ?").get(leadId) as any;
+      assert(delRecord !== undefined, "Record must exist in lead_deletions");
+      assert(delRecord.action === "delete", "Expected action delete");
+      assert(delRecord.client_id === clientAId, "Expected client_id tenant A");
+    } finally {
+      db.close();
+    }
+
+    // 2. R-002: Multi-tenant sweep isolation via HTTP endpoint
+    const oldDate = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000).toISOString();
+    const runA = "run-durable-sweep-a";
+    const projA = createProject(clientAId, "Run A");
+    projA.id = runA;
+    store.saveProject(projA);
+    const auditA = path.join(auditDir, `${runA}.jsonl`);
+    fs.writeFileSync(auditA, JSON.stringify({ runId: runA, clientId: clientAId }) + "\n", "utf8");
+
+    store.createLead({
+      id: "lead-exp-a",
+      clientId: clientAId,
+      userSub: null,
+      name: "Expired A",
+      email: "exp-a@example.com",
+      idea: "Expired A idea",
+      source: "eval",
+      runId: runA,
+      createdAt: oldDate,
+    });
+
+    const runB = "run-durable-sweep-b";
+    const projB = createProject(clientBId, "Run B");
+    projB.id = runB;
+    store.saveProject(projB);
+    const auditB = path.join(auditDir, `${runB}.jsonl`);
+    fs.writeFileSync(auditB, JSON.stringify({ runId: runB, clientId: clientBId }) + "\n", "utf8");
+
+    store.createLead({
+      id: "lead-exp-b",
+      clientId: clientBId,
+      userSub: null,
+      name: "Expired B",
+      email: "exp-b@example.com",
+      idea: "Expired B idea",
+      source: "eval",
+      runId: runB,
+      createdAt: oldDate,
+    });
+
+    const prevSweepFlag = config.enableLeadDeletionSweep;
+    const prevDeleteLinked = config.leadDeleteLinkedRuns;
+    try {
+      (config as { enableLeadDeletionSweep: boolean }).enableLeadDeletionSweep = true;
+      (config as { leadDeleteLinkedRuns: boolean }).leadDeleteLinkedRuns = true;
+
+      // Tenant A triggers manual sweep
+      const sweepARes = await app.inject({
+        method: "POST",
+        url: "/v1/leads/sweep",
+        headers: {
+          authorization: `Bearer ${rawKeyA}`,
+        },
+      });
+      assert(sweepARes.statusCode === 200, `Sweep failed: ${sweepARes.body}`);
+      const sweepAJson = sweepARes.json();
+      assert(sweepAJson.sweptLeads === 1, `Expected 1 swept lead for Tenant A, got ${sweepAJson.sweptLeads}`);
+      assert(sweepAJson.clientId === clientAId, `Expected clientId ${clientAId}`);
+
+      // Verify Tenant A data deleted
+      assert(store.loadProject(clientAId, runA) === null, "Tenant A run must be deleted");
+      assert(!fs.existsSync(auditA), "Tenant A audit file must be deleted");
+
+      // Verify Tenant B data remains completely intact!
+      const listBRes = await app.inject({
+        method: "GET",
+        url: "/v1/leads",
+        headers: {
+          authorization: `Bearer ${rawKeyB}`,
+        },
+      });
+      assert(listBRes.statusCode === 200, "Expected status 200 listing Tenant B leads");
+      assert(listBRes.json().items.some((l: { id: string }) => l.id === "lead-exp-b"), "Tenant B lead must still exist");
+      assert(store.loadProject(clientBId, runB) !== null, "Tenant B run must still exist");
+      assert(fs.existsSync(auditB), "Tenant B audit file must still exist");
+
+      // Tenant B triggers manual sweep
+      const sweepBRes = await app.inject({
+        method: "POST",
+        url: "/v1/leads/sweep",
+        headers: {
+          authorization: `Bearer ${rawKeyB}`,
+        },
+      });
+      assert(sweepBRes.statusCode === 200, `Tenant B sweep failed: ${sweepBRes.body}`);
+      assert(sweepBRes.json().sweptLeads === 1, "Expected Tenant B sweep to sweep 1 lead");
+      assert(store.loadProject(clientBId, runB) === null, "Tenant B run must now be deleted");
+      assert(!fs.existsSync(auditB), "Tenant B audit file must now be deleted");
+    } finally {
+      (config as { enableLeadDeletionSweep: boolean }).enableLeadDeletionSweep = prevSweepFlag;
+      (config as { leadDeleteLinkedRuns: boolean }).leadDeleteLinkedRuns = prevDeleteLinked;
+    }
+
+    // 3. R-003: Fail-closed behavior on unreadable audit evidence via HTTP
+    const runCorrupt = "run-corrupt-audit-http";
+    const projCorrupt = createProject(clientAId, "Corrupt Run");
+    projCorrupt.id = runCorrupt;
+    store.saveProject(projCorrupt);
+    const auditCorrupt = path.join(auditDir, `${runCorrupt}.jsonl`);
+    fs.writeFileSync(auditCorrupt, "CORRUPT_JSON_{invalid}\n", "utf8");
+
+    const corruptLeadRes = await app.inject({
+      method: "POST",
+      url: "/v1/leads",
+      headers: {
+        authorization: `Bearer ${rawKeyA}`,
+        "content-type": "application/json",
+      },
+      payload: {
+        name: "Corrupt Audit Lead",
+        email: "corrupt@example.com",
+        idea: "Corrupt audit idea",
+        source: "eval",
+        runId: runCorrupt,
+      },
+    });
+    assert(corruptLeadRes.statusCode === 201, `Failed to create corrupt lead: ${corruptLeadRes.body}`);
+    const corruptLeadId = corruptLeadRes.json().id as string;
+
+    // Delete linked run -> fails closed with HTTP 409
+    const delCorruptRes = await app.inject({
+      method: "DELETE",
+      url: `/v1/leads/${corruptLeadId}?deleteLinkedRun=true`,
+      headers: {
+        authorization: `Bearer ${rawKeyA}`,
+      },
+    });
+    assert(delCorruptRes.statusCode === 409, `Expected 409 conflict, got ${delCorruptRes.statusCode}: ${delCorruptRes.body}`);
+    assert(
+      delCorruptRes.json().error?.message === "Lead deletion failed closed. Retry after operator review.",
+      "Conflict message must be sanitized without leaking PII or internal errors",
+    );
+    assert(store.loadProject(clientAId, runCorrupt) !== null, "Project must not be deleted on fail closed");
+    assert(fs.existsSync(auditCorrupt), "Audit file must not be deleted on fail closed");
+
+    // Fix audit and retry via store
+    fs.writeFileSync(auditCorrupt, JSON.stringify({ runId: runCorrupt, clientId: clientAId }) + "\n", "utf8");
+    const retryRes = store.retryFailedDeletionRequests({ auditDir });
+    assert(retryRes.succeeded >= 1, "Retry must succeed after fixing audit");
+    assert(store.loadProject(clientAId, runCorrupt) === null, "Project must be deleted after retry");
+    assert(!fs.existsSync(auditCorrupt), "Audit file must be deleted after retry");
+  } finally {
+    (config as { auditDir: string }).auditDir = prevAuditDir;
     await app.close();
     store.close();
     fs.rmSync(dir, { recursive: true, force: true });

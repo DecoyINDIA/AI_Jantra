@@ -32,6 +32,9 @@ import { importLegacyJsonData } from "./migrations/importLegacyJson.js";
 import {
   SqliteLeadStore,
   type DeleteLeadOptions,
+  type LeadDeletionRecord,
+  type LeadDeletionRequest,
+  type LeadDeletionStatus,
   type LeadRecord,
   type LeadStore,
   type SweepLeadsOptions,
@@ -137,7 +140,7 @@ export class SqliteProjectStore
     OpsProfileStore
 {
   private readonly db: Database.Database;
-  private readonly files = new JsonProjectStore();
+  private readonly files: JsonProjectStore;
   private readonly leadStore: SqliteLeadStore;
   private readonly webhookStore: SqliteWebhookSubscriptionStore;
 
@@ -148,14 +151,18 @@ export class SqliteProjectStore
     mkdirSync(dirname(path), { recursive: true });
     this.db = new Database(path);
     runMigrations(this.db);
+    const resolvedProjectDir = options?.projectDir ?? dirname(path);
+    this.files = new JsonProjectStore(resolvedProjectDir);
     if (!options?.skipImport) {
       importLegacyJsonData(this.db, {
         leadDir: options?.leadDir,
-        projectDir: options?.projectDir ?? dirname(path),
+        projectDir: resolvedProjectDir,
       });
     }
-    this.leadStore = new SqliteLeadStore(this.db);
     this.webhookStore = new SqliteWebhookSubscriptionStore(this.db);
+    this.leadStore = new SqliteLeadStore(this.db, {
+      projectStore: this,
+    });
   }
 
   saveProject(project: Project): void {
@@ -441,6 +448,64 @@ export class SqliteProjectStore
     return this.leadStore.sweepExpiredLeads
       ? this.leadStore.sweepExpiredLeads(retentionDays, { projectStore: this, ...options })
       : 0;
+  }
+
+  remediateSoftDeletedLeads(): number {
+    return this.leadStore.remediateSoftDeletedLeads ? this.leadStore.remediateSoftDeletedLeads() : 0;
+  }
+
+  getDeletionRecord(clientId: string, leadId: string): LeadDeletionRecord | null {
+    return this.leadStore.getDeletionRecord ? this.leadStore.getDeletionRecord(clientId, leadId) : null;
+  }
+
+  listDeletionRecords(clientId: string): LeadDeletionRecord[] {
+    return this.leadStore.listDeletionRecords ? this.leadStore.listDeletionRecords(clientId) : [];
+  }
+
+  getDeletionRequest(id: string): LeadDeletionRequest | null {
+    return this.leadStore.getDeletionRequest ? this.leadStore.getDeletionRequest(id) : null;
+  }
+
+  listDeletionRequests(clientId?: string, status?: LeadDeletionStatus): LeadDeletionRequest[] {
+    return this.leadStore.listDeletionRequests ? this.leadStore.listDeletionRequests(clientId, status) : [];
+  }
+
+  processPendingDeletionRequests(options?: { projectStore?: ProjectStore; auditDir?: string }): {
+    processed: number;
+    succeeded: number;
+    failed: number;
+  } {
+    return this.leadStore.processPendingDeletionRequests
+      ? this.leadStore.processPendingDeletionRequests({ projectStore: this, ...options })
+      : { processed: 0, succeeded: 0, failed: 0 };
+  }
+
+  retryFailedDeletionRequests(options?: { projectStore?: ProjectStore; auditDir?: string; maxAttempts?: number; force?: boolean }): {
+    processed: number;
+    succeeded: number;
+    failed: number;
+  } {
+    return this.leadStore.retryFailedDeletionRequests
+      ? this.leadStore.retryFailedDeletionRequests({ projectStore: this, ...options })
+      : { processed: 0, succeeded: 0, failed: 0 };
+  }
+
+  cancelDeletionRequest(
+    id: string,
+    options?: { projectStore?: ProjectStore; auditDir?: string },
+  ): boolean {
+    return this.leadStore.cancelDeletionRequest
+      ? this.leadStore.cancelDeletionRequest(id, { projectStore: this, ...options })
+      : false;
+  }
+
+  retryDeletionRequest(
+    id: string,
+    options?: { projectStore?: ProjectStore; auditDir?: string; force?: boolean },
+  ): boolean {
+    return this.leadStore.retryDeletionRequest
+      ? this.leadStore.retryDeletionRequest(id, { projectStore: this, ...options })
+      : false;
   }
 
   getLeadStore(): LeadStore {
