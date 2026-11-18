@@ -107,7 +107,10 @@ jobs:
 
       # Fails on high/critical advisories that have a non-breaking fix; lists
       # unfixable ones as warnings (see scripts/audit-gate.mjs).
-      - name: Dependency audit gate
+      - name: Dependency audit gate (production tree, strict)
+        run: node scripts/audit-gate.mjs --omit=dev --strict
+
+      - name: Dependency audit gate (full tree incl. build tooling)
         run: node scripts/audit-gate.mjs
 
       - name: Secret scan (tracked files)

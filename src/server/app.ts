@@ -293,7 +293,7 @@ export async function startRemoteApi(options: Omit<CreateServerOptions, "loopbac
   const edgeSecret = options.edgeSecret ?? config.edgeSharedSecret;
   if (!edgeSecret) {
     console.warn(
-      "JANTRA_EDGE_SECRET is not set: public-scope keys are accepted without proof they came through the edge. Set it on both the origin and the Cloudflare Worker.",
+      "JANTRA_EDGE_SECRET is not set: public-scope keys (the website widget) will be refused. Set it on both the origin and the Cloudflare Worker.",
     );
   }
   const app = createServer({

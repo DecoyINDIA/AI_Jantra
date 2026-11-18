@@ -26,7 +26,7 @@ import {
   type ProjectStore,
   type StoredApiKeyRecord,
 } from "../store.js";
-import { encryptSecret, decryptSecret, DecryptionError } from "../../security/encryption.js";
+import { credentialAad, encryptSecret, decryptSecret, DecryptionError, hasSecretsKey, isLegacySecret } from "../../security/encryption.js";
 import { runMigrations } from "./migrations/index.js";
 import { importLegacyJsonData } from "./migrations/importLegacyJson.js";
 import {
@@ -163,6 +163,7 @@ export class SqliteProjectStore
     this.leadStore = new SqliteLeadStore(this.db, {
       projectStore: this,
     });
+    this.upgradeLegacyCredentials();
   }
 
   saveProject(project: Project): void {
@@ -605,7 +606,7 @@ export class SqliteProjectStore
   }
 
   setConnectorCredentials(clientId: string, connector: string, credentials: Record<string, string>): void {
-    const encrypted = encryptSecret(JSON.stringify(credentials));
+    const encrypted = encryptSecret(JSON.stringify(credentials), undefined, credentialAad(clientId, connector));
     const now = new Date().toISOString();
     this.db
       .prepare(
@@ -622,8 +623,34 @@ export class SqliteProjectStore
       .prepare("select encrypted_blob from connector_credentials where client_id = ? and connector = ?")
       .get(clientId, connector) as { encrypted_blob?: string } | undefined;
     if (!row?.encrypted_blob) return null;
-    const decrypted = decryptSecret(row.encrypted_blob);
-    return JSON.parse(decrypted) as Record<string, string>;
+    const decrypted = decryptSecret(row.encrypted_blob, undefined, credentialAad(clientId, connector));
+    const parsed = JSON.parse(decrypted) as Record<string, string>;
+    if (isLegacySecret(row.encrypted_blob)) this.setConnectorCredentials(clientId, connector, parsed);
+    return parsed;
+  }
+
+  /**
+   * Re-encrypt every unbound (v1) credential as record-bound v2. Runs at
+   * startup so the window in which a v1 blob could be swapped between rows
+   * closes on first boot rather than on each credential's first use.
+   * Returns the number upgraded; rows that fail to decrypt are left untouched.
+   */
+  upgradeLegacyCredentials(): number {
+    if (!this.db.open || !hasSecretsKey()) return 0;
+    const rows = this.db
+      .prepare("select client_id, connector, encrypted_blob from connector_credentials where encrypted_blob like 'v1:%'")
+      .all() as Array<{ client_id: string; connector: string; encrypted_blob: string }>;
+    let upgraded = 0;
+    for (const row of rows) {
+      try {
+        const plain = decryptSecret(row.encrypted_blob);
+        this.setConnectorCredentials(row.client_id, row.connector, JSON.parse(plain) as Record<string, string>);
+        upgraded++;
+      } catch {
+        // Wrong key or damaged row: leave it; reads will fail closed.
+      }
+    }
+    return upgraded;
   }
 
   listConnectorCredentials(clientId: string): string[] {

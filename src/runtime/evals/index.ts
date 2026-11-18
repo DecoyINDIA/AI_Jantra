@@ -1,5 +1,7 @@
 process.env.JANTRA_PROVIDER ??= "mock";
 process.env.JANTRA_MOCK_FIXTURE ??= "src/runtime/evals/fixtures/transcript.json";
+// Public keys are refused without an edge secret; regressions act as the edge.
+process.env.JANTRA_EDGE_SECRET ??= "eval-edge-secret";
 
 const { fixtures } = await import("./fixtures.js");
 const {

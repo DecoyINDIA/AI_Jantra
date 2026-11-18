@@ -6,6 +6,9 @@
 import { execFileSync } from "node:child_process";
 
 const omitDev = process.argv.includes("--omit=dev");
+// --strict: every high/critical advisory blocks, fixable or not. Used for the
+// production tree, which must stay clean; dev-only tooling uses the default.
+const strict = process.argv.includes("--strict");
 const args = ["audit", "--json", ...(omitDev ? ["--omit=dev"] : [])];
 let raw;
 try {
@@ -29,7 +32,7 @@ const warnings = [];
 for (const [name, vuln] of Object.entries(report.vulnerabilities ?? {})) {
   if (vuln.severity !== "high" && vuln.severity !== "critical") continue;
   const fix = vuln.fixAvailable;
-  const fixable = fix === true || (typeof fix === "object" && fix && !fix.isSemVerMajor);
+  const fixable = strict || fix === true || (typeof fix === "object" && fix && !fix.isSemVerMajor);
   const titles = (vuln.via ?? []).filter((v) => typeof v === "object").map((v) => v.title);
   // Entries whose "via" lists only other package names inherit the advisory
   // from a dependency; that dependency's own entry is the one to judge.
