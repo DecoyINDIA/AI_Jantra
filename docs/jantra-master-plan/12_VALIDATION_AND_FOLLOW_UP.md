@@ -59,6 +59,12 @@ Resolved in `src/server/leads/store.ts`, `src/pipeline/orchestrator.ts`, `src/pi
 - Shared run link awareness: checks for other active leads referencing the same `runId`; preserves shared run data still needed by other leads while deleting the target lead.
 - Sweep configuration flag `JANTRA_ENABLE_LEAD_DELETION_SWEEP` remains disabled by default until durable notification acceptance.
 
+## Security hardening pass (2026-11-18) and open findings
+
+Security changes, their regressions and residual risks are recorded in `docs/THREAT_MODEL.md` (T1 to T18). Evidence: typecheck clean; `npm run eval` 84/84; `npm test` 111/111; desktop unit 7/7; real-Electron e2e 14/14 under xvfb; `npm run edge:verify:local` green; production dependency audit 0 advisories. None of this was validated against live Cloudflare, Render or a packaged desktop install.
+
+Open finding D-001 (desktop packaging, functional, pre-existing): an unpacked Linux build (`electron-builder --linux dir`) contains only `desktop/dist` and the desktop package's own dependencies. electron-builder ignores the `../dist/**` and `../web/dist/**` globs in `desktop/electron-builder.yml` because they lie outside the app directory, so the packaged app has no web UI and no embedded API runtime or its dependencies (fastify, better-sqlite3 and others). `startApi()` imports `../../dist/server/app.js` and `webEntry()` reads `<appPath>/web/dist`, so an installed build cannot start the API. Fix outline: stage the root `dist` and `web/dist` into the desktop app directory before packaging (or ship them via `extraResources` and resolve them from `process.resourcesPath`), declare the runtime's production dependencies for the desktop package, `asarUnpack` better-sqlite3 and let electron-builder rebuild it for Electron's ABI in a dedicated release job (rebuilding in a shared checkout breaks the Node test suite). Acceptance: the packaged app starts, the UI loads, a run completes, and `desktop/test/electron-security.e2e.cjs` passes against the packaged build.
+
 ## External inputs and release acceptance
 
 | Item | Required input/action | Completion evidence |

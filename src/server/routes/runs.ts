@@ -21,6 +21,7 @@ import {
 } from "../../runtime/intakeBudget.js";
 import type { Artifact } from "../../pipeline/types.js";
 import { visitorKey } from "../visitor.js";
+import { assertRunTokenAccess, issueRunAccessToken } from "../runAccess.js";
 import { forbidden, HttpError, notFound } from "../errors.js";
 import { assertAgentAllowed } from "../scope.js";
 import {
@@ -32,7 +33,7 @@ import {
   runParamsSchema,
 } from "../schemas.js";
 import { assertProjectAccess, requestClientId } from "../tenancy.js";
-import { renderClientReadyReport } from "../export/clientReport.js";
+import { CLIENT_REPORT_CSP, renderClientReadyReport } from "../export/clientReport.js";
 import type { JobRecord, JobStore } from "../jobs/types.js";
 import type { JobWorker } from "../jobs/worker.js";
 
@@ -66,7 +67,10 @@ function loadScopedProject(
   const project = store.loadProject(clientId, runId);
   if (!project) throw notFound(`Run ${runId} was not found.`);
   assertProjectAccess(request.identity, project);
+  // Agent check first keeps the documented agent_not_allowed response for
+  // non-public runs; the token check then gates public runs.
   assertAgentAllowed(request.identity, project.agentId);
+  assertRunTokenAccess(request, project);
   return project;
 }
 
@@ -132,6 +136,8 @@ export function registerRunRoutes(app: FastifyInstance, deps: RunRouteDeps): voi
       autonomy: body.autonomy,
       visitorKey: vKey,
     });
+    const runAccess = request.identity?.scope === "public" ? issueRunAccessToken() : undefined;
+    if (runAccess) project.visitorTokenHash = runAccess.hash;
     const audit = new AuditLogger(project.id, config.auditDir);
     audit.record("run_created", {
       clientId: project.clientId,
@@ -166,7 +172,8 @@ export function registerRunRoutes(app: FastifyInstance, deps: RunRouteDeps): voi
       });
       deps.store.saveProject(project);
     }
-    return { run: project };
+    // Returned once; the caller must send it as X-Jantra-Run-Token afterwards.
+    return runAccess ? { run: project, runToken: runAccess.token } : { run: project };
   });
 
   app.get("/v1/runs", async (request) => {
@@ -193,7 +200,11 @@ export function registerRunRoutes(app: FastifyInstance, deps: RunRouteDeps): voi
     const params = parseWith(runParamsSchema, request.params);
     const project = loadScopedProject(request, deps.store, clientId, params.runId);
     const html = renderClientReadyReport(project);
-    reply.type("text/html; charset=utf-8").send(html);
+    reply
+      .header("content-security-policy", CLIENT_REPORT_CSP)
+      .header("referrer-policy", "no-referrer")
+      .type("text/html; charset=utf-8")
+      .send(html);
   });
 
   app.post("/v1/runs/:runId/advance", async (request, reply) => {

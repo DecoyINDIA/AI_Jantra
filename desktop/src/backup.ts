@@ -2,9 +2,11 @@ import { cp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { app } from "electron";
+import { assertSafeFileId, skipSymlinks } from "./fsSafety.js";
 import { desktopAuditDir, desktopProjectDir } from "./paths.js";
 
-export async function createAuditExport(runIdOrClientId: string): Promise<string> {
+export async function createAuditExport(rawId: string): Promise<string> {
+  const runIdOrClientId = assertSafeFileId(rawId);
   const outputDir = join(app.getPath("userData"), "exports");
   await mkdir(outputDir, { recursive: true });
   const output = join(outputDir, `audit-export-${runIdOrClientId}-${Date.now()}.jsonl`);
@@ -33,6 +35,6 @@ export async function createBackupArchive(): Promise<string> {
 export async function restoreBackupArchive(path: string): Promise<void> {
   const projects = join(path, "projects");
   const audit = join(path, "audit");
-  if (existsSync(projects)) await cp(projects, desktopProjectDir(), { recursive: true });
-  if (existsSync(audit)) await cp(audit, desktopAuditDir(), { recursive: true });
+  if (existsSync(projects)) await cp(projects, desktopProjectDir(), { recursive: true, filter: skipSymlinks });
+  if (existsSync(audit)) await cp(audit, desktopAuditDir(), { recursive: true, filter: skipSymlinks });
 }

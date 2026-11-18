@@ -117,7 +117,11 @@ export default function RunDetail({ runId }: Props) {
                 const html = await api.exportReport(runId);
                 const blob = new Blob([html], { type: "text/html; charset=utf-8" });
                 const url = URL.createObjectURL(blob);
-                window.open(url, "_blank");
+                // noopener: the report window gets no handle back to the
+                // console. The report also carries its own meta CSP because a
+                // blob: document runs in this origin.
+                window.open(url, "_blank", "noopener");
+                window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
               } catch (err) {
                 console.error("Export report failed", err);
               }

@@ -32,13 +32,13 @@
     "edge:verify:local": "node --import tsx deploy/cloudflare-worker/verify-edge.mjs --local",
     "eval": "node --import tsx src/runtime/evals/index.ts",
     "smoke": "node --import tsx src/runtime/evals/smoke.ts",
-    "test": "node --import tsx --test \"src/**/*.test.ts\""
+    "test": "node scripts/run-tests.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.7.0",
     "better-sqlite3": "12.10.0",
     "dotenv": "^16.4.5",
-    "fastify": "5.8.5",
+    "fastify": "5.12.8",
     "jose": "^5.10.0",
     "undici": "^7.30.2",
     "zod": "^4.4.3",

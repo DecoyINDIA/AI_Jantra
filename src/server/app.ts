@@ -44,6 +44,8 @@ export interface CreateServerOptions {
   webhookStore?: WebhookSubscriptionStore;
   apiKeys?: ApiKeyRecord[];
   adminToken?: string;
+  /** Defaults to config.edgeSharedSecret; see ApiKeyAuthOptions.edgeSecret. */
+  edgeSecret?: string;
   allowedOrigins?: string[];
   allowedHosts?: string[];
   jobWorker?: JobWorker;
@@ -98,16 +100,16 @@ export function createServer(options: CreateServerOptions): FastifyInstance {
   const app = fastify({
     logger: false,
     bodyLimit: 1024 * 1024,
-    // Behind Cloudflare/Railway in remote mode, trust the proxy so request.ip
-    // reflects the real client (X-Forwarded-For) — required for the per-IP rate
-    // limiter to throttle real clients rather than the shared proxy address.
-    // Trust exactly one hop: the platform's own reverse proxy. A boolean `true`
-    // trusts an unbounded X-Forwarded-For chain and Fastify resolves request.ip
-    // to the LEFTMOST entry, which is fully client-controlled — a spoofed header
-    // lets a client rotate "IP" every request and bypass the rate limiter below.
-    // A numeric trustProxy trusts N hops counted from the socket, i.e. only the
-    // value appended by the immediately-connected, trusted proxy.
-    trustProxy: mode === "remote" ? 1 : false,
+    // Behind Render/Railway in remote mode, request.ip must reflect the real
+    // client (X-Forwarded-For) so the per-IP limiter throttles clients rather
+    // than the shared proxy address. Trust is by peer address, not hop count:
+    // forwarding headers are honoured only while the hop is an internal proxy
+    // address, so request.ip is the first untrusted (real client) entry from
+    // the right. `true` would trust the client-controlled LEFTMOST entry, and
+    // Fastify >= 5.12 ignores numeric hop counts entirely (every visitor then
+    // shares the proxy's bucket). A client connecting directly from a public
+    // address cannot spoof, because its socket address is not trusted.
+    trustProxy: mode === "remote" ? config.trustedProxies : false,
   });
   const clientId = options.clientId ?? "xolver";
   const registry = options.registry ?? defaultAgentRegistry;
@@ -155,6 +157,16 @@ export function createServer(options: CreateServerOptions): FastifyInstance {
     jobWorker.start();
   }
 
+  // Baseline response headers. The API serves JSON plus one HTML export; none
+  // of it should be MIME-sniffed, framed, or leak its URL (which carries run
+  // IDs) via Referer. Routes may tighten these (the export adds a CSP).
+  app.addHook("onSend", async (_request, reply, payload) => {
+    reply.header("x-content-type-options", "nosniff");
+    reply.header("x-frame-options", "DENY");
+    if (!reply.hasHeader("referrer-policy")) reply.header("referrer-policy", "no-referrer");
+    return payload;
+  });
+
   app.get("/health", async () => ({ status: "healthy" }));
 
   if (mode === "remote") {
@@ -168,6 +180,7 @@ export function createServer(options: CreateServerOptions): FastifyInstance {
     installApiKeyAuth(app, {
       apiKeyStore,
       envRecords: options.apiKeys ?? parseApiKeyRecords(),
+      edgeSecret: options.edgeSecret ?? config.edgeSharedSecret,
     });
     installIdentityRateLimit(app, {
       windowMs: config.rateLimitWindowMs,
@@ -277,6 +290,12 @@ export async function startRemoteApi(options: Omit<CreateServerOptions, "loopbac
   port: number;
   apiKeys?: ApiKeyRecord[];
 }): Promise<StartedLocalApi> {
+  const edgeSecret = options.edgeSecret ?? config.edgeSharedSecret;
+  if (!edgeSecret) {
+    console.warn(
+      "JANTRA_EDGE_SECRET is not set: public-scope keys (the website widget) will be refused. Set it on both the origin and the Cloudflare Worker.",
+    );
+  }
   const app = createServer({
     ...options,
     mode: "remote",

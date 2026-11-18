@@ -1,3 +1,5 @@
+// CommonJS (.cts): sandboxed preloads cannot load ES modules, and the
+// renderer stays sandboxed.
 import { contextBridge, ipcRenderer } from "electron";
 
 function argValue(prefix: string): string {

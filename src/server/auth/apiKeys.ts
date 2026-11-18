@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import type { FastifyInstance, FastifyRequest } from "fastify";
 
+import { config } from "../../config.js";
 import type { ApiKeyStore, StoredApiKeyRecord } from "../../pipeline/store.js";
 import { timingSafeStringEqual } from "../constantTime.js";
 import { forbidden, unauthorized } from "../errors.js";
@@ -17,6 +18,13 @@ export interface ApiKeyRecord {
 export interface ApiKeyAuthOptions {
   apiKeyStore?: ApiKeyStore;
   envRecords: ApiKeyRecord[];
+  /**
+   * Public-scope keys are accepted only alongside a matching
+   * X-Jantra-Edge-Secret header, and refused entirely while this is empty. Public keys live at the edge and also unlock
+   * trust in X-Jantra-Client-IP, so without this a leaked public key lets a
+   * caller skip edge rate limits and spoof visitor identity.
+   */
+  edgeSecret?: string;
 }
 
 const LAST_USED_TOUCH_INTERVAL_MS = 60_000;
@@ -25,7 +33,7 @@ function isAdminPath(url: string): boolean {
   return url === "/v1/admin" || url.startsWith("/v1/admin/");
 }
 
-export function parseApiKeyRecords(raw = process.env.JANTRA_REMOTE_API_KEYS ?? ""): ApiKeyRecord[] {
+export function parseApiKeyRecords(raw = config.remoteApiKeysRaw): ApiKeyRecord[] {
   return raw
     .split(",")
     .map((item) => item.trim())
@@ -119,6 +127,18 @@ export function installApiKeyAuth(app: FastifyInstance, optionsOrRecords: ApiKey
     if (!request.url.startsWith("/v1")) return;
     if (isAdminPath(request.url)) return;
     request.identity = resolveApiKeyIdentity(request, options);
+    if (request.identity.scope === "public") {
+      // Fail closed: with no edge secret configured there is no way to tell an
+      // edge request from a direct one, so public keys are refused outright.
+      if (!options.edgeSecret) {
+        throw forbidden("Public keys are disabled until JANTRA_EDGE_SECRET is configured on the origin.");
+      }
+      const header = request.headers["x-jantra-edge-secret"];
+      const presented = Array.isArray(header) ? header[0] : header;
+      if (!timingSafeStringEqual(presented, options.edgeSecret)) {
+        throw forbidden("Public requests must come through the Jantra edge.");
+      }
+    }
     if (
       request.identity.scope === "public" &&
       !isPublicRouteAllowed(request.method, request.url.split("?")[0] ?? "")

@@ -14,7 +14,7 @@ import { visitorAddress } from "../../../server/visitor.js";
 import { hashApiKey } from "../../../server/auth/apiKeys.js";
 import { reloadModelCatalog } from "../../../model/catalog.js";
 import { config } from "../../../config.js";
-import { assert, readAuditJsonl } from "./common.js";
+import { assert, readAuditJsonl, edgeHeaders } from "./common.js";
 import {
   createLicenseToken,
   generateLicenseKeyPair,
@@ -178,6 +178,40 @@ export async function verifyRateLimiterProxyTrust(): Promise<void> {
   assert(!Number.isNaN(remaining1), "X-RateLimit-Remaining header missing or NaN on first request");
   assert(!Number.isNaN(remaining2), "X-RateLimit-Remaining header missing or NaN on second request");
   assert(remaining2 === remaining1 - 1, `Spoofed X-Forwarded-For bypassed rate limiter (remaining1=${remaining1}, remaining2=${remaining2})`);
+
+  // The proxy actually being trusted: requests relayed by an internal proxy
+  // for two different real clients land in different buckets. Without this a
+  // "trust nothing" config would pass the spoofing check above while lumping
+  // every visitor into the proxy's bucket.
+  const viaProxy = (clientIp: string) =>
+    app.inject({
+      method: "GET",
+      url: "/v1/models",
+      remoteAddress: "10.0.0.7",
+      headers: { "X-Forwarded-For": clientIp, Authorization: `Bearer ${token}` },
+    });
+  const clientA1 = await viaProxy("203.0.113.10");
+  const clientA2 = await viaProxy("203.0.113.10");
+  const clientB = await viaProxy("203.0.113.20");
+  const a1 = parseInt(clientA1.headers["x-ratelimit-remaining"] as string, 10);
+  const a2 = parseInt(clientA2.headers["x-ratelimit-remaining"] as string, 10);
+  const b1 = parseInt(clientB.headers["x-ratelimit-remaining"] as string, 10);
+  assert(a2 === a1 - 1, `Same client via proxy must share a bucket (a1=${a1}, a2=${a2})`);
+  assert(b1 === a1, `Different clients via proxy must get separate buckets (a1=${a1}, b1=${b1})`);
+
+  // A client connecting directly from a public address is not a trusted
+  // proxy, so its own X-Forwarded-For is ignored.
+  const direct = (spoofed: string) =>
+    app.inject({
+      method: "GET",
+      url: "/v1/models",
+      remoteAddress: "198.51.100.77",
+      headers: { "X-Forwarded-For": spoofed, Authorization: `Bearer ${token}` },
+    });
+  const d1 = parseInt((await direct("192.0.2.1")).headers["x-ratelimit-remaining"] as string, 10);
+  const d2 = parseInt((await direct("192.0.2.2")).headers["x-ratelimit-remaining"] as string, 10);
+  assert(d2 === d1 - 1, `Direct public client rotated identity via X-Forwarded-For (d1=${d1}, d2=${d2})`);
+  await app.close();
 }
 
 export async function verifyVisitorRateLimit(): Promise<void> {
@@ -456,7 +490,7 @@ export async function verifyPromoteIntakeToPlan(): Promise<void> {
       const publicPromote = await remoteApp.inject({
         method: "POST",
         url: `/v1/runs/${sourceProject.id}/promote`,
-        headers: { authorization: "Bearer pub-key" },
+        headers: { authorization: "Bearer pub-key", ...edgeHeaders() },
       });
       assert(publicPromote.statusCode === 403, `Expected 403 for public key promote, got ${publicPromote.statusCode}`);
     } finally {
@@ -668,6 +702,7 @@ export async function verifySqliteMigrationsAndStores(): Promise<void> {
       url: "/v1/runs",
       headers: {
         authorization: `Bearer ${rawKey}`,
+        ...edgeHeaders(),
         "content-type": "application/json",
       },
       payload: {
@@ -683,6 +718,7 @@ export async function verifySqliteMigrationsAndStores(): Promise<void> {
       url: "/v1/runs",
       headers: {
         authorization: `Bearer ${rawKey}`,
+        ...edgeHeaders(),
         "content-type": "application/json",
       },
       payload: {
@@ -692,14 +728,18 @@ export async function verifySqliteMigrationsAndStores(): Promise<void> {
     });
     assert(allowedRun.statusCode === 200, `Expected 200, got ${allowedRun.statusCode}`);
     const runId = allowedRun.json().run.id as string;
+    const runToken = allowedRun.json().runToken as string;
+    assert(typeof runToken === "string", "Public run creation must return a runToken.");
 
-    // 4. Capture a lead via POST /v1/leads
+    // 4. Capture a lead via POST /v1/leads (public callers prove run ownership)
     const leadRes = await app.inject({
       method: "POST",
       url: "/v1/leads",
       headers: {
         authorization: `Bearer ${rawKey}`,
+        ...edgeHeaders(),
         "content-type": "application/json",
+        "x-jantra-run-token": runToken,
       },
       payload: {
         name: "Test User",
@@ -759,6 +799,7 @@ export async function verifyAsyncStageExecution(): Promise<void> {
       url: "/v1/runs",
       headers: {
         authorization: `Bearer ${rawKey}`,
+        ...edgeHeaders(),
         "content-type": "application/json",
       },
       payload: {
@@ -775,6 +816,7 @@ export async function verifyAsyncStageExecution(): Promise<void> {
       url: `/v1/runs/${runId}/advance`,
       headers: {
         authorization: `Bearer ${rawKey}`,
+        ...edgeHeaders(),
         prefer: "respond-async",
       },
     });
@@ -792,6 +834,7 @@ export async function verifyAsyncStageExecution(): Promise<void> {
         url: `/v1/runs/${runId}/jobs/${jobId}`,
         headers: {
           authorization: `Bearer ${rawKey}`,
+          ...edgeHeaders(),
         },
       });
       assert(jobRes.statusCode === 200, `Job get failed: ${jobRes.body}`);
@@ -805,6 +848,7 @@ export async function verifyAsyncStageExecution(): Promise<void> {
       url: `/v1/runs/${runId}`,
       headers: {
         authorization: `Bearer ${rawKey}`,
+        ...edgeHeaders(),
       },
     });
     assert(getRes.statusCode === 200, `Run get failed: ${getRes.body}`);
@@ -821,6 +865,7 @@ export async function verifyAsyncStageExecution(): Promise<void> {
       url: `/v1/runs/${runId}/advance`,
       headers: {
         authorization: `Bearer ${rawKey}`,
+        ...edgeHeaders(),
       },
     });
     assert(syncRes.statusCode === 200, `Expected 200 synchronous advance, got ${syncRes.statusCode}`);
@@ -831,6 +876,7 @@ export async function verifyAsyncStageExecution(): Promise<void> {
       url: `/v1/runs/${runId}/jobs/job-unknown-999`,
       headers: {
         authorization: `Bearer ${rawKey}`,
+        ...edgeHeaders(),
       },
     });
     assert(notFoundJob.statusCode === 404, `Expected 404 for unknown job, got ${notFoundJob.statusCode}`);
@@ -921,6 +967,7 @@ export async function verifyLeadRetentionAndDeletion(): Promise<void> {
       url: "/v1/leads",
       headers: {
         authorization: `Bearer ${rawKey}`,
+        ...edgeHeaders(),
         "content-type": "application/json",
       },
       payload: {
@@ -939,6 +986,7 @@ export async function verifyLeadRetentionAndDeletion(): Promise<void> {
       url: "/v1/leads",
       headers: {
         authorization: `Bearer ${rawKey}`,
+        ...edgeHeaders(),
       },
     });
     assert(listRes.statusCode === 200, `List leads failed: ${listRes.body}`);
@@ -950,6 +998,7 @@ export async function verifyLeadRetentionAndDeletion(): Promise<void> {
       url: `/v1/leads/${leadId}`,
       headers: {
         authorization: `Bearer ${rawKey}`,
+        ...edgeHeaders(),
       },
     });
     assert(delRes.statusCode === 200, `Delete lead failed: ${delRes.body}`);
@@ -961,6 +1010,7 @@ export async function verifyLeadRetentionAndDeletion(): Promise<void> {
       url: "/v1/leads",
       headers: {
         authorization: `Bearer ${rawKey}`,
+        ...edgeHeaders(),
       },
     });
     assert(!listAgain.json().items.some((l: { id: string }) => l.id === leadId), "Expected lead to be removed");
@@ -971,6 +1021,7 @@ export async function verifyLeadRetentionAndDeletion(): Promise<void> {
       url: `/v1/leads/${leadId}`,
       headers: {
         authorization: `Bearer ${rawKey}`,
+        ...edgeHeaders(),
       },
     });
     assert(delAgain.statusCode === 404, `Expected 404 on already deleted lead, got ${delAgain.statusCode}`);
@@ -992,6 +1043,7 @@ export async function verifyLeadRetentionAndDeletion(): Promise<void> {
       url: "/v1/leads",
       headers: {
         authorization: `Bearer ${rawKey}`,
+        ...edgeHeaders(),
         "content-type": "application/json",
       },
       payload: {
@@ -1011,6 +1063,7 @@ export async function verifyLeadRetentionAndDeletion(): Promise<void> {
       url: `/v1/leads/${linkedLeadId}?deleteLinkedRun=true`,
       headers: {
         authorization: `Bearer ${rawKey}`,
+        ...edgeHeaders(),
       },
     });
     assert(delLinkedRes.statusCode === 200, `Failed to delete linked lead: ${delLinkedRes.body}`);
@@ -1034,6 +1087,7 @@ export async function verifyLeadRetentionAndDeletion(): Promise<void> {
       url: "/v1/leads/sweep",
       headers: {
         authorization: `Bearer ${rawKey}`,
+        ...edgeHeaders(),
       },
     });
     assert(sweepDisabledRes.statusCode === 403, `Expected 403 when sweep is disabled, got ${sweepDisabledRes.statusCode}`);
@@ -1049,6 +1103,7 @@ export async function verifyLeadRetentionAndDeletion(): Promise<void> {
         url: "/v1/leads/sweep",
         headers: {
           authorization: `Bearer ${rawKey}`,
+          ...edgeHeaders(),
         },
       });
       assert(sweepEnabledRes.statusCode === 200, `Expected 200 when sweep is enabled, got ${sweepEnabledRes.statusCode}`);

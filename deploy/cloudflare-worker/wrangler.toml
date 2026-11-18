@@ -15,6 +15,16 @@ ALLOWED_ORIGINS = "https://xolver.in,https://www.xolver.in"
 #   wrangler secret put JANTRA_API_KEY
 # Value must match a JANTRA_REMOTE_API_KEYS record on the origin, e.g. the key
 # part of "<key>:xolver:web".
+#
+#   wrangler secret put JANTRA_EDGE_SECRET
+# Long random value (e.g. `openssl rand -base64 32`). Set the same value as
+# JANTRA_EDGE_SECRET on the origin so it refuses public-scope calls that did
+# not come through this Worker.
+#
+#   wrangler secret put TURNSTILE_SECRET_KEY
+# From the Cloudflare Turnstile dashboard. When set, POST /v1/runs and
+# POST /v1/leads require a valid token; pass the matching site key to the
+# embed widget as `turnstileSiteKey`.
 
 # Native per-IP rate limit for public intake traffic.
 [[unsafe.bindings]]
