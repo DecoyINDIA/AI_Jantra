@@ -14,7 +14,7 @@ import { config } from "../config.js";
 import { planningPipelineDefinition } from "../agents/planningPipeline.js";
 import { snapshotDefinition } from "../agents/definition.js";
 import { emptyCostRollup } from "../runtime/telemetry.js";
-import { encryptSecret, decryptSecret, DecryptionError } from "../security/encryption.js";
+import { credentialAad, encryptSecret, decryptSecret, DecryptionError, isLegacySecret } from "../security/encryption.js";
 import type { SourceBinding } from "./ops/connectors.js";
 import type {
   Artifact,
@@ -440,7 +440,7 @@ export class JsonProjectStore implements ProjectStore {
         map = JSON.parse(readFileSync(file, "utf8"));
       } catch {}
     }
-    const encrypted = encryptSecret(JSON.stringify(credentials));
+    const encrypted = encryptSecret(JSON.stringify(credentials), undefined, credentialAad(clientId, connector));
     map[connector] = encrypted;
     atomicWriteFileSync(file, JSON.stringify(map, null, 2));
   }
@@ -454,8 +454,11 @@ export class JsonProjectStore implements ProjectStore {
       const map = JSON.parse(readFileSync(file, "utf8")) as Record<string, string>;
       const encrypted = map[connector];
       if (!encrypted) return null;
-      const decrypted = decryptSecret(encrypted);
-      return JSON.parse(decrypted) as Record<string, string>;
+      const decrypted = decryptSecret(encrypted, undefined, credentialAad(clientId, connector));
+      const parsed = JSON.parse(decrypted) as Record<string, string>;
+      // Upgrade unbound v1 blobs so they cannot be swapped between records.
+      if (isLegacySecret(encrypted)) this.setConnectorCredentials(clientId, connector, parsed);
+      return parsed;
     } catch (err: any) {
       if (err instanceof DecryptionError) {
         throw err;

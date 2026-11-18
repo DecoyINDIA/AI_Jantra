@@ -8,14 +8,16 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "dev": "electron dist/main.js",
-    "dist": "electron-builder --config electron-builder.yml"
+    "dist": "electron-builder --config electron-builder.yml",
+    "test": "node --import tsx --test src/windowSecurity.test.ts src/fsSafety.test.ts",
+    "test:e2e": "electron --no-sandbox test/electron-security.e2e.cjs"
   },
   "dependencies": {
-    "electron-updater": "6.8.3"
+    "electron-updater": "6.8.11"
   },
   "devDependencies": {
-    "electron": "42.3.2",
-    "electron-builder": "26.8.1",
+    "electron": "42.11.18",
+    "electron-builder": "26.18.0",
     "typescript": "^5.6.3"
   }
 }

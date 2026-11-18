@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { getAuditHead } from "../../audit.js";
 import type { GateEvent } from "../../runtime/gateEvents.js";
 import { deliverWebhook } from "./delivery.js";
 import { defaultWebhookStore, type WebhookSubscriptionStore } from "./store.js";
@@ -10,6 +11,27 @@ export interface WebhookDispatchEvent {
   type: string;
   runId?: string;
   payload: Record<string, unknown>;
+}
+
+/** The signed envelope receivers get; run events carry an audit anchor. */
+export function buildWebhookEnvelope(event: WebhookDispatchEvent): WebhookEvent {
+  let auditHead: WebhookEvent["auditHead"];
+  if (event.runId) {
+    try {
+      auditHead = getAuditHead(event.runId) ?? undefined;
+    } catch {
+      // An anchor is a bonus; never block delivery on it.
+    }
+  }
+  return {
+    id: randomUUID(),
+    clientId: event.clientId,
+    type: event.type,
+    runId: event.runId,
+    createdAt: new Date().toISOString(),
+    payload: event.payload,
+    ...(auditHead ? { auditHead } : {}),
+  };
 }
 
 /**
@@ -35,14 +57,7 @@ export function dispatchWebhookEvent(
   );
   if (!matching.length) return;
 
-  const payload: WebhookEvent = {
-    id: randomUUID(),
-    clientId: event.clientId,
-    type: event.type,
-    runId: event.runId,
-    createdAt: new Date().toISOString(),
-    payload: event.payload,
-  };
+  const payload = buildWebhookEnvelope(event);
 
   for (const subscription of matching) {
     void deliverWebhook(subscription, payload).catch((err) => {

@@ -1,29 +1,23 @@
 import { generateLoopbackToken } from "./security.js";
 import { startLocalApi } from "./app.js";
-import { requireApiKey } from "../config.js";
+import { config, requireApiKey } from "../config.js";
 import { SqliteProjectStore } from "../pipeline/store/sqlite.js";
 
 requireApiKey();
 
-const token = process.env.JANTRA_LOOPBACK_TOKEN ?? generateLoopbackToken();
-const port = process.env.JANTRA_SERVER_PORT
-  ? Number(process.env.JANTRA_SERVER_PORT)
-  : 4317;
-
-const allowedOrigins = (process.env.JANTRA_ALLOWED_ORIGINS ?? "")
-  .split(",")
-  .map((origin) => origin.trim())
-  .filter(Boolean);
-const store = process.env.JANTRA_ADMIN_TOKEN ? new SqliteProjectStore() : undefined;
+const token = config.loopbackToken || generateLoopbackToken();
+const port = config.serverPort;
+const allowedOrigins = config.localAllowedOrigins;
+const store = config.adminToken ? new SqliteProjectStore() : undefined;
 
 const started = await startLocalApi({
   host: "127.0.0.1",
   port,
   loopbackToken: token,
-  clientId: process.env.JANTRA_CLIENT_ID ?? "xolver",
+  clientId: config.defaultClientId,
   store,
   apiKeyStore: store,
-  adminToken: process.env.JANTRA_ADMIN_TOKEN,
+  adminToken: config.adminToken || undefined,
   allowedOrigins: allowedOrigins.length ? allowedOrigins : undefined,
 });
 

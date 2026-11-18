@@ -82,6 +82,9 @@ This document defines the production deployment requirements, operational proced
 | `GEMINI_API_KEY` | Render | **Secret** | Required for grounded research stage (`AIza...`) |
 | `JANTRA_ADMIN_TOKEN` | Render | **Secret** | High-entropy secret for operator `/v1/admin/*` APIs |
 | `JANTRA_REMOTE_API_KEYS` | Render | **Secret** | Format `<key>:xolver:web,<admin-key>:xolver:operator` |
+| `JANTRA_EDGE_SECRET` | Render | **Secret** | **Required for the public widget.** Random value (`openssl rand -base64 32`); must equal the Worker secret of the same name. While unset, the origin refuses every public-scope key |
+| `JANTRA_AUDIT_HMAC_KEY` | Render | **Secret** | Random value; HMAC key for the audit hash chain. Changing it makes older chains verify only with the old key, so record rotations |
+| `JANTRA_TRUSTED_PROXIES` | Render | Config | Optional. Peer addresses whose `X-Forwarded-For` is trusted; default `loopback,linklocal,uniquelocal,100.64.0.0/10`. After deploy, confirm two visitors get separate `X-RateLimit-Remaining` counts |
 | `JANTRA_PUBLIC_SUBJECTS` | Render | Config | `web` (subjects receiving public-scoped access) |
 | `JANTRA_PUBLIC_AGENT_IDS` | Render | Config | `intake-public,firebnb-concierge` |
 | `JANTRA_SECRETS_KEY` | Render | **Secret** | 32-byte hex key for encrypting client credentials at rest (requires exactly 64 hexadecimal characters) |
@@ -90,6 +93,8 @@ This document defines the production deployment requirements, operational proced
 | `JANTRA_ORIGIN` | Cloudflare | Config | `https://jantra.onrender.com` |
 | `ALLOWED_ORIGINS` | Cloudflare | Config | `https://xolver.in,https://www.xolver.in` |
 | `JANTRA_API_KEY` | Cloudflare | **Secret** | `<key>` matching `JANTRA_REMOTE_API_KEYS` with `web` subject |
+| `JANTRA_EDGE_SECRET` | Cloudflare | **Secret** | Same value as the origin's `JANTRA_EDGE_SECRET` |
+| `TURNSTILE_SECRET_KEY` | Cloudflare | **Secret** | Turnstile secret; when set, `POST /v1/runs` and `POST /v1/leads` require a valid token. Pass the site key to the widget as `turnstileSiteKey` |
 
 ---
 

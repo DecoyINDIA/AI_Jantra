@@ -21,6 +21,7 @@ import { defaultWebhookStore, type WebhookSubscriptionStore } from "../webhooks/
 import { dispatchWebhookEvent } from "../webhooks/dispatcher.js";
 import { AuditLogger } from "../../audit.js";
 import { config } from "../../config.js";
+import { assertRunTokenAccess } from "../runAccess.js";
 
 const leadParamsSchema = z.object({
   id: z.string().min(1).max(96).regex(/^[A-Za-z0-9_-]+$/, "id must use slug-safe characters."),
@@ -105,6 +106,8 @@ export function registerLeadRoutes(app: FastifyInstance, deps: LeadRouteDeps): v
       if (!project) {
         throw notFound(`Run ${body.runId} was not found.`);
       }
+      // A public caller may only link a lead to its own run.
+      assertRunTokenAccess(request, project);
     }
 
     const lead: LeadRecord = {

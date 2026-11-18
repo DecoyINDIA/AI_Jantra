@@ -142,6 +142,15 @@ function opsDataRoot(): string {
 export function resolveClientDataDir(clientId: string, requested?: string): string {
   const base = path.resolve(opsDataRoot(), clientId);
   if (!requested) return base;
+  // Reject absolute paths for either platform up front. On POSIX "C:\\x" is a
+  // legal relative name, so the containment check alone would let a config
+  // written for one OS behave differently on another (the desktop app ships
+  // on Windows).
+  if (path.posix.isAbsolute(requested) || path.win32.isAbsolute(requested) || /^[a-zA-Z]:/.test(requested)) {
+    throw new Error(
+      `Ops CSV connector directory must be relative to the client's data root: "${requested}".`,
+    );
+  }
   const resolved = path.resolve(base, requested);
   if (resolved !== base && !resolved.startsWith(base + path.sep)) {
     throw new Error(

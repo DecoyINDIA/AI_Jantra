@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, session } from "electron";
 import { autoUpdater } from "electron-updater";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -10,6 +10,7 @@ import { activateLicense, licenseStatus } from "./licensing.js";
 import { desktopAuditDir, desktopDatabasePath, desktopLicensePath, desktopProjectDir } from "./paths.js";
 import { readProviderConfig, writeProviderConfig, type DesktopProviderConfig } from "./providerConfig.js";
 import { readCredentials, readGeminiKey, writeCredentials, writeGeminiKey, writeOpenAiKey } from "./secrets.js";
+import { denyAllPermissions, installDesktopSecurity, trustedIpcHandler } from "./electronSecurity.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -101,9 +102,11 @@ async function createMainWindow(api: ApiHandle): Promise<void> {
     title: "Jantra",
     icon: existsSync(iconPath) ? iconPath : undefined,
     webPreferences: {
-      preload: join(__dirname, "preload.js"),
+      preload: join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
       additionalArguments: [
         `--jantra-api-base=${api.baseUrl}`,
         `--jantra-loopback-token=${api.loopbackToken}`,
@@ -122,31 +125,41 @@ async function createMainWindow(api: ApiHandle): Promise<void> {
   }
 }
 
-ipcMain.handle("jantra:write-gemini-key", async (_event, secret: string) => {
+installDesktopSecurity({
+  getMainWindow: () => mainWindow,
+  appEntry: () => webEntry(),
+  isolatedPreload: join(__dirname, "isolatedPreload.cjs"),
+});
+const handleTrusted = trustedIpcHandler({
+  getMainWindow: () => mainWindow,
+  appEntry: () => webEntry(),
+});
+
+handleTrusted("jantra:write-gemini-key", async (_event, secret: string) => {
   await writeGeminiKey(secret);
   return { ok: true };
 });
-ipcMain.handle("jantra:write-openai-key", async (_event, secret: string) => {
+handleTrusted("jantra:write-openai-key", async (_event, secret: string) => {
   await writeOpenAiKey(secret);
   return { ok: true };
 });
-ipcMain.handle("jantra:read-provider-config", () => readProviderConfig());
-ipcMain.handle("jantra:write-provider-config", (_event, cfg: unknown) =>
+handleTrusted("jantra:read-provider-config", () => readProviderConfig());
+handleTrusted("jantra:write-provider-config", (_event, cfg: unknown) =>
   writeProviderConfig(cfg as Partial<DesktopProviderConfig>),
 );
-ipcMain.handle("jantra:get-credentials-status", async () => {
+handleTrusted("jantra:get-credentials-status", async () => {
   const creds = await readCredentials();
   return {
     hasGeminiKey: Boolean(creds.geminiApiKey),
     hasOpenAiKey: Boolean(creds.openAiApiKey),
   };
 });
-ipcMain.handle("jantra:license-status", () => licenseStatus());
-ipcMain.handle("jantra:activate-license", (_event, key: string) => activateLicense(key));
-ipcMain.handle("jantra:collect-diagnostics", () => collectDiagnostics({ redact: true }));
-ipcMain.handle("jantra:create-backup", () => createBackupArchive());
-ipcMain.handle("jantra:restore-backup", (_event, path: string) => restoreBackupArchive(path));
-ipcMain.handle("jantra:export-audit", (_event, id: string) => createAuditExport(id));
+handleTrusted("jantra:license-status", () => licenseStatus());
+handleTrusted("jantra:activate-license", (_event, key: string) => activateLicense(key));
+handleTrusted("jantra:collect-diagnostics", () => collectDiagnostics({ redact: true }));
+handleTrusted("jantra:create-backup", () => createBackupArchive());
+handleTrusted("jantra:restore-backup", (_event, path: string) => restoreBackupArchive(path));
+handleTrusted("jantra:export-audit", (_event, id: string) => createAuditExport(id));
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -167,6 +180,7 @@ if (!gotLock) {
   });
 
   await app.whenReady();
+  denyAllPermissions(session.defaultSession);
   apiHandle = await startApi();
   await createMainWindow(apiHandle);
   configureAutoUpdater();

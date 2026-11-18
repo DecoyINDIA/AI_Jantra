@@ -1,12 +1,7 @@
-import { createHmac } from "node:crypto";
-
 import type { WebhookEvent, WebhookSubscription } from "./types.js";
 import { assertPublicWebhookUrl } from "./urlGuard.js";
 import { safeFetch, UnsafeUrlError } from "../../util/safeFetch.js";
-
-function signature(secret: string, body: string): string {
-  return createHmac("sha256", secret).update(body).digest("hex");
-}
+import { webhookSignatureHeaders } from "../../util/webhookSignature.js";
 
 /** 4xx other than 429 will not succeed on retry — stop immediately. */
 function isNonRetryableStatus(status: number): boolean {
@@ -41,9 +36,10 @@ export async function deliverWebhook(
           headers: {
             "Content-Type": "application/json",
             "X-Jantra-Event": event.type,
-            ...(subscription.secret
-              ? { "X-Jantra-Signature": signature(subscription.secret, body) }
-              : {}),
+            // Stable across retries so receivers can deduplicate.
+            "X-Jantra-Delivery": event.id,
+            // Re-signed per attempt so the timestamp stays fresh on retries.
+            ...(subscription.secret ? webhookSignatureHeaders(subscription.secret, body) : {}),
           },
           body,
         },

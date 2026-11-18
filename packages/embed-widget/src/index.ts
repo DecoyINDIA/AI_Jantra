@@ -86,6 +86,12 @@ export interface JantraIntakeOptions {
   maxMessageChars?: number;
   /** Number of automatic retries for transient request failures. Defaults to 2. */
   maxRetries?: number;
+  /**
+   * Cloudflare Turnstile site key. Set this when the edge has
+   * TURNSTILE_SECRET_KEY configured: the widget then obtains a fresh token
+   * before starting a run or saving a lead. Most visitors see no challenge.
+   */
+  turnstileSiteKey?: string;
 }
 
 export interface JantraIntakeHandle {
@@ -110,6 +116,7 @@ type StageStep =
 
 interface RunEnvelope {
   run: { id: string };
+  runToken?: string;
   step?: StageStep;
 }
 
@@ -136,6 +143,52 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
+interface TurnstileApi {
+  render(
+    container: HTMLElement,
+    params: {
+      sitekey: string;
+      execution: "execute";
+      appearance: "interaction-only";
+      callback: (token: string) => void;
+      "error-callback": () => void;
+      "expired-callback": () => void;
+    },
+  ): string;
+  execute(widgetId: string): void;
+  reset(widgetId: string): void;
+  remove(widgetId: string): void;
+}
+
+const TURNSTILE_SCRIPT_URL = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+const TURNSTILE_HEADER = "CF-Turnstile-Response";
+const TURNSTILE_TIMEOUT_MS = 30_000;
+let turnstileLoader: Promise<TurnstileApi> | null = null;
+
+function loadTurnstile(): Promise<TurnstileApi> {
+  const existing = (window as unknown as { turnstile?: TurnstileApi }).turnstile;
+  if (existing) return Promise.resolve(existing);
+  if (!turnstileLoader) {
+    turnstileLoader = new Promise<TurnstileApi>((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = TURNSTILE_SCRIPT_URL;
+      script.async = true;
+      script.onload = () => {
+        const api = (window as unknown as { turnstile?: TurnstileApi }).turnstile;
+        if (api) resolve(api);
+        else reject(new Error("Turnstile failed to initialize."));
+      };
+      script.onerror = () => {
+        // Allow a later attempt to retry the download.
+        turnstileLoader = null;
+        reject(new Error("Turnstile script could not be loaded."));
+      };
+      document.head.append(script);
+    });
+  }
+  return turnstileLoader;
+}
+
 export function mountJantraIntakeWidget(options: JantraIntakeOptions): JantraIntakeHandle {
   const baseUrl = options.baseUrl.replace(/\/$/, "");
   const agentId = options.agentId ?? "intake-public";
@@ -151,6 +204,9 @@ export function mountJantraIntakeWidget(options: JantraIntakeOptions): JantraInt
 
   let destroyed = false;
   let runId: string | null = null;
+  // Proves to the server that this browser created the run; sent on every
+  // later call for it. Held in memory only.
+  let runToken: string | null = null;
   let busy = false;
 
   const container = options.container;
@@ -192,6 +248,57 @@ export function mountJantraIntakeWidget(options: JantraIntakeOptions): JantraInt
   form.append(input, send);
   root.append(thread, status, form);
   container.append(style, root);
+
+  // Turnstile tokens are single use and expire after a few minutes, so each
+  // challenged request (including each retry) gets a fresh one.
+  const turnstileSlot = document.createElement("div");
+  turnstileSlot.className = `${scope}__challenge`;
+  let turnstileWidgetId: string | null = null;
+  let pendingToken: { resolve: (t: string) => void; reject: (e: Error) => void } | null = null;
+
+  async function challengeToken(): Promise<string> {
+    const siteKey = options.turnstileSiteKey;
+    if (!siteKey) throw new Error("Turnstile site key is not configured.");
+    const api = await loadTurnstile();
+    if (destroyed) throw new Error("Widget was destroyed.");
+    if (!turnstileWidgetId) {
+      root.append(turnstileSlot);
+      turnstileWidgetId = api.render(turnstileSlot, {
+        sitekey: siteKey,
+        execution: "execute",
+        appearance: "interaction-only",
+        callback: (token) => {
+          pendingToken?.resolve(token);
+          pendingToken = null;
+        },
+        "error-callback": () => {
+          pendingToken?.reject(new Error("Verification challenge failed."));
+          pendingToken = null;
+        },
+        "expired-callback": () => undefined,
+      });
+    } else {
+      api.reset(turnstileWidgetId);
+    }
+    const widgetId = turnstileWidgetId;
+    return new Promise<string>((resolve, reject) => {
+      const timer = window.setTimeout(() => {
+        pendingToken = null;
+        reject(new Error("Verification challenge timed out."));
+      }, TURNSTILE_TIMEOUT_MS);
+      pendingToken = {
+        resolve: (token) => {
+          window.clearTimeout(timer);
+          resolve(token);
+        },
+        reject: (error) => {
+          window.clearTimeout(timer);
+          reject(error);
+        },
+      };
+      api.execute(widgetId);
+    });
+  }
 
   function clearStatus(): void {
     status.replaceChildren();
@@ -260,11 +367,19 @@ export function mountJantraIntakeWidget(options: JantraIntakeOptions): JantraInt
     return wrap;
   }
 
-  async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  async function request<T>(
+    path: string,
+    init: RequestInit = {},
+    opts: { challenge?: boolean } = {},
+  ): Promise<T> {
     let lastError: unknown;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       const headers = new Headers(init.headers);
       if (options.apiKey) headers.set("Authorization", `Bearer ${options.apiKey}`);
+      if (runToken) headers.set("X-Jantra-Run-Token", runToken);
+      if (opts.challenge && options.turnstileSiteKey) {
+        headers.set(TURNSTILE_HEADER, await challengeToken());
+      }
       if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
       const controller = new AbortController();
       const timeout = window.setTimeout(() => controller.abort(), requestTimeoutMs);
@@ -412,7 +527,7 @@ export function mountJantraIntakeWidget(options: JantraIntakeOptions): JantraInt
             source: "embed-widget",
             runId: runId ?? undefined,
           }),
-        });
+        }, { challenge: true });
 
         wrap.replaceChildren();
         const successMsg = document.createElement("div");
@@ -440,8 +555,9 @@ export function mountJantraIntakeWidget(options: JantraIntakeOptions): JantraInt
       const created = await request<RunEnvelope>("/v1/runs", {
         method: "POST",
         body: JSON.stringify({ agentId, title: options.title ?? "Website intake" }),
-      });
+      }, { challenge: true });
       runId = created.run.id;
+      runToken = created.runToken ?? null;
       const advanced = await request<RunEnvelope>(`/v1/runs/${runId}/advance`, { method: "POST" });
       handleStep(advanced.step, typing);
     } catch (error) {
@@ -501,6 +617,11 @@ export function mountJantraIntakeWidget(options: JantraIntakeOptions): JantraInt
   return {
     destroy(): void {
       destroyed = true;
+      pendingToken?.reject(new Error("Widget was destroyed."));
+      pendingToken = null;
+      if (turnstileWidgetId) {
+        (window as unknown as { turnstile?: TurnstileApi }).turnstile?.remove(turnstileWidgetId);
+      }
       form.removeEventListener("submit", onSubmit);
       input.removeEventListener("keydown", onKeydown);
       input.removeEventListener("input", autosize);
