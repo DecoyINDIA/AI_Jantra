@@ -25,9 +25,9 @@ asarUnpack:
 # variable or command-line flag for the app could turn it into a general
 # Node runtime (ELECTRON_RUN_AS_NODE, NODE_OPTIONS, --inspect) or load code
 # from outside the signed archive.
-# enableEmbeddedAsarIntegrityValidation stays off until it can be verified on
-# signed Windows/macOS builds; a misconfigured integrity hash stops the app
-# from starting.
+# enableEmbeddedAsarIntegrityValidation: the binary refuses an app.asar whose
+# hash differs from the one recorded at build time (Windows and macOS; Linux
+# ignores it). CI launches unpacked Windows and macOS builds to prove it.
 electronFuses:
   runAsNode: false
   enableCookieEncryption: true
@@ -36,6 +36,7 @@ electronFuses:
   onlyLoadAppFromAsar: true
   grantFileProtocolExtraPrivileges: false
   loadBrowserProcessSpecificV8Snapshot: false
+  enableEmbeddedAsarIntegrityValidation: true
 extraMetadata:
   main: dist/main.js
 # Without this the Linux binary is named after the npm scope (@jantradesktop).

@@ -22,9 +22,9 @@ npm run dist -w @jantra/desktop -- --linux dir # unpacked Linux build, used by C
 
 `npm run dist` first runs `scripts/stage.mjs`, which copies the compiled runtime (`dist/`) into `desktop/runtime/` and the web UI (`web/dist/`) into `desktop/web/dist/`. electron-builder only packs files under `desktop/`. Development runs the same staged layout: `npm run dev -w @jantra/desktop`.
 
-The UI is served from `app://jantra/` (not `file://`) with a strict CSP; the local API allows exactly that origin. better-sqlite3 13.x builds as a Node-API module, so the same binary loads in both Node and Electron and the desktop package needs no Electron-specific rebuild. npm compiles it from source during install, so building needs a C++ toolchain (python3, make, g++). Packaged binaries ship with hardened Electron fuses (no `ELECTRON_RUN_AS_NODE`, `NODE_OPTIONS` or `--inspect`; app code only from the archive).
+The UI is served from `app://jantra/` (not `file://`) with a strict CSP; the local API allows exactly that origin. better-sqlite3 13.x builds as a Node-API module, so the same binary loads in both Node and Electron and the desktop package needs no Electron-specific rebuild. npm compiles it from source during install, so building needs a C++ toolchain (python3, make, g++). Packaged binaries ship with hardened Electron fuses (no `ELECTRON_RUN_AS_NODE`, `NODE_OPTIONS` or `--inspect`; app code only from the archive; on Windows and macOS the archive's hash is checked at launch).
 
-Acceptance test for a build (runs in CI):
+Acceptance test for a build (CI runs it on unpacked Linux, Windows and macOS builds; installers are unsigned until the owner's signing certificates are configured):
 
 ```bash
 xvfb-run -a npm run test:packaged -w @jantra/desktop

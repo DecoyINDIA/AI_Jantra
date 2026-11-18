@@ -46,7 +46,7 @@ test("electron-builder packs staged runtime and UI, never ../ paths", () => {
   assert.ok(/-\s*web\/dist\/\*\*/.test(files), "web/dist/** must be packed");
   assert.ok(/asarUnpack:[\s\S]*better-sqlite3/.test(yml), "better-sqlite3 must be unpacked from the asar");
   assert.ok(/^npmRebuild:\s*false/m.test(yml), "native rebuild must stay off (Node-API prebuilds)");
-  for (const fuse of ["runAsNode: false", "enableNodeOptionsEnvironmentVariable: false", "enableNodeCliInspectArguments: false", "onlyLoadAppFromAsar: true"]) {
+  for (const fuse of ["runAsNode: false", "enableNodeOptionsEnvironmentVariable: false", "enableNodeCliInspectArguments: false", "onlyLoadAppFromAsar: true", "enableEmbeddedAsarIntegrityValidation: true"]) {
     assert.ok(yml.includes(fuse), `electronFuses must set ${fuse}`);
   }
 });
