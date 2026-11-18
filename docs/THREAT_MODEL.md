@@ -47,6 +47,8 @@ targeted review, not a full penetration test.
 | T13 | Leaked secrets in the repo | CI `secret-scan` over tracked files; full git history scanned clean on 2026-11-18 | Low |
 | T14 | XSS via the exported client report (model, visitor and fetched-page text rendered as HTML) | Escaping before markdown formatting; `javascript:`/`data:` links dropped; code-fence language tags restricted; strict CSP (no script except the pinned print handler, no network loads, no framing) sent as a header **and** embedded as the first `<head>` element, because the web console opens the report as a `blob:` URL that runs in the console's origin with no headers; opened with `noopener` | Low. Verified in Chromium that an injected script is blocked in both the served and blob copies |
 | T15 | Desktop app: external content gaining the privileged bridge (loopback/admin tokens, key-writing and backup-restore IPC) | Renderer sandbox on (preload rebuilt as CommonJS; the ESM preload previously failed to load under the default sandbox); http(s) links and `window.open` go to the system browser; report windows get an empty preload; main window cannot navigate off the app; IPC accepted only from the main window's app URL; all permission requests denied | Low. `desktop/test/electron-security.e2e.cjs` runs these checks in real Electron in CI |
+| T16 | Credential ciphertext forgery or tampering at rest | AES-256-GCM, random 96-bit IV; decrypt enforces 12-byte IV and full 16-byte tag (Node otherwise accepts 4-byte tags) | Low. Ciphertexts are not bound to their record (no AAD), so someone with database write access could swap blobs between records |
+| T17 | Desktop backup restore and audit export path abuse | Export IDs restricted to `[A-Za-z0-9_-]`; restore skips symlinks; IPC limited to the app UI | Low. Restoring overwrites local projects and audit by design; restore only trusted backups |
 | T11 | Path traversal in data and connector paths | `assertSafePathSegment`; `resolveClientDataDir` containment plus rejection of absolute paths on any platform | Low |
 
 ## Webhook verification for receivers
@@ -77,6 +79,6 @@ reference implementation is `verifyWebhookSignature` in
 `webhook-url-guard`, `ssrf-ipv6-transition-ranges`, `safe-fetch-redirect`,
 `webhook-signature-replay`, `injection-content-neutralized`,
 `injection-bypass-corpus`, `public-key-scope`, `public-run-token-binding`, `edge-secret-origin-lock`, `rate-limiter-proxy-trust`,
-`audit-redaction-truncation`, `audit-hash-chain`, `audit-verify-route`, `error-envelope-no-leak`, `csv-directory-resolve`, `env-reads-only-in-config`, `security-headers-report-csp`.
+`audit-redaction-truncation`, `audit-hash-chain`, `audit-verify-route`, `error-envelope-no-leak`, `csv-directory-resolve`, `env-reads-only-in-config`, `security-headers-report-csp`, `credential-encryption-strict`.
 Desktop: `npm test -w @jantra/desktop` (policy unit tests) and `npm run test:e2e -w @jantra/desktop` (real Electron, 14 checks).
 Edge checks (`npm run edge:verify:local`): Turnstile missing, forged, wrong-hostname and verifier-down cases; direct origin calls without or with a wrong edge secret; run access without or with a wrong run token; browser header smuggling.

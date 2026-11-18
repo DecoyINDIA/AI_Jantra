@@ -61,11 +61,17 @@ export function decryptSecret(ciphertextBlob: string, key?: Buffer): string {
   if (!ivHex || !tagHex || !dataHex) {
     throw new DecryptionError("Encrypted payload has missing components.");
   }
+  // Enforce the exact sizes encryptSecret writes. Without authTagLength,
+  // Node accepts GCM tags as short as 4 bytes, which makes forging a
+  // ciphertext about 2^32 times cheaper.
+  if (!/^[0-9a-f]{24}$/i.test(ivHex) || !/^[0-9a-f]{32}$/i.test(tagHex) || !/^(?:[0-9a-f]{2})*$/i.test(dataHex)) {
+    throw new DecryptionError("Encrypted payload has malformed components.");
+  }
   try {
     const iv = Buffer.from(ivHex, "hex");
     const tag = Buffer.from(tagHex, "hex");
     const data = Buffer.from(dataHex, "hex");
-    const decipher = createDecipheriv("aes-256-gcm", secretsKey, iv);
+    const decipher = createDecipheriv("aes-256-gcm", secretsKey, iv, { authTagLength: 16 });
     decipher.setAuthTag(tag);
     const decrypted = Buffer.concat([decipher.update(data), decipher.final()]);
     return decrypted.toString("utf8");
