@@ -52,7 +52,7 @@ Dockerfile · render.yaml · railway.toml · .github/workflows/ci.yml
 - **Never produce an artifact that states an action happened unless it did.**
 
 ## Conventions
-- TypeScript strict, Node ≥ 20, ESM (`"type": "module"`).
+- TypeScript strict, Node ≥ 22, ESM (`"type": "module"`).
 - Imports use the `.js` extension for local TypeScript files: `import { x } from "./file.js";`.
 - Validate every request with a Zod schema in `src/server/schemas.ts` and `parseWith`.
 - Throw `HttpError` (or helpers) for client errors; never `reply.status(500)` by hand.
