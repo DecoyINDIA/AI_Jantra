@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import type { FastifyInstance, FastifyRequest } from "fastify";
 
+import { config } from "../../config.js";
 import type { ApiKeyStore, StoredApiKeyRecord } from "../../pipeline/store.js";
 import { timingSafeStringEqual } from "../constantTime.js";
 import { forbidden, unauthorized } from "../errors.js";
@@ -25,7 +26,7 @@ function isAdminPath(url: string): boolean {
   return url === "/v1/admin" || url.startsWith("/v1/admin/");
 }
 
-export function parseApiKeyRecords(raw = process.env.JANTRA_REMOTE_API_KEYS ?? ""): ApiKeyRecord[] {
+export function parseApiKeyRecords(raw = config.remoteApiKeysRaw): ApiKeyRecord[] {
   return raw
     .split(",")
     .map((item) => item.trim())

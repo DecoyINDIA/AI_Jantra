@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { createHash, createHmac, randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { config } from "../../config.js";
 import type { ModelMessage } from "../../model/provider.js";
 import { makeEvalScore } from "../../runtime/evaluator.js";
@@ -9,6 +9,7 @@ import { loadStageExecutionState, saveStageExecutionState } from "../executionSt
 import { DecryptionError } from "../../security/encryption.js";
 import { assertPublicWebhookUrl } from "../../server/webhooks/urlGuard.js";
 import { safeFetch, UnsafeUrlError } from "../../util/safeFetch.js";
+import { webhookSignatureHeaders } from "../../util/webhookSignature.js";
 import type {
   Artifact,
   EvalScore,
@@ -818,7 +819,6 @@ export async function deliverReportWebhook(
   }
 
   const body = JSON.stringify(payload);
-  const signature = createHmac("sha256", secret).update(body).digest("hex");
 
   let lastStatus: number | undefined;
   let lastStatusText: string | undefined;
@@ -834,7 +834,7 @@ export async function deliverReportWebhook(
           headers: {
             "Content-Type": "application/json",
             "X-Jantra-Event": "ops.report_delivered",
-            "X-Jantra-Signature": signature,
+            ...webhookSignatureHeaders(secret, body),
             "X-Jantra-Delivery": String(payload.id || randomUUID()),
           },
           body,

@@ -29,6 +29,7 @@ import {
 import {
   verifyAgentPolicyArgs,
   verifyDefaultPolicyBehavior,
+  verifyInjectionBypassCorpus,
   verifyInjectionContentNeutralized,
   verifyReentrantPolicyArgs,
   verifyReportProvenanceRevert,
@@ -40,7 +41,9 @@ import {
   verifyJsonStoreIgnoresNonProjectFiles,
   verifyPublicKeyScope,
   verifySafeFetchRedirect,
+  verifySsrfTransitionRanges,
   verifyStorePathSegments,
+  verifyWebhookSignatureReplayProtection,
   verifyWebhookUrlGuard,
 } from "./security.js";
 import {
@@ -84,10 +87,13 @@ export async function runRegressionEvals(): Promise<StageEvalResult[]> {
     await runRegression("rate-limiter-fixed-window", verifyRateLimiterFixedWindow),
     await runRegression("rate-limiter-proxy-trust", verifyRateLimiterProxyTrust),
     await runRegression("webhook-url-guard", verifyWebhookUrlGuard),
+    await runRegression("ssrf-ipv6-transition-ranges", verifySsrfTransitionRanges),
+    await runRegression("webhook-signature-replay", verifyWebhookSignatureReplayProtection),
     await runRegression("gateway-daily-budget", verifyGatewayDailyBudget),
     await runRegression("csv-directory-resolve", verifyCsvDirectoryResolve),
     await runRegression("data-root-derivation", verifyDataRootDerivation),
     await runRegression("injection-content-neutralized", verifyInjectionContentNeutralized),
+    await runRegression("injection-bypass-corpus", verifyInjectionBypassCorpus),
     await runRegression("ops-delivery-honest", verifyOpsDeliveryHonest),
     await runRegression("ops-no-silent-synthetic", verifyOpsNoSilentSynthetic),
     await runRegression("ops-credential-isolation-and-decryption", verifyOpsCredentialIsolationAndDecryption),

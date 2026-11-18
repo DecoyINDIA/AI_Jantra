@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import * as path from "node:path";
 import { Agent } from "../../../agent.js";
@@ -13,6 +14,7 @@ import { JsonWebhookSubscriptionStore } from "../../../server/webhooks/store.js"
 import type { AnyTool } from "../../../types.js";
 import { isBlockedAddress } from "../../../util/netGuard.js";
 import { nextRequest, safeFetch, UnsafeUrlError } from "../../../util/safeFetch.js";
+import { verifyWebhookSignature, webhookSignatureHeaders } from "../../../util/webhookSignature.js";
 import { assert, readAuditJsonl, result, SequenceProvider } from "./common.js";
 
 export async function verifyAuditRedactionAndTruncation(): Promise<void> {
@@ -340,4 +342,80 @@ export function verifyStorePathSegments(): void {
     subject: "s",
   });
   assert(parsed.clientId === "acme-1", `Expected clientId 'acme-1', got ${parsed.clientId}`);
+}
+
+export async function verifySsrfTransitionRanges(): Promise<void> {
+  // IPv6 forms that embed or translate to an IPv4 address. Each one targets
+  // loopback or a private range, so none may pass the guard.
+  const embedded = [
+    "::127.0.0.1",
+    "::a9fe:a9fe",
+    "2002:7f00:1::",
+    "2002:a9fe:a9fe::1",
+    "2001:0:7f00:1::",
+    "64:ff9b:1::a00:1",
+    "fec0::1",
+  ];
+  for (const address of embedded) {
+    assert(isBlockedAddress(address), `${address} should be blocked`);
+    let rejected = false;
+    try {
+      await assertPublicWebhookUrl(`http://[${address}]/`);
+    } catch {
+      rejected = true;
+    }
+    assert(rejected, `assertPublicWebhookUrl accepted http://[${address}]/`);
+  }
+
+  // Legacy IPv4 spellings are normalized by the URL parser before the guard.
+  for (const host of ["0x7f.1", "127.1", "2130706433", "0177.0.0.1", "0xa9.0xfe.0xa9.0xfe"]) {
+    let rejected = false;
+    try {
+      await assertPublicWebhookUrl(`http://${host}/`);
+    } catch {
+      rejected = true;
+    }
+    assert(rejected, `assertPublicWebhookUrl accepted legacy IPv4 host ${host}`);
+  }
+
+  assert(!isBlockedAddress("2606:4700:4700::1111"), "Public IPv6 must stay allowed");
+  assert(!isBlockedAddress("2a00:1450:4001::64"), "Public IPv6 must stay allowed");
+}
+
+export function verifyWebhookSignatureReplayProtection(): void {
+  const secret = "whsec_regression_secret";
+  const body = JSON.stringify({ id: "evt_1", type: "run.awaiting_confirmation" });
+  const now = Date.parse("2026-01-01T00:00:00Z");
+  const headers = webhookSignatureHeaders(secret, body, now);
+
+  assert(
+    headers["X-Jantra-Signature"] === createHmac("sha256", secret).update(body).digest("hex"),
+    "V1 signature must stay HMAC(body) for existing receivers.",
+  );
+  const signed = {
+    timestamp: headers["X-Jantra-Timestamp"],
+    signatureV2: headers["X-Jantra-Signature-V2"],
+  };
+  assert(verifyWebhookSignature(secret, body, signed, { nowMs: now }).ok, "Fresh V2 signature must verify.");
+
+  const tampered = verifyWebhookSignature(secret, body.replace("evt_1", "evt_2"), signed, { nowMs: now });
+  assert(!tampered.ok && tampered.reason === "bad_signature", "Tampered body must fail.");
+
+  const replayed = verifyWebhookSignature(secret, body, signed, { nowMs: now + 10 * 60_000 });
+  assert(!replayed.ok && replayed.reason === "stale_timestamp", "Replay after tolerance must fail.");
+
+  // Moving the timestamp forward without the secret must not re-validate it.
+  const forged = verifyWebhookSignature(
+    secret,
+    body,
+    { timestamp: String(Math.floor(now / 1000) + 600), signatureV2: signed.signatureV2 },
+    { nowMs: now + 600_000 },
+  );
+  assert(!forged.ok && forged.reason === "bad_signature", "Re-stamped signature must fail.");
+
+  const wrongSecret = verifyWebhookSignature("other-secret", body, signed, { nowMs: now });
+  assert(!wrongSecret.ok, "Wrong secret must fail.");
+
+  const missing = verifyWebhookSignature(secret, body, { timestamp: null, signatureV2: null });
+  assert(!missing.ok && missing.reason === "missing_headers", "Missing headers must fail.");
 }

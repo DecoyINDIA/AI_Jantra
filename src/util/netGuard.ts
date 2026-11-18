@@ -28,11 +28,23 @@ for (const [cidr, prefix] of IPV4_BLOCKED) {
 const IPV6_BLOCKED: Array<[string, number]> = [
   ["::", 128],
   ["::1", 128],
+  // IPv4-compatible (deprecated) addresses embed an IPv4 in the low 32 bits;
+  // "::127.0.0.1" would otherwise pass as a public IPv6 literal.
+  ["::", 96],
   ["64:ff9b::", 96],
+  // Local-use NAT64 prefix (RFC 8215) can translate to internal IPv4 targets.
+  ["64:ff9b:1::", 48],
   ["100::", 64],
+  // Teredo and 6to4 tunnel prefixes embed an IPv4 address; on hosts with a
+  // relay they can be steered at private ranges, and no legitimate fetch
+  // target needs them.
+  ["2001::", 32],
   ["2001:db8::", 32],
+  ["2002::", 16],
   ["fc00::", 7],
   ["fe80::", 10],
+  // Deprecated site-local range, still routed internally on some networks.
+  ["fec0::", 10],
   ["ff00::", 8],
 ];
 for (const [cidr, prefix] of IPV6_BLOCKED) {
