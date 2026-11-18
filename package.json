@@ -11,7 +11,7 @@
     "packages/*"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -36,7 +36,7 @@
   },
   "dependencies": {
     "@google/genai": "^2.7.0",
-    "better-sqlite3": "12.10.0",
+    "better-sqlite3": "13.0.3",
     "dotenv": "^16.4.5",
     "fastify": "5.12.8",
     "jose": "^5.10.0",

@@ -1,10 +1,13 @@
 # Multi-stage production container for Jantra AI
 # Build stage: compile TypeScript and native dependencies
-FROM node:20-slim AS builder
+FROM node:22-slim AS builder
 
 WORKDIR /app
 
-# Native compilation prerequisites for better-sqlite3
+# Node 22 LTS (Node 20 reached end of life in April 2026).
+# Native compilation prerequisites for better-sqlite3: npm runs node-gyp for
+# any package with a binding.gyp. The result is a Node-API binary. Build stage
+# only; the runtime image below carries no compiler.
 RUN apt-get update -qq && \
     apt-get install -y --no-install-recommends python3 make g++ && \
     rm -rf /var/lib/apt/lists/*
@@ -20,7 +23,7 @@ RUN npx tsc -p tsconfig.json
 RUN npm prune --omit=dev --workspaces=false
 
 # Runtime stage: slim production image without build tools or tsx/typescript
-FROM node:20-slim
+FROM node:22-slim
 
 WORKDIR /app
 

@@ -71,7 +71,7 @@ Project JSON blob in SQLite `projects` table + artifact .md files + audit JSONL 
 
 ## 6. Dependencies and constraints
 
-- **[F]** Node ≥ 20, ESM, TypeScript strict. Runtime deps: `fastify`, `better-sqlite3` (native build), `@google/genai`, `zod`, `jose`, `dotenv`. No ORM, no queue, no cache.
+- **[F]** Node ≥ 22, ESM, TypeScript strict. Runtime deps: `fastify`, `better-sqlite3` (native build, Node-API), `@google/genai`, `zod`, `jose`, `dotenv`. No ORM, no queue, no cache.
 - **[F]** Single-process by design: the per-run lock, rate limiter, event bus and JSON read-modify-write stores are all in-memory or file-based. `render.yaml` pins `numInstances: 1`.
 - **[F]** Grounded research always runs on Gemini (Google Search grounding) even when another provider is selected, so `GEMINI_API_KEY` is required for the planning pipeline.
 - **[F]** Root `package.json` scripts call `npm.cmd`, which exists only on Windows; `npm run typecheck`, `web:dev`, `desktop:*`, `client:build`, `embed:build` fail on macOS/Linux. CI avoids them by calling `npx tsc` and `npm run … --workspace` directly.
