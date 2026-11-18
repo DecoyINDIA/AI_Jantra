@@ -118,6 +118,13 @@ export const config = {
   remoteApiKeysRaw: process.env.JANTRA_REMOTE_API_KEYS ?? "",
   // Server entry points (src/server/index.ts local, src/server/remote.ts hosted).
   serverHost: process.env.JANTRA_SERVER_HOST ?? "0.0.0.0",
+  // Peer addresses whose X-Forwarded-For is believed (proxy-addr syntax:
+  // presets loopback/linklocal/uniquelocal, or CIDRs). The default covers
+  // platform proxies on private networks, including CGNAT ranges.
+  trustedProxies: (process.env.JANTRA_TRUSTED_PROXIES ?? "loopback,linklocal,uniquelocal,100.64.0.0/10")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean),
   serverPort: process.env.JANTRA_SERVER_PORT ? Number(process.env.JANTRA_SERVER_PORT) : 4317,
   loopbackToken: process.env.JANTRA_LOOPBACK_TOKEN ?? "",
   localAllowedOrigins: (process.env.JANTRA_ALLOWED_ORIGINS ?? "")

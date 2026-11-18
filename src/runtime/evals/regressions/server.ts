@@ -178,6 +178,40 @@ export async function verifyRateLimiterProxyTrust(): Promise<void> {
   assert(!Number.isNaN(remaining1), "X-RateLimit-Remaining header missing or NaN on first request");
   assert(!Number.isNaN(remaining2), "X-RateLimit-Remaining header missing or NaN on second request");
   assert(remaining2 === remaining1 - 1, `Spoofed X-Forwarded-For bypassed rate limiter (remaining1=${remaining1}, remaining2=${remaining2})`);
+
+  // The proxy actually being trusted: requests relayed by an internal proxy
+  // for two different real clients land in different buckets. Without this a
+  // "trust nothing" config would pass the spoofing check above while lumping
+  // every visitor into the proxy's bucket.
+  const viaProxy = (clientIp: string) =>
+    app.inject({
+      method: "GET",
+      url: "/v1/models",
+      remoteAddress: "10.0.0.7",
+      headers: { "X-Forwarded-For": clientIp, Authorization: `Bearer ${token}` },
+    });
+  const clientA1 = await viaProxy("203.0.113.10");
+  const clientA2 = await viaProxy("203.0.113.10");
+  const clientB = await viaProxy("203.0.113.20");
+  const a1 = parseInt(clientA1.headers["x-ratelimit-remaining"] as string, 10);
+  const a2 = parseInt(clientA2.headers["x-ratelimit-remaining"] as string, 10);
+  const b1 = parseInt(clientB.headers["x-ratelimit-remaining"] as string, 10);
+  assert(a2 === a1 - 1, `Same client via proxy must share a bucket (a1=${a1}, a2=${a2})`);
+  assert(b1 === a1, `Different clients via proxy must get separate buckets (a1=${a1}, b1=${b1})`);
+
+  // A client connecting directly from a public address is not a trusted
+  // proxy, so its own X-Forwarded-For is ignored.
+  const direct = (spoofed: string) =>
+    app.inject({
+      method: "GET",
+      url: "/v1/models",
+      remoteAddress: "198.51.100.77",
+      headers: { "X-Forwarded-For": spoofed, Authorization: `Bearer ${token}` },
+    });
+  const d1 = parseInt((await direct("192.0.2.1")).headers["x-ratelimit-remaining"] as string, 10);
+  const d2 = parseInt((await direct("192.0.2.2")).headers["x-ratelimit-remaining"] as string, 10);
+  assert(d2 === d1 - 1, `Direct public client rotated identity via X-Forwarded-For (d1=${d1}, d2=${d2})`);
+  await app.close();
 }
 
 export async function verifyVisitorRateLimit(): Promise<void> {
