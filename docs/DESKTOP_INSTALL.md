@@ -24,6 +24,8 @@ npm run dist -w @jantra/desktop -- --linux dir # unpacked Linux build, used by C
 
 The UI is served from `app://jantra/` (not `file://`) with a strict CSP; the local API allows exactly that origin. The desktop package pins better-sqlite3 13.x, a Node-API build whose bundled prebuilds load in Electron without a native rebuild; the server keeps 12.x until it moves to Node 22. Packaged binaries ship with hardened Electron fuses (no `ELECTRON_RUN_AS_NODE`, `NODE_OPTIONS` or `--inspect`; app code only from the archive; on Windows and macOS the archive's hash is checked at launch).
 
+On macOS, cookie encryption stores its key in the Keychain, so the first launch shows the standard "Jantra wants to use confidential information stored in Jantra Safe Storage" prompt (signed builds keep the grant across updates). Headless runs cannot answer that prompt, so the acceptance test passes Chromium's `--use-mock-keychain` on macOS.
+
 Acceptance test for a build (CI runs it on unpacked Linux, Windows and macOS builds; installers are unsigned until the owner's signing certificates are configured):
 
 ```bash
