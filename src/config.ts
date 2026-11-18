@@ -118,6 +118,9 @@ export const config = {
   remoteApiKeysRaw: process.env.JANTRA_REMOTE_API_KEYS ?? "",
   // Server entry points (src/server/index.ts local, src/server/remote.ts hosted).
   serverHost: process.env.JANTRA_SERVER_HOST ?? "0.0.0.0",
+  // Concurrent SSE streams; each holds a socket, a timer and a listener.
+  sseMaxPerIdentity: Math.trunc(numberFromEnv("JANTRA_SSE_MAX_PER_IDENTITY", 10)),
+  sseMaxTotal: Math.trunc(numberFromEnv("JANTRA_SSE_MAX_TOTAL", 500)),
   // Peer addresses whose X-Forwarded-For is believed (proxy-addr syntax:
   // presets loopback/linklocal/uniquelocal, or CIDRs). The default covers
   // platform proxies on private networks, including CGNAT ranges.

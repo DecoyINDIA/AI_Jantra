@@ -1,5 +1,6 @@
 import { createHmac } from "node:crypto";
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import * as http from "node:http";
 import * as os from "node:os";
 import * as path from "node:path";
 import { Agent } from "../../../agent.js";
@@ -10,6 +11,7 @@ import { createProject } from "../../../pipeline/orchestrator.js";
 import { JsonProjectStore } from "../../../pipeline/store.js";
 import { createServer } from "../../../server/app.js";
 import { CLIENT_REPORT_CSP, markdownToHtml } from "../../../server/export/clientReport.js";
+import { openEventStreamCount } from "../../../server/routes/events.js";
 import { JsonLeadStore } from "../../../server/leads/store.js";
 import { createAdminApiKeyBodySchema, parseWith } from "../../../server/schemas.js";
 import { assertPublicWebhookUrl } from "../../../server/webhooks/urlGuard.js";
@@ -787,4 +789,72 @@ export function verifyCredentialEncryptionStrictness(): void {
     wrongKey = err instanceof DecryptionError;
   }
   assert(wrongKey, "Wrong key must be rejected.");
+}
+
+export async function verifyEventStreamLimits(): Promise<void> {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "jantra-"));
+  const original = { per: config.sseMaxPerIdentity, total: config.sseMaxTotal };
+  (config as Record<string, unknown>).sseMaxPerIdentity = 2;
+  (config as Record<string, unknown>).sseMaxTotal = 3;
+  const app = createServer({
+    mode: "remote",
+    loopbackToken: "",
+    store: new JsonProjectStore(tmp),
+    checkCatalogModels: false,
+    apiKeys: [
+      { key: "key-a", clientId: "t1", subject: "ops-a" },
+      { key: "key-b", clientId: "t1", subject: "ops-b" },
+    ],
+  });
+  const sockets: http.ClientRequest[] = [];
+  try {
+    await app.listen({ host: "127.0.0.1", port: 0 });
+    const port = (app.server.address() as { port: number }).port;
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/runs",
+      headers: { authorization: "Bearer key-a" },
+      payload: { agentId: "intake-public", title: "sse" },
+    });
+    const runId = (created.json() as { run: { id: string } }).run.id;
+    // Resolves with the status once headers arrive; keeps 200 streams open.
+    const open = (key: string) =>
+      new Promise<{ status: number; req: http.ClientRequest; res: http.IncomingMessage }>((resolve, reject) => {
+        const req = http.get(
+          { host: "127.0.0.1", port, path: `/v1/runs/${runId}/events`, headers: { authorization: `Bearer ${key}` } },
+          (res) => {
+            if (res.statusCode !== 200) res.resume();
+            resolve({ status: res.statusCode ?? 0, req, res });
+          },
+        );
+        req.on("error", reject);
+        sockets.push(req);
+      });
+
+    const a1 = await open("key-a");
+    const a2 = await open("key-a");
+    const a3 = await open("key-a");
+    assert(a1.status === 200 && a2.status === 200, `First streams must open: ${a1.status}, ${a2.status}`);
+    assert(a3.status === 429, `Per-identity cap: expected 429, got ${a3.status}`);
+    assert(a1.res.headers["x-content-type-options"] === "nosniff", "SSE responses must carry nosniff");
+
+    const b1 = await open("key-b");
+    assert(b1.status === 200, `Other identity under the global cap must open: ${b1.status}`);
+    const b2 = await open("key-b");
+    assert(b2.status === 429, `Global cap: expected 429, got ${b2.status}`);
+    assert(openEventStreamCount() === 3, `Expected 3 open streams, got ${openEventStreamCount()}`);
+
+    // Closing a stream frees its slot.
+    a1.req.destroy();
+    for (let i = 0; i < 50 && openEventStreamCount() !== 2; i++) await new Promise((r) => setTimeout(r, 20));
+    assert(openEventStreamCount() === 2, `Closed stream must release its slot, count=${openEventStreamCount()}`);
+    const a4 = await open("key-a");
+    assert(a4.status === 200, `Slot must be reusable after close, got ${a4.status}`);
+  } finally {
+    for (const req of sockets) req.destroy();
+    await app.close();
+    (config as Record<string, unknown>).sseMaxPerIdentity = original.per;
+    (config as Record<string, unknown>).sseMaxTotal = original.total;
+    rmSync(tmp, { recursive: true, force: true });
+  }
 }
