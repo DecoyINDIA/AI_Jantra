@@ -116,6 +116,10 @@ const dataDirs = resolveDataDirs(process.env);
 export const config = {
   // Raw key:clientId[:subject] records; parsed in src/server/auth/apiKeys.ts.
   remoteApiKeysRaw: process.env.JANTRA_REMOTE_API_KEYS ?? "",
+  // Shared secret the Cloudflare edge sends as X-Jantra-Edge-Secret. When set,
+  // public-scope requests without it are refused, so a leaked public key cannot
+  // be used against the origin directly.
+  edgeSharedSecret: process.env.JANTRA_EDGE_SECRET ?? "",
   provider: providerFromEnv(),
   geminiApiKey: process.env.GEMINI_API_KEY ?? "",
   // OpenAI-compatible provider (OpenRouter by default). Used when

@@ -14,4 +14,6 @@
 - The outbound address blocklist also covers IPv6 forms that embed or translate IPv4 (IPv4-compatible `::/96`, 6to4 `2002::/16`, Teredo `2001::/32`, local NAT64 `64:ff9b:1::/48`, site-local `fec0::/10`) (`src/util/netGuard.ts`).
 - Untrusted web content is NFKC-normalized and stripped of zero-width and bidi characters before injection detection, and is wrapped in a random-id fence that page content cannot forge (`src/policy.ts`). Pattern detection is a tripwire; deterministic citation verification and the human gate are the boundary.
 - Webhooks carry `X-Jantra-Timestamp`, a timestamp-bound `X-Jantra-Signature-V2`, and `X-Jantra-Delivery` for deduplication. Receivers should verify V2 (see `docs/THREAT_MODEL.md`); the legacy `X-Jantra-Signature` is replayable.
+- With `JANTRA_EDGE_SECRET` set, the origin refuses public-scope keys unless the request carries the edge's shared secret, so a leaked public key cannot bypass the edge or spoof `X-Jantra-Client-IP` (`src/server/auth/apiKeys.ts`).
+- With `TURNSTILE_SECRET_KEY` set on the Worker, creating a run or a lead requires a Cloudflare Turnstile token; verification fails closed and checks the token's hostname (`deploy/cloudflare-worker/worker.js`).
 - Threat model, residual risks, and open recommendations: `docs/THREAT_MODEL.md`.

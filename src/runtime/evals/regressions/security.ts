@@ -1,5 +1,6 @@
 import { createHmac } from "node:crypto";
-import { writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { Agent } from "../../../agent.js";
 import { AuditLogger } from "../../../audit.js";
@@ -418,4 +419,62 @@ export function verifyWebhookSignatureReplayProtection(): void {
 
   const missing = verifyWebhookSignature(secret, body, { timestamp: null, signatureV2: null });
   assert(!missing.ok && missing.reason === "missing_headers", "Missing headers must fail.");
+}
+
+export async function verifyEdgeSecretOriginLock(): Promise<void> {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "jantra-"));
+  const apiKeys = [
+    { key: "pub-key", clientId: "t1", subject: "web" },
+    { key: "full-key", clientId: "t1", subject: "ops" },
+  ];
+  const locked = createServer({
+    mode: "remote",
+    loopbackToken: "",
+    store: new JsonProjectStore(tmp),
+    checkCatalogModels: false,
+    apiKeys,
+    edgeSecret: "edge-secret-value",
+  });
+  const unlocked = createServer({
+    mode: "remote",
+    loopbackToken: "",
+    store: new JsonProjectStore(tmp),
+    checkCatalogModels: false,
+    apiKeys,
+    edgeSecret: "",
+  });
+  // A missing run returns 404 only after auth passes, so 404 means "allowed in".
+  const probe = (app: typeof locked, headers: Record<string, string>) =>
+    app.inject({ method: "GET", url: "/v1/runs/missing-run", headers });
+
+  try {
+    const noSecret = await probe(locked, { authorization: "Bearer pub-key" });
+    assert(noSecret.statusCode === 403, `Public key without edge secret: expected 403, got ${noSecret.statusCode}`);
+
+    const wrongSecret = await probe(locked, {
+      authorization: "Bearer pub-key",
+      "x-jantra-edge-secret": "edge-secret-valuX",
+    });
+    assert(wrongSecret.statusCode === 403, `Wrong edge secret: expected 403, got ${wrongSecret.statusCode}`);
+
+    const viaEdge = await probe(locked, {
+      authorization: "Bearer pub-key",
+      "x-jantra-edge-secret": "edge-secret-value",
+    });
+    assert(viaEdge.statusCode === 404, `Public key via edge: expected 404, got ${viaEdge.statusCode}`);
+
+    // Operators call the origin directly with full keys; the lock is public-only.
+    const fullKey = await probe(locked, { authorization: "Bearer full-key" });
+    assert(fullKey.statusCode === 404, `Full key without edge secret: expected 404, got ${fullKey.statusCode}`);
+
+    const unlockedPublic = await probe(unlocked, { authorization: "Bearer pub-key" });
+    assert(
+      unlockedPublic.statusCode === 404,
+      `Unconfigured edge secret must not block public keys: got ${unlockedPublic.statusCode}`,
+    );
+  } finally {
+    await locked.close();
+    await unlocked.close();
+    rmSync(tmp, { recursive: true, force: true });
+  }
 }

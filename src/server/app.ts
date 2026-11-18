@@ -44,6 +44,8 @@ export interface CreateServerOptions {
   webhookStore?: WebhookSubscriptionStore;
   apiKeys?: ApiKeyRecord[];
   adminToken?: string;
+  /** Defaults to config.edgeSharedSecret; see ApiKeyAuthOptions.edgeSecret. */
+  edgeSecret?: string;
   allowedOrigins?: string[];
   allowedHosts?: string[];
   jobWorker?: JobWorker;
@@ -168,6 +170,7 @@ export function createServer(options: CreateServerOptions): FastifyInstance {
     installApiKeyAuth(app, {
       apiKeyStore,
       envRecords: options.apiKeys ?? parseApiKeyRecords(),
+      edgeSecret: options.edgeSecret ?? config.edgeSharedSecret,
     });
     installIdentityRateLimit(app, {
       windowMs: config.rateLimitWindowMs,
@@ -277,6 +280,12 @@ export async function startRemoteApi(options: Omit<CreateServerOptions, "loopbac
   port: number;
   apiKeys?: ApiKeyRecord[];
 }): Promise<StartedLocalApi> {
+  const edgeSecret = options.edgeSecret ?? config.edgeSharedSecret;
+  if (!edgeSecret) {
+    console.warn(
+      "JANTRA_EDGE_SECRET is not set: public-scope keys are accepted without proof they came through the edge. Set it on both the origin and the Cloudflare Worker.",
+    );
+  }
   const app = createServer({
     ...options,
     mode: "remote",

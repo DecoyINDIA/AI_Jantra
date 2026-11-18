@@ -38,6 +38,7 @@ import {
 import {
   verifyAuditRedactionAndTruncation,
   verifyDataRootDerivation,
+  verifyEdgeSecretOriginLock,
   verifyJsonStoreIgnoresNonProjectFiles,
   verifyPublicKeyScope,
   verifySafeFetchRedirect,
@@ -100,6 +101,7 @@ export async function runRegressionEvals(): Promise<StageEvalResult[]> {
     await runRegression("ops-secrets-redacted-and-fail-closed", verifyNoSecretsInResponsesOrDisk),
     await runRegression("ops-webhook-delivery", verifyOpsWebhookDelivery),
     await runRegression("public-key-scope", verifyPublicKeyScope),
+    await runRegression("edge-secret-origin-lock", verifyEdgeSecretOriginLock),
     await runRegression("safe-fetch-redirect", verifySafeFetchRedirect),
     await runRegression("error-envelope-no-leak", verifyErrorEnvelopeNoLeak),
     await runRegression("json-store-ignores-non-project-files", verifyJsonStoreIgnoresNonProjectFiles),

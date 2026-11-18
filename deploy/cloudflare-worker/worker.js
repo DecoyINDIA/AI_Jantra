@@ -13,20 +13,30 @@
 //   ALLOWED_ORIGINS   var  comma list, e.g. "https://xolver.in,https://www.xolver.in"
 //   JANTRA_API_KEY    secret  the bearer key matching a JANTRA_REMOTE_API_KEYS record
 //   RATE_LIMITER      (optional) a [[unsafe.bindings]] ratelimit binding
+//   JANTRA_EDGE_SECRET   secret  (recommended) sent to the origin as
+//                        X-Jantra-Edge-Secret; must match the origin's value
+//   TURNSTILE_SECRET_KEY secret  (recommended) when set, creating a run or a
+//                        lead requires a valid Cloudflare Turnstile token in
+//                        the CF-Turnstile-Response header
 
 const ALLOWED_METHODS = "GET, POST, OPTIONS";
 const MAX_REQUEST_BYTES = 16 * 1024;
 const UPSTREAM_TIMEOUT_MS = 25_000;
+const TURNSTILE_HEADER = "CF-Turnstile-Response";
+const TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
+const TURNSTILE_TIMEOUT_MS = 5_000;
 
 // Exact request shapes the public intake widget is allowed to make. Anything
 // else (notably GET /v1/runs which lists the whole tenant) is rejected.
 const ROUTES = [
-  { method: "POST", re: /^\/v1\/runs$/ },
+  // challenge: true marks the calls that start spend or store personal data;
+  // they need a fresh Turnstile token when TURNSTILE_SECRET_KEY is set.
+  { method: "POST", re: /^\/v1\/runs$/, challenge: true },
   { method: "GET", re: /^\/v1\/runs\/[^/]+$/ },
   { method: "POST", re: /^\/v1\/runs\/[^/]+\/advance$/ },
   { method: "GET", re: /^\/v1\/runs\/[^/]+\/interactions$/ },
   { method: "POST", re: /^\/v1\/runs\/[^/]+\/interactions\/[^/]+$/ },
-  { method: "POST", re: /^\/v1\/leads$/ },
+  { method: "POST", re: /^\/v1\/leads$/, challenge: true },
 ];
 
 function allowedOrigins(env) {
@@ -40,7 +50,7 @@ function corsHeaders(origin) {
   return {
     "Access-Control-Allow-Origin": origin,
     "Vary": "Origin",
-    "Access-Control-Allow-Headers": "content-type",
+    "Access-Control-Allow-Headers": `content-type, ${TURNSTILE_HEADER.toLowerCase()}`,
     "Access-Control-Allow-Methods": ALLOWED_METHODS,
     "Access-Control-Max-Age": "600",
   };
@@ -69,6 +79,41 @@ async function readRequestBody(request) {
     return { error: new Response("Payload Too Large", { status: 413 }) };
   }
   return { body };
+}
+
+// Fail closed: any error talking to Cloudflare, or a token minted for a site
+// we do not serve, is treated as a failed challenge.
+async function verifyTurnstile(env, token, visitorIp) {
+  if (!token || token.length > 2048) return false;
+  const form = new FormData();
+  form.append("secret", env.TURNSTILE_SECRET_KEY);
+  form.append("response", token);
+  if (visitorIp) form.append("remoteip", visitorIp);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), TURNSTILE_TIMEOUT_MS);
+  try {
+    // TURNSTILE_VERIFY_URL exists only so the local harness can stub Cloudflare.
+    const response = await fetch(env.TURNSTILE_VERIFY_URL || TURNSTILE_VERIFY_URL, {
+      method: "POST",
+      body: form,
+      signal: controller.signal,
+    });
+    if (!response.ok) return false;
+    const outcome = await response.json();
+    if (outcome?.success !== true) return false;
+    const hosts = allowedOrigins(env).map((o) => {
+      try {
+        return new URL(o).hostname;
+      } catch {
+        return null;
+      }
+    });
+    return typeof outcome.hostname === "string" && hosts.includes(outcome.hostname);
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function fetchWithTimeout(target, init) {
@@ -116,6 +161,17 @@ export default {
       return deny(bodyResult.error.status, await bodyResult.error.text(), origin);
     }
 
+    // After the cheap body checks, so malformed requests never cost a
+    // siteverify round trip.
+    if (route.challenge && env.TURNSTILE_SECRET_KEY) {
+      const passed = await verifyTurnstile(
+        env,
+        request.headers.get(TURNSTILE_HEADER),
+        request.headers.get("CF-Connecting-IP"),
+      );
+      if (!passed) return deny(403, "Verification challenge failed.", origin);
+    }
+
     const target = `${env.JANTRA_ORIGIN.replace(/\/$/, "")}${url.pathname}${url.search}`;
     const headers = new Headers(request.headers);
     for (const name of [...headers.keys()]) {
@@ -123,6 +179,8 @@ export default {
         headers.delete(name);
       }
     }
+    headers.delete(TURNSTILE_HEADER);
+    if (env.JANTRA_EDGE_SECRET) headers.set("X-Jantra-Edge-Secret", env.JANTRA_EDGE_SECRET);
     const visitorIp = request.headers.get("CF-Connecting-IP");
     if (visitorIp) headers.set("X-Jantra-Client-IP", visitorIp);
     headers.set("Authorization", `Bearer ${env.JANTRA_API_KEY}`);
