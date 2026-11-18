@@ -12,6 +12,11 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same PR or branch cancels the superseded run.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 # Third-party actions are pinned to full commit SHAs (version in the trailing
 # comment) so a moved or compromised tag cannot change what CI executes.
 
@@ -139,6 +144,8 @@ jobs:
     name: Desktop package (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs: typecheck
+    # A stuck GUI app must not hold a runner for GitHub's 6-hour default.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
