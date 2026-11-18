@@ -37,7 +37,11 @@ function hostName(host: string | undefined): string | null {
 function originValue(origin: string | undefined): string | null {
   if (!origin) return null;
   try {
-    return new URL(origin).origin;
+    const url = new URL(origin);
+    // Custom schemes (the desktop UI's app://jantra) have an opaque
+    // URL.origin of "null"; identify them by scheme and host instead so they
+    // can be allowlisted exactly. Unlisted values are still rejected below.
+    return url.origin !== "null" ? url.origin : url.host ? `${url.protocol}//${url.host}` : null;
   } catch {
     return null;
   }

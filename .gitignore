@@ -10,3 +10,8 @@ dist/
 .claude/settings.local.json
 .claude/skills/world-class-agents/
 
+
+# Desktop packaging: staged copies and installer output (see desktop/scripts/stage.mjs)
+desktop/runtime/
+desktop/web/
+desktop/release/

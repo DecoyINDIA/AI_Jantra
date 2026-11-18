@@ -1,5 +1,6 @@
 {
   "name": "@jantra/desktop",
+  "productName": "Jantra",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -7,13 +8,23 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "dev": "electron dist/main.js",
-    "dist": "electron-builder --config electron-builder.yml",
-    "test": "node --import tsx --test src/windowSecurity.test.ts src/fsSafety.test.ts",
-    "test:e2e": "electron --no-sandbox test/electron-security.e2e.cjs"
+    "dev": "npm run stage && electron .",
+    "dist": "npm run stage && electron-builder --config electron-builder.yml",
+    "test": "node --import tsx --test src/windowSecurity.test.ts src/fsSafety.test.ts src/packaging.test.ts",
+    "test:e2e": "electron --no-sandbox test/electron-security.e2e.cjs",
+    "stage": "node scripts/stage.mjs",
+    "test:packaged": "node test/packaged.e2e.mjs"
   },
   "dependencies": {
-    "electron-updater": "6.8.11"
+    "@google/genai": "^2.7.0",
+    "better-sqlite3": "13.0.3",
+    "dotenv": "^16.4.5",
+    "electron-updater": "6.8.11",
+    "fastify": "5.12.8",
+    "jose": "^5.10.0",
+    "undici": "^7.30.2",
+    "zod": "^4.4.3",
+    "zod-to-json-schema": "^3.25.2"
   },
   "devDependencies": {
     "electron": "42.11.18",
