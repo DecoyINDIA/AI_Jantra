@@ -136,9 +136,28 @@ jobs:
           xvfb-run -a npm run test:e2e -w @jantra/desktop
 
   desktop-package:
-    name: Desktop package (build + acceptance)
-    runs-on: ubuntu-latest
+    name: Desktop package (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     needs: typecheck
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: --linux dir
+            run: xvfb-run -a npm run test:packaged -w @jantra/desktop
+          - os: windows-latest
+            target: --win dir
+            run: npm run test:packaged -w @jantra/desktop
+          - os: macos-latest
+            target: --mac dir
+            run: npm run test:packaged -w @jantra/desktop
+    env:
+      # Unsigned CI builds; signing needs the owner's certificates.
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
@@ -153,12 +172,12 @@ jobs:
       - name: Build runtime, web UI and desktop shell
         run: npm run build && npm run web:build && npm run build -w @jantra/desktop
 
-      # Unpacked Linux build: stages runtime + UI, applies Electron fuses.
+      # Unpacked build: stages runtime + UI, applies Electron fuses (including
+      # asar integrity validation on Windows and macOS).
       - name: Package desktop app
-        run: npm run dist -w @jantra/desktop -- --linux dir
+        run: npm run dist -w @jantra/desktop -- ${{ matrix.target }}
 
       # Launches the packaged binary: UI over app://, API + CORS, licensed run
       # in SQLite, persistence across restart, CSP and window policy.
       - name: Packaged app acceptance
-        run: xvfb-run -a npm run test:packaged -w @jantra/desktop
-
+        run: ${{ matrix.run }}
