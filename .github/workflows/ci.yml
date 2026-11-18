@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main]
 
+# Least privilege: CI only needs to read the repo. A compromised dependency or
+# action then cannot push code or tamper with releases through GITHUB_TOKEN.
+permissions:
+  contents: read
+
 jobs:
   typecheck:
     name: Typecheck
@@ -84,3 +89,31 @@ jobs:
 
       - name: Server smoke test
         run: npm run server:smoke
+
+  security:
+    name: Security checks
+    runs-on: ubuntu-latest
+    needs: typecheck
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Fails on high/critical advisories that have a non-breaking fix; lists
+      # unfixable ones as warnings (see scripts/audit-gate.mjs).
+      - name: Dependency audit gate
+        run: node scripts/audit-gate.mjs
+
+      - name: Secret scan (tracked files)
+        run: node scripts/secret-scan.mjs
+
+      # Edge Worker + origin in-process: origin allowlist, Turnstile, edge
+      # secret lock, run tokens, header smuggling, rate limit.
+      - name: Edge verification (local harness)
+        run: npm run edge:verify:local

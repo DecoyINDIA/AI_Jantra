@@ -39,10 +39,12 @@ targeted review, not a full penetration test.
 | T4 | Visitor reads or hijacks another visitor's run | Public run creation issues a 256-bit `runToken` (only its SHA-256 is stored); public-scope reads, advances, interactions and lead linking require it, and a wrong token returns the same 404 as a missing run; public keys limited to an allowlist of routes and agents | Low. The token lives in page memory, so XSS on the embedding site could still read it |
 | T5 | Budget exhaustion through the public widget | Edge per-IP limiter; Turnstile token required to create runs or leads when `TURNSTILE_SECRET_KEY` is set (fails closed, checks hostname); origin pre-auth and identity limiters; per-visitor and per-client daily spend ceilings | Low-medium with Turnstile on. A solved token still buys one run; budgets cap the rest |
 | T6 | Webhook spoofing or replay at receivers | HMAC-SHA256 signature; V2 signature binds a timestamp (5 minute tolerance); `X-Jantra-Delivery` ID for deduplication | Low once receivers verify V2. V1 remains for compatibility and is replayable |
-| T7 | Credential brute force or timing attacks | 256-bit keys, SHA-256 lookup, constant-time comparison, pre-auth rate limit | Low |
+| T7 | Credential brute force, timing attacks, or rate-limit evasion via forwarded headers | `X-Forwarded-For` honoured only from internal proxy peers (`JANTRA_TRUSTED_PROXIES`); 256-bit keys, SHA-256 lookup, constant-time comparison, pre-auth rate limit | Low |
 | T8 | Secrets in logs or artifacts | Audit redaction, metadata-only diagnostics, secrets never echoed by webhook routes | Low. Covered by the audit redaction regression |
 | T9 | Audit log tampering | Append-only JSONL; every line hash-chained (`seq`, `prevHash`, `hash`), HMAC-SHA256 when `JANTRA_AUDIT_HMAC_KEY` is set; `GET /v1/runs/:id/audit/verify` (full scope) | Low-medium with the HMAC key set: edits, deletions, reorders and inserts are detected. Truncating the tail is only detectable against a head hash recorded elsewhere. Concurrent writers in separate processes can fork a chain, which the verifier reports |
 | T10 | Origin reached directly, bypassing the edge | Public key held only at the edge; with `JANTRA_EDGE_SECRET` set, public-scope requests also need the edge's shared secret (constant-time check); the edge strips browser-supplied `X-Jantra-*` headers | Low with the secret set. Both secrets would have to leak. Network-level restriction to Cloudflare is still worthwhile |
+| T12 | Vulnerable dependencies | CI `audit-gate` blocks high/critical advisories with a non-breaking fix; 2026-11-18 upgrade: fastify 5.12.8 (schema-validation bypass, router DoS), zod 4.6.7 (memory exhaustion), electron 42.11.18 (critical heap overflow, sandbox escape), electron-builder 26.18.0, electron-updater 6.8.11, vite 8.3.8 | Low-medium. picomatch (via Vite, build-time only) has no patched release and is reported as a warning |
+| T13 | Leaked secrets in the repo | CI `secret-scan` over tracked files; full git history scanned clean on 2026-11-18 | Low |
 | T11 | Path traversal in data and connector paths | `assertSafePathSegment`; `resolveClientDataDir` containment plus rejection of absolute paths on any platform | Low |
 
 ## Webhook verification for receivers
@@ -66,7 +68,7 @@ reference implementation is `verifyWebhookSignature` in
 1. Set `JANTRA_EDGE_SECRET` and `TURNSTILE_SECRET_KEY` in production; both controls are off until configured (T5, T10).
 2. Periodically export each run's `headSeq`/`headHash` to storage outside the audit volume, so tail truncation is detectable (T9).
 4. Add `npm audit --omit=dev` and secret scanning to CI.
-4. Commission an external penetration test before production traffic.
+3. Commission an external penetration test before production traffic.
 
 ## Regressions guarding this model
 

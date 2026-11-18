@@ -18,4 +18,6 @@
 - With `TURNSTILE_SECRET_KEY` set on the Worker, creating a run or a lead requires a Cloudflare Turnstile token; verification fails closed and checks the token's hostname (`deploy/cloudflare-worker/worker.js`).
 - Audit JSONL lines are hash-chained (`seq`, `prevHash`, `hash`; HMAC-SHA256 with `JANTRA_AUDIT_HMAC_KEY`). Check a run with `GET /v1/runs/:runId/audit/verify` (full scope) or `verifyAuditFile` in `src/audit.ts`.
 - Public runs are bound to their creator: `POST /v1/runs` with a public key returns a one-time `runToken` (only its hash is stored), required as `X-Jantra-Run-Token` for every later public call on that run, including linking a lead (`src/server/runAccess.ts`).
+- In remote mode `X-Forwarded-For` is trusted only when the connecting peer is an internal proxy address (`JANTRA_TRUSTED_PROXIES`, default private ranges and CGNAT). Fastify 5.12 ignores numeric hop counts, so the old `trustProxy: 1` would have put every visitor in one rate-limit bucket.
+- CI runs `scripts/audit-gate.mjs` (dependency advisories) and `scripts/secret-scan.mjs` (tracked files) on every pull request.
 - Threat model, residual risks, and open recommendations: `docs/THREAT_MODEL.md`.
