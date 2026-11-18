@@ -30,6 +30,20 @@ const TURNSTILE_TIMEOUT_MS = 5_000;
 // besides X-Jantra-User.
 const RUN_TOKEN_HEADER = "x-jantra-run-token";
 const BROWSER_JANTRA_HEADERS = new Set(["x-jantra-user", RUN_TOKEN_HEADER]);
+// Hop-by-hop and framing headers describe the client's connection, not the
+// request; a proxy must not forward them (RFC 9110 §7.6.1). fetch() sets
+// host and content-length itself, and some runtimes reject them if supplied.
+const HOP_BY_HOP_HEADERS = [
+  "connection",
+  "keep-alive",
+  "proxy-connection",
+  "transfer-encoding",
+  "upgrade",
+  "te",
+  "trailer",
+  "host",
+  "content-length",
+];
 
 // Exact request shapes the public intake widget is allowed to make. Anything
 // else (notably GET /v1/runs which lists the whole tenant) is rejected.
@@ -185,6 +199,7 @@ export default {
       }
     }
     headers.delete(TURNSTILE_HEADER);
+    for (const name of HOP_BY_HOP_HEADERS) headers.delete(name);
     if (env.JANTRA_EDGE_SECRET) headers.set("X-Jantra-Edge-Secret", env.JANTRA_EDGE_SECRET);
     const visitorIp = request.headers.get("CF-Connecting-IP");
     if (visitorIp) headers.set("X-Jantra-Client-IP", visitorIp);
