@@ -16,6 +16,11 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+if (typeof WebSocket !== "function") {
+  console.error(`packaged-e2e: needs Node >= 22 for the global WebSocket (running ${process.version}).`);
+  process.exit(2);
+}
+
 const here = dirname(fileURLToPath(import.meta.url));
 // argv[2]: executable (packaged binary, or the electron binary for dev mode)
 // argv[3]: optional app directory, for dev mode (`electron <desktop dir>`)
