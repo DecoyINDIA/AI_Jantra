@@ -7,6 +7,7 @@ import { config } from "../../config.js";
 import { continueAutonomously, resumeStageInteraction, withRunLock } from "../../pipeline/orchestrator.js";
 import type { ProjectStore } from "../../pipeline/store.js";
 import { conflict, notFound, HttpError } from "../errors.js";
+import { assertRunTokenAccess } from "../runAccess.js";
 import { assertAgentAllowed } from "../scope.js";
 import { EFFECTIVE_PUBLIC_INPUT_MAX_CHARS, parseWith, runParamsSchema } from "../schemas.js";
 import { assertProjectAccess, requestClientId } from "../tenancy.js";
@@ -63,6 +64,7 @@ export function registerInteractionRoutes(
     if (!project) throw notFound(`Run ${params.runId} was not found.`);
     assertProjectAccess(request.identity, project);
     assertAgentAllowed(request.identity, project.agentId);
+    assertRunTokenAccess(request, project);
     return {
       interactions: project.interactions.filter(
         (interaction) => interaction.status === "pending",
@@ -83,6 +85,7 @@ export function registerInteractionRoutes(
       if (!project) throw notFound(`Run ${params.runId} was not found.`);
       assertProjectAccess(request.identity, project);
       assertAgentAllowed(request.identity, project.agentId);
+      assertRunTokenAccess(request, project);
 
       const target = project.interactions.find(
         (interaction) => interaction.id === params.interactionId,
@@ -123,6 +126,7 @@ export function registerInteractionRoutes(
       if (!project) throw notFound(`Run ${params.runId} was not found.`);
       assertProjectAccess(request.identity, project);
       assertAgentAllowed(request.identity, project.agentId);
+      assertRunTokenAccess(request, project);
 
       // Guard against resubmitting an interaction that is no longer awaiting a
       // response (double-submit, retry after the run advanced, or stale client

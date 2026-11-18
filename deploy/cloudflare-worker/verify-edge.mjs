@@ -21,6 +21,7 @@ const EDGE_SECRET = "edge-test-shared-secret";
 const VALID_TURNSTILE_TOKEN = "valid-turnstile-token";
 let turnstileToken = process.env.JANTRA_EDGE_TURNSTILE_TOKEN ?? null;
 let localHarness = null;
+let runToken = null;
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -30,6 +31,9 @@ async function edgeFetch(path, init = {}) {
   const headers = new Headers(init.headers);
   if (init.origin !== null) headers.set("Origin", init.origin ?? allowedOrigin);
   headers.set("CF-Connecting-IP", init.ip ?? testIp);
+  if (runToken && init.runToken !== null && !headers.has("X-Jantra-Run-Token")) {
+    headers.set("X-Jantra-Run-Token", runToken);
+  }
   if (turnstileToken && init.turnstile !== null && !headers.has("CF-Turnstile-Response")) {
     headers.set("CF-Turnstile-Response", init.turnstile ?? turnstileToken);
   }
@@ -206,6 +210,26 @@ async function main() {
   );
   const runId = created?.run?.id;
   assert(typeof runId === "string" && runId.length > 0, "create_run: missing run.id");
+  runToken = created?.runToken ?? null;
+  assert(typeof runToken === "string" && runToken.length >= 32, "create_run: missing runToken");
+  assert(!JSON.stringify(created).includes("visitorTokenHash\":\"" + runToken), "create_run: token stored in clear");
+
+  // A run ID alone must not open someone else's intake.
+  await expectStatus(
+    "run_without_token",
+    await edgeFetch(`/v1/runs/${runId}`, { method: "GET", runToken: null }),
+    404,
+  );
+  await expectStatus(
+    "run_with_wrong_token",
+    await edgeFetch(`/v1/runs/${runId}`, { method: "GET", headers: { "X-Jantra-Run-Token": "x".repeat(43) } }),
+    404,
+  );
+  await expectStatus(
+    "advance_without_token",
+    await edgeFetch(`/v1/runs/${runId}/advance`, { method: "POST", runToken: null }),
+    404,
+  );
 
   const advanced = await expectStatus(
     "advance_bodyless",
@@ -344,7 +368,7 @@ async function main() {
     );
     await expectStatus(
       "origin_direct_with_edge_secret",
-      await direct({ "X-Jantra-Edge-Secret": EDGE_SECRET }),
+      await direct({ "X-Jantra-Edge-Secret": EDGE_SECRET, "X-Jantra-Run-Token": runToken }),
       200,
     );
     // A browser cannot smuggle its own edge secret or client IP through the Worker.
