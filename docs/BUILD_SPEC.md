@@ -126,7 +126,7 @@ This section exists so the builder understands *why* the architecture looks the 
 
 ## 6. Tech stack and conventions
 
-- **Language/runtime:** TypeScript (strict), Node ≥ 20, ESM. Keep the existing `tsconfig.json` settings (`strict`, `noUncheckedIndexedAccess`).
+- **Language/runtime:** TypeScript (strict), Node ≥ 22, ESM. Keep the existing `tsconfig.json` settings (`strict`, `noUncheckedIndexedAccess`).
 - **Model SDK:** Google Gen AI SDK for TypeScript, package **`@google/genai`** (**VERIFY** exact package name, version, and import surface at https://ai.google.dev/gemini-api/docs and the SDK repo before coding). Do not reuse `@anthropic-ai/sdk` for model calls once Milestone 1 lands.
 - **Validation:** use a schema library (Zod recommended) for all structured model outputs and all artifact schemas. Validate every model JSON before trusting it.
 - **No new heavy frameworks** without a reason. The runtime is intentionally small and legible.

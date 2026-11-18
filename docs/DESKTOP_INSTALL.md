@@ -22,7 +22,7 @@ npm run dist -w @jantra/desktop -- --linux dir # unpacked Linux build, used by C
 
 `npm run dist` first runs `scripts/stage.mjs`, which copies the compiled runtime (`dist/`) into `desktop/runtime/` and the web UI (`web/dist/`) into `desktop/web/dist/`. electron-builder only packs files under `desktop/`. Development runs the same staged layout: `npm run dev -w @jantra/desktop`.
 
-The UI is served from `app://jantra/` (not `file://`) with a strict CSP; the local API allows exactly that origin. The desktop package pins better-sqlite3 13.x, a Node-API build whose bundled prebuilds load in Electron without a native rebuild; the server keeps 12.x until it moves to Node 22. Packaged binaries ship with hardened Electron fuses (no `ELECTRON_RUN_AS_NODE`, `NODE_OPTIONS` or `--inspect`; app code only from the archive).
+The UI is served from `app://jantra/` (not `file://`) with a strict CSP; the local API allows exactly that origin. better-sqlite3 13.x builds as a Node-API module, so the same binary loads in both Node and Electron and the desktop package needs no Electron-specific rebuild. npm compiles it from source during install, so building needs a C++ toolchain (python3, make, g++). Packaged binaries ship with hardened Electron fuses (no `ELECTRON_RUN_AS_NODE`, `NODE_OPTIONS` or `--inspect`; app code only from the archive).
 
 Acceptance test for a build (runs in CI):
 
