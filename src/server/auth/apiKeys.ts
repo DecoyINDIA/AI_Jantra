@@ -19,8 +19,8 @@ export interface ApiKeyAuthOptions {
   apiKeyStore?: ApiKeyStore;
   envRecords: ApiKeyRecord[];
   /**
-   * When non-empty, public-scope keys are accepted only alongside a matching
-   * X-Jantra-Edge-Secret header. Public keys live at the edge and also unlock
+   * Public-scope keys are accepted only alongside a matching
+   * X-Jantra-Edge-Secret header, and refused entirely while this is empty. Public keys live at the edge and also unlock
    * trust in X-Jantra-Client-IP, so without this a leaked public key lets a
    * caller skip edge rate limits and spoof visitor identity.
    */
@@ -127,7 +127,12 @@ export function installApiKeyAuth(app: FastifyInstance, optionsOrRecords: ApiKey
     if (!request.url.startsWith("/v1")) return;
     if (isAdminPath(request.url)) return;
     request.identity = resolveApiKeyIdentity(request, options);
-    if (request.identity.scope === "public" && options.edgeSecret) {
+    if (request.identity.scope === "public") {
+      // Fail closed: with no edge secret configured there is no way to tell an
+      // edge request from a direct one, so public keys are refused outright.
+      if (!options.edgeSecret) {
+        throw forbidden("Public keys are disabled until JANTRA_EDGE_SECRET is configured on the origin.");
+      }
       const header = request.headers["x-jantra-edge-secret"];
       const presented = Array.isArray(header) ? header[0] : header;
       if (!timingSafeStringEqual(presented, options.edgeSecret)) {

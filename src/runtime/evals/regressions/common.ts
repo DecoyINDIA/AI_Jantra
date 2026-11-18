@@ -123,3 +123,8 @@ export async function runRegression(
     };
   }
 }
+
+/** Headers the Cloudflare edge adds; public-scope requests need them. */
+export function edgeHeaders(): Record<string, string> {
+  return { "x-jantra-edge-secret": config.edgeSharedSecret };
+}

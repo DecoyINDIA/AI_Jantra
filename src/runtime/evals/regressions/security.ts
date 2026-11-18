@@ -9,6 +9,7 @@ import { decryptSecret, DecryptionError, encryptSecret } from "../../../security
 import { config, resolveDataDirs } from "../../../config.js";
 import { createProject } from "../../../pipeline/orchestrator.js";
 import { JsonProjectStore } from "../../../pipeline/store.js";
+import { SqliteProjectStore } from "../../../pipeline/store/sqlite.js";
 import { createServer } from "../../../server/app.js";
 import { CLIENT_REPORT_CSP, markdownToHtml } from "../../../server/export/clientReport.js";
 import { openEventStreamCount } from "../../../server/routes/events.js";
@@ -20,7 +21,7 @@ import type { AnyTool } from "../../../types.js";
 import { isBlockedAddress } from "../../../util/netGuard.js";
 import { nextRequest, safeFetch, UnsafeUrlError } from "../../../util/safeFetch.js";
 import { verifyWebhookSignature, webhookSignatureHeaders } from "../../../util/webhookSignature.js";
-import { assert, readAuditJsonl, result, SequenceProvider } from "./common.js";
+import { assert, readAuditJsonl, result, SequenceProvider, edgeHeaders } from "./common.js";
 
 export async function verifyAuditRedactionAndTruncation(): Promise<void> {
   const secretTool: AnyTool = {
@@ -206,7 +207,7 @@ export async function verifyPublicKeyScope(): Promise<void> {
     const res1 = await app.inject({
       method: "POST",
       url: "/v1/runs",
-      headers: { authorization: "Bearer pub-key" },
+      headers: { authorization: "Bearer pub-key", ...edgeHeaders() },
       payload: { agentId: "planning-pipeline" },
     });
     assert(res1.statusCode === 403, `Expected 403 for planning-pipeline, got ${res1.statusCode}`);
@@ -215,7 +216,7 @@ export async function verifyPublicKeyScope(): Promise<void> {
     const res2 = await app.inject({
       method: "POST",
       url: "/v1/runs",
-      headers: { authorization: "Bearer pub-key" },
+      headers: { authorization: "Bearer pub-key", ...edgeHeaders() },
       payload: { agentId: "intake-public", autonomy: "auto" },
     });
     assert(res2.statusCode === 403, `Expected 403 for autonomy:auto, got ${res2.statusCode}`);
@@ -224,7 +225,7 @@ export async function verifyPublicKeyScope(): Promise<void> {
     const res3 = await app.inject({
       method: "POST",
       url: "/v1/runs",
-      headers: { authorization: "Bearer pub-key" },
+      headers: { authorization: "Bearer pub-key", ...edgeHeaders() },
       payload: { agentId: "intake-public", modelId: "gemini-2.5-pro" },
     });
     assert(res3.statusCode === 403, `Expected 403 for modelId pin, got ${res3.statusCode}`);
@@ -233,7 +234,7 @@ export async function verifyPublicKeyScope(): Promise<void> {
     const res4 = await app.inject({
       method: "POST",
       url: "/v1/runs",
-      headers: { authorization: "Bearer pub-key" },
+      headers: { authorization: "Bearer pub-key", ...edgeHeaders() },
       payload: { agentId: "intake-public", title: "x" },
     });
     assert(res4.statusCode === 200, `Expected 200 for intake-public run creation, got ${res4.statusCode}: ${res4.body}`);
@@ -242,14 +243,14 @@ export async function verifyPublicKeyScope(): Promise<void> {
     const res5 = await app.inject({
       method: "GET",
       url: "/v1/runs",
-      headers: { authorization: "Bearer pub-key" },
+      headers: { authorization: "Bearer pub-key", ...edgeHeaders() },
     });
     assert(res5.statusCode === 403, `Expected 403 for GET /v1/runs with pub-key, got ${res5.statusCode}`);
 
     const res6 = await app.inject({
       method: "POST",
       url: "/v1/complete",
-      headers: { authorization: "Bearer pub-key" },
+      headers: { authorization: "Bearer pub-key", ...edgeHeaders() },
       payload: { system: "s", user: "u" },
     });
     assert(res6.statusCode === 403, `Expected 403 for POST /v1/complete with pub-key, got ${res6.statusCode}`);
@@ -257,7 +258,7 @@ export async function verifyPublicKeyScope(): Promise<void> {
     const res7 = await app.inject({
       method: "GET",
       url: "/v1/agents",
-      headers: { authorization: "Bearer pub-key" },
+      headers: { authorization: "Bearer pub-key", ...edgeHeaders() },
     });
     assert(res7.statusCode === 403, `Expected 403 for GET /v1/agents with pub-key, got ${res7.statusCode}`);
 
@@ -274,7 +275,7 @@ export async function verifyPublicKeyScope(): Promise<void> {
     const res9 = await app.inject({
       method: "GET",
       url: `/v1/runs/${planningRunId}`,
-      headers: { authorization: "Bearer pub-key" },
+      headers: { authorization: "Bearer pub-key", ...edgeHeaders() },
     });
     assert(res9.statusCode === 403, `Expected 403 for pub-key GET on planning run, got ${res9.statusCode}`);
     assert((res9.json() as any).error?.code === "agent_not_allowed", "Expected agent_not_allowed code");
@@ -471,11 +472,15 @@ export async function verifyEdgeSecretOriginLock(): Promise<void> {
     const fullKey = await probe(locked, { authorization: "Bearer full-key" });
     assert(fullKey.statusCode === 404, `Full key without edge secret: expected 404, got ${fullKey.statusCode}`);
 
-    const unlockedPublic = await probe(unlocked, { authorization: "Bearer pub-key" });
+    // Fail closed: with no edge secret configured, public keys are refused
+    // even if a caller sends some edge header.
+    const unlockedPublic = await probe(unlocked, { authorization: "Bearer pub-key", ...edgeHeaders() });
     assert(
-      unlockedPublic.statusCode === 404,
-      `Unconfigured edge secret must not block public keys: got ${unlockedPublic.statusCode}`,
+      unlockedPublic.statusCode === 403,
+      `Unconfigured edge secret must refuse public keys: got ${unlockedPublic.statusCode}`,
     );
+    const unlockedFull = await probe(unlocked, { authorization: "Bearer full-key" });
+    assert(unlockedFull.statusCode === 404, `Full keys must still work without an edge secret: got ${unlockedFull.statusCode}`);
   } finally {
     await locked.close();
     await unlocked.close();
@@ -580,7 +585,7 @@ export async function verifyAuditVerifyRoute(): Promise<void> {
     const chain = (full.json() as { chain: { ok: boolean; headSeq: number } }).chain;
     assert(chain.ok && chain.headSeq >= 1, `New run's audit chain must verify: ${full.body}`);
 
-    const pub = await app.inject({ method: "GET", url, headers: { authorization: "Bearer pub-key" } });
+    const pub = await app.inject({ method: "GET", url, headers: { authorization: "Bearer pub-key", ...edgeHeaders() } });
     assert(pub.statusCode === 403, `Public key verify: expected 403, got ${pub.statusCode}`);
 
     const other = await app.inject({ method: "GET", url, headers: { authorization: "Bearer other-key" } });
@@ -606,7 +611,7 @@ export async function verifyPublicRunTokenBinding(): Promise<void> {
       { key: "full-key", clientId: "t1", subject: "ops" },
     ],
   });
-  const pub = { authorization: "Bearer pub-key" };
+  const pub = { authorization: "Bearer pub-key", ...edgeHeaders() };
   try {
     const created = await app.inject({
       method: "POST",
@@ -855,6 +860,70 @@ export async function verifyEventStreamLimits(): Promise<void> {
     await app.close();
     (config as Record<string, unknown>).sseMaxPerIdentity = original.per;
     (config as Record<string, unknown>).sseMaxTotal = original.total;
+    rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+export function verifyCredentialRecordBinding(): void {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "jantra-"));
+  const originalKey = config.secretsKey;
+  (config as Record<string, unknown>).secretsKey = "a".repeat(64);
+  try {
+    const store = new SqliteProjectStore(path.join(tmp, "jantra.sqlite"), { projectDir: tmp, skipImport: true });
+    store.setConnectorCredentials("tenant-a", "stripe", { apiKey: "sk_a" });
+    store.setConnectorCredentials("tenant-b", "stripe", { apiKey: "sk_b" });
+    const db = (store as unknown as { db: { prepare(sql: string): { get(...a: unknown[]): any; run(...a: unknown[]): unknown } } }).db;
+    const blobOf = (client: string, connector: string) =>
+      db.prepare("select encrypted_blob from connector_credentials where client_id = ? and connector = ?").get(client, connector)
+        .encrypted_blob as string;
+    assert(blobOf("tenant-a", "stripe").startsWith("v2:"), "New credentials must be record-bound (v2).");
+
+    // An attacker with database write access copies tenant A's blob into B's row.
+    db.prepare("update connector_credentials set encrypted_blob = ? where client_id = ? and connector = ?").run(
+      blobOf("tenant-a", "stripe"), "tenant-b", "stripe",
+    );
+    let swapped = false;
+    try {
+      store.getConnectorCredentials("tenant-b", "stripe");
+    } catch (err) {
+      swapped = err instanceof DecryptionError;
+    }
+    assert(swapped, "A blob moved to another tenant's row must fail to decrypt.");
+
+    // Same tenant, different connector is a different record too.
+    store.setConnectorCredentials("tenant-a", "shopify", { token: "shp" });
+    db.prepare("update connector_credentials set encrypted_blob = ? where client_id = ? and connector = ?").run(
+      blobOf("tenant-a", "stripe"), "tenant-a", "shopify",
+    );
+    let crossConnector = false;
+    try {
+      store.getConnectorCredentials("tenant-a", "shopify");
+    } catch (err) {
+      crossConnector = err instanceof DecryptionError;
+    }
+    assert(crossConnector, "A blob moved to another connector must fail to decrypt.");
+
+    // Legacy v1 rows still read, and are upgraded to v2 at startup.
+    const key = Buffer.from("a".repeat(64), "hex");
+    db.prepare("update connector_credentials set encrypted_blob = ? where client_id = ? and connector = ?").run(
+      encryptSecret(JSON.stringify({ apiKey: "sk_b" }), key), "tenant-b", "stripe",
+    );
+    assert(blobOf("tenant-b", "stripe").startsWith("v1:"), "Fixture must be legacy v1.");
+    const upgraded = store.upgradeLegacyCredentials();
+    assert(upgraded === 1 && blobOf("tenant-b", "stripe").startsWith("v2:"), `Legacy row must be upgraded (upgraded=${upgraded}).`);
+    assert(store.getConnectorCredentials("tenant-b", "stripe")?.apiKey === "sk_b", "Upgraded credential must still read.");
+
+    // A v2 blob cannot be read without its record context.
+    let contextless = false;
+    try {
+      decryptSecret(blobOf("tenant-b", "stripe"), key);
+    } catch (err) {
+      contextless = err instanceof DecryptionError;
+    }
+    assert(contextless, "v2 blobs must require their record context.");
+    store.close();
+  } finally {
+    (config as Record<string, unknown>).secretsKey = originalKey;
     rmSync(tmp, { recursive: true, force: true });
   }
 }

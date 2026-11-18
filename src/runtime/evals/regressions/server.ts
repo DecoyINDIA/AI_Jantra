@@ -14,7 +14,7 @@ import { visitorAddress } from "../../../server/visitor.js";
 import { hashApiKey } from "../../../server/auth/apiKeys.js";
 import { reloadModelCatalog } from "../../../model/catalog.js";
 import { config } from "../../../config.js";
-import { assert, readAuditJsonl } from "./common.js";
+import { assert, readAuditJsonl, edgeHeaders } from "./common.js";
 import {
   createLicenseToken,
   generateLicenseKeyPair,
@@ -490,7 +490,7 @@ export async function verifyPromoteIntakeToPlan(): Promise<void> {
       const publicPromote = await remoteApp.inject({
         method: "POST",
         url: `/v1/runs/${sourceProject.id}/promote`,
-        headers: { authorization: "Bearer pub-key" },
+        headers: { authorization: "Bearer pub-key", ...edgeHeaders() },
       });
       assert(publicPromote.statusCode === 403, `Expected 403 for public key promote, got ${publicPromote.statusCode}`);
     } finally {
@@ -702,6 +702,7 @@ export async function verifySqliteMigrationsAndStores(): Promise<void> {
       url: "/v1/runs",
       headers: {
         authorization: `Bearer ${rawKey}`,
+        ...edgeHeaders(),
         "content-type": "application/json",
       },
       payload: {
@@ -717,6 +718,7 @@ export async function verifySqliteMigrationsAndStores(): Promise<void> {
       url: "/v1/runs",
       headers: {
         authorization: `Bearer ${rawKey}`,
+        ...edgeHeaders(),
         "content-type": "application/json",
       },
       payload: {
@@ -735,6 +737,7 @@ export async function verifySqliteMigrationsAndStores(): Promise<void> {
       url: "/v1/leads",
       headers: {
         authorization: `Bearer ${rawKey}`,
+        ...edgeHeaders(),
         "content-type": "application/json",
         "x-jantra-run-token": runToken,
       },
@@ -796,6 +799,7 @@ export async function verifyAsyncStageExecution(): Promise<void> {
       url: "/v1/runs",
       headers: {
         authorization: `Bearer ${rawKey}`,
+        ...edgeHeaders(),
         "content-type": "application/json",
       },
       payload: {
@@ -812,6 +816,7 @@ export async function verifyAsyncStageExecution(): Promise<void> {
       url: `/v1/runs/${runId}/advance`,
       headers: {
         authorization: `Bearer ${rawKey}`,
+        ...edgeHeaders(),
         prefer: "respond-async",
       },
     });
@@ -829,6 +834,7 @@ export async function verifyAsyncStageExecution(): Promise<void> {
         url: `/v1/runs/${runId}/jobs/${jobId}`,
         headers: {
           authorization: `Bearer ${rawKey}`,
+          ...edgeHeaders(),
         },
       });
       assert(jobRes.statusCode === 200, `Job get failed: ${jobRes.body}`);
@@ -842,6 +848,7 @@ export async function verifyAsyncStageExecution(): Promise<void> {
       url: `/v1/runs/${runId}`,
       headers: {
         authorization: `Bearer ${rawKey}`,
+        ...edgeHeaders(),
       },
     });
     assert(getRes.statusCode === 200, `Run get failed: ${getRes.body}`);
@@ -858,6 +865,7 @@ export async function verifyAsyncStageExecution(): Promise<void> {
       url: `/v1/runs/${runId}/advance`,
       headers: {
         authorization: `Bearer ${rawKey}`,
+        ...edgeHeaders(),
       },
     });
     assert(syncRes.statusCode === 200, `Expected 200 synchronous advance, got ${syncRes.statusCode}`);
@@ -868,6 +876,7 @@ export async function verifyAsyncStageExecution(): Promise<void> {
       url: `/v1/runs/${runId}/jobs/job-unknown-999`,
       headers: {
         authorization: `Bearer ${rawKey}`,
+        ...edgeHeaders(),
       },
     });
     assert(notFoundJob.statusCode === 404, `Expected 404 for unknown job, got ${notFoundJob.statusCode}`);
@@ -958,6 +967,7 @@ export async function verifyLeadRetentionAndDeletion(): Promise<void> {
       url: "/v1/leads",
       headers: {
         authorization: `Bearer ${rawKey}`,
+        ...edgeHeaders(),
         "content-type": "application/json",
       },
       payload: {
@@ -976,6 +986,7 @@ export async function verifyLeadRetentionAndDeletion(): Promise<void> {
       url: "/v1/leads",
       headers: {
         authorization: `Bearer ${rawKey}`,
+        ...edgeHeaders(),
       },
     });
     assert(listRes.statusCode === 200, `List leads failed: ${listRes.body}`);
@@ -987,6 +998,7 @@ export async function verifyLeadRetentionAndDeletion(): Promise<void> {
       url: `/v1/leads/${leadId}`,
       headers: {
         authorization: `Bearer ${rawKey}`,
+        ...edgeHeaders(),
       },
     });
     assert(delRes.statusCode === 200, `Delete lead failed: ${delRes.body}`);
@@ -998,6 +1010,7 @@ export async function verifyLeadRetentionAndDeletion(): Promise<void> {
       url: "/v1/leads",
       headers: {
         authorization: `Bearer ${rawKey}`,
+        ...edgeHeaders(),
       },
     });
     assert(!listAgain.json().items.some((l: { id: string }) => l.id === leadId), "Expected lead to be removed");
@@ -1008,6 +1021,7 @@ export async function verifyLeadRetentionAndDeletion(): Promise<void> {
       url: `/v1/leads/${leadId}`,
       headers: {
         authorization: `Bearer ${rawKey}`,
+        ...edgeHeaders(),
       },
     });
     assert(delAgain.statusCode === 404, `Expected 404 on already deleted lead, got ${delAgain.statusCode}`);
@@ -1029,6 +1043,7 @@ export async function verifyLeadRetentionAndDeletion(): Promise<void> {
       url: "/v1/leads",
       headers: {
         authorization: `Bearer ${rawKey}`,
+        ...edgeHeaders(),
         "content-type": "application/json",
       },
       payload: {
@@ -1048,6 +1063,7 @@ export async function verifyLeadRetentionAndDeletion(): Promise<void> {
       url: `/v1/leads/${linkedLeadId}?deleteLinkedRun=true`,
       headers: {
         authorization: `Bearer ${rawKey}`,
+        ...edgeHeaders(),
       },
     });
     assert(delLinkedRes.statusCode === 200, `Failed to delete linked lead: ${delLinkedRes.body}`);
@@ -1071,6 +1087,7 @@ export async function verifyLeadRetentionAndDeletion(): Promise<void> {
       url: "/v1/leads/sweep",
       headers: {
         authorization: `Bearer ${rawKey}`,
+        ...edgeHeaders(),
       },
     });
     assert(sweepDisabledRes.statusCode === 403, `Expected 403 when sweep is disabled, got ${sweepDisabledRes.statusCode}`);
@@ -1086,6 +1103,7 @@ export async function verifyLeadRetentionAndDeletion(): Promise<void> {
         url: "/v1/leads/sweep",
         headers: {
           authorization: `Bearer ${rawKey}`,
+          ...edgeHeaders(),
         },
       });
       assert(sweepEnabledRes.statusCode === 200, `Expected 200 when sweep is enabled, got ${sweepEnabledRes.statusCode}`);
