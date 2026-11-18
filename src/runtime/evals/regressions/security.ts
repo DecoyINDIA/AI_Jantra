@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { Agent } from "../../../agent.js";
@@ -679,4 +679,29 @@ export async function verifyPublicRunTokenBinding(): Promise<void> {
     await app.close();
     rmSync(tmp, { recursive: true, force: true });
   }
+}
+
+export function verifyEnvReadsOnlyInConfig(): void {
+  // AGENTS.md hard rule: configuration (including secrets) flows through
+  // src/config.ts so it is validated in one place and never re-read ad hoc.
+  // Test harnesses legitimately set env before importing config.
+  const root = path.resolve("src");
+  const allowed = (rel: string) =>
+    rel === "config.ts" ||
+    rel.endsWith(".test.ts") ||
+    rel.startsWith(`runtime${path.sep}evals${path.sep}`) ||
+    rel === path.join("server", "smoke.ts");
+  const offenders: string[] = [];
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.name.endsWith(".ts")) {
+        const rel = path.relative(root, full);
+        if (!allowed(rel) && /process\.env\b/.test(readFileSync(full, "utf8"))) offenders.push(rel);
+      }
+    }
+  };
+  walk(root);
+  assert(offenders.length === 0, `process.env read outside src/config.ts: ${offenders.join(", ")}`);
 }

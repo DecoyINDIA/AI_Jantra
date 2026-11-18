@@ -116,6 +116,23 @@ const dataDirs = resolveDataDirs(process.env);
 export const config = {
   // Raw key:clientId[:subject] records; parsed in src/server/auth/apiKeys.ts.
   remoteApiKeysRaw: process.env.JANTRA_REMOTE_API_KEYS ?? "",
+  // Server entry points (src/server/index.ts local, src/server/remote.ts hosted).
+  serverHost: process.env.JANTRA_SERVER_HOST ?? "0.0.0.0",
+  serverPort: process.env.JANTRA_SERVER_PORT ? Number(process.env.JANTRA_SERVER_PORT) : 4317,
+  loopbackToken: process.env.JANTRA_LOOPBACK_TOKEN ?? "",
+  localAllowedOrigins: (process.env.JANTRA_ALLOWED_ORIGINS ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+  adminToken: process.env.JANTRA_ADMIN_TOKEN ?? "",
+  defaultClientId: process.env.JANTRA_CLIENT_ID ?? "xolver",
+  // Logto (end-user identity for leads); overridable for non-prod tenants.
+  logtoIssuer: process.env.JANTRA_LOGTO_ISSUER ?? "https://auth.xolver.in/oidc",
+  logtoAudience: process.env.JANTRA_LOGTO_AUDIENCE ?? "https://api.jantra.in",
+  logtoJwksUrl: process.env.JANTRA_LOGTO_JWKS_URL ?? "https://auth.xolver.in/oidc/jwks",
+  // Firebnb concierge tool backend (operator-configured, not caller-supplied).
+  firebnbFunctionsUrl: process.env.FIREBNB_FUNCTIONS_URL || "http://127.0.0.1:54321/functions/v1",
+  firebnbServiceToken: process.env.JANTRA_FIREBNB_SERVICE_TOKEN || "",
   // Shared secret the Cloudflare edge sends as X-Jantra-Edge-Secret. When set,
   // public-scope requests without it are refused, so a leaked public key cannot
   // be used against the origin directly.
