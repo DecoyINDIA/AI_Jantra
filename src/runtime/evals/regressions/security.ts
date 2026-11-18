@@ -4,6 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { Agent } from "../../../agent.js";
 import { AuditLogger, auditChainHash, verifyAuditChainText } from "../../../audit.js";
+import { decryptSecret, DecryptionError, encryptSecret } from "../../../security/encryption.js";
 import { config, resolveDataDirs } from "../../../config.js";
 import { createProject } from "../../../pipeline/orchestrator.js";
 import { JsonProjectStore } from "../../../pipeline/store.js";
@@ -754,4 +755,36 @@ export async function verifySecurityHeadersAndReportCsp(): Promise<void> {
     await app.close();
     rmSync(tmp, { recursive: true, force: true });
   }
+}
+
+export function verifyCredentialEncryptionStrictness(): void {
+  const key = Buffer.alloc(32, 7);
+  const blob = encryptSecret("stripe-secret-value", key);
+  assert(decryptSecret(blob, key) === "stripe-secret-value", "Round trip must work.");
+
+  const [version, iv, tag, data] = blob.split(":") as [string, string, string, string];
+  const rejects = (candidate: string, label: string) => {
+    let threw = false;
+    try {
+      decryptSecret(candidate, key);
+    } catch (err) {
+      threw = err instanceof DecryptionError;
+    }
+    assert(threw, `${label} must be rejected with DecryptionError.`);
+  };
+  // Node would otherwise verify only the first 4 bytes of a truncated tag.
+  rejects(`${version}:${iv}:${tag.slice(0, 8)}:${data}`, "4-byte GCM tag");
+  rejects(`${version}:${iv}:${tag.slice(0, 24)}:${data}`, "12-byte GCM tag");
+  rejects(`${version}:${iv.slice(0, 16)}:${tag}:${data}`, "short IV");
+  rejects(`${version}:${iv}:${tag}:${data}0`, "odd-length ciphertext");
+  const flipped = (Number.parseInt(data.slice(0, 2), 16) ^ 1).toString(16).padStart(2, "0") + data.slice(2);
+  rejects(`${version}:${iv}:${tag}:${flipped}`, "tampered ciphertext");
+  rejects(blob.replace(/^v1/, "v2"), "unknown version");
+  let wrongKey = false;
+  try {
+    decryptSecret(blob, Buffer.alloc(32, 8));
+  } catch (err) {
+    wrongKey = err instanceof DecryptionError;
+  }
+  assert(wrongKey, "Wrong key must be rejected.");
 }
