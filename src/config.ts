@@ -145,6 +145,9 @@ export const config = {
   ]),
   dataDir: dataDirs.dataDir,
   auditDir: dataDirs.auditDir,
+  // Key for HMAC-chaining audit lines. Keep it off the audit disk; without it
+  // the chain is plain SHA-256 (detects damage, not a determined writer).
+  auditHmacKey: process.env.JANTRA_AUDIT_HMAC_KEY ?? "",
   auditMaxFieldBytes: Math.trunc(numberFromEnv("JANTRA_AUDIT_MAX_FIELD_BYTES", 16 * 1024)),
   projectDir: dataDirs.projectDir,
   leadDir: dataDirs.leadDir,

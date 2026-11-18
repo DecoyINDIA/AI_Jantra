@@ -1,9 +1,9 @@
 import { createHmac } from "node:crypto";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { Agent } from "../../../agent.js";
-import { AuditLogger } from "../../../audit.js";
+import { AuditLogger, auditChainHash, verifyAuditChainText } from "../../../audit.js";
 import { config, resolveDataDirs } from "../../../config.js";
 import { createProject } from "../../../pipeline/orchestrator.js";
 import { JsonProjectStore } from "../../../pipeline/store.js";
@@ -475,6 +475,114 @@ export async function verifyEdgeSecretOriginLock(): Promise<void> {
   } finally {
     await locked.close();
     await unlocked.close();
+    rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+export async function verifyAuditHashChain(): Promise<void> {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "jantra-"));
+  const runId = "chain-run";
+  const file = path.join(dir, `${runId}.jsonl`);
+  const read = () => readFileSync(file, "utf8");
+  const originalKey = config.auditHmacKey;
+  try {
+    // A pre-chain legacy line is tolerated as a prefix.
+    writeFileSync(file, JSON.stringify({ ts: "2025-01-01T00:00:00Z", runId, type: "handoff" }) + "\n");
+
+    // Two loggers on one file, interleaved, must share one chain.
+    const first = new AuditLogger(runId, dir);
+    const second = new AuditLogger(runId, dir);
+    first.record("handoff", { clientId: "t1", note: "one" });
+    second.record("handoff", { clientId: "t1", note: "two" });
+    first.record("handoff", { clientId: "t1", note: "three", seq: 999, hash: "forged", prevHash: "x" });
+
+    let report = verifyAuditChainText(read());
+    assert(report.ok, `Fresh chain must verify: ${JSON.stringify(report)}`);
+    assert(report.legacyEntries === 1 && report.headSeq === 3, `Unexpected chain shape: ${JSON.stringify(report)}`);
+
+    // Another process appending a properly chained line: our cached head is
+    // stale, and the next write must link to the new tail, not fork.
+    const outsiderBody = {
+      ts: new Date().toISOString(), runId, type: "handoff", clientId: "t1",
+      seq: report.headSeq + 1, prevHash: report.headHash, hashAlg: "sha256",
+    };
+    const outsider = { ...outsiderBody, hash: auditChainHash(report.headHash, JSON.stringify(outsiderBody)) };
+    writeFileSync(file, read() + JSON.stringify(outsider) + "\n");
+    first.record("handoff", { clientId: "t1", note: "after outsider" });
+    report = verifyAuditChainText(read());
+    assert(report.ok && report.headSeq === 5, `Chain forked after external append: ${JSON.stringify(report)}`);
+
+    const good = read();
+    const lines = good.trimEnd().split("\n");
+
+    const edited = good.replace('"note":"two"', '"note":"TWO"');
+    report = verifyAuditChainText(edited);
+    assert(!report.ok && report.brokenAtLine === 3, `Edited entry not caught: ${JSON.stringify(report)}`);
+
+    const deleted = [...lines.slice(0, 2), ...lines.slice(3)].join("\n");
+    report = verifyAuditChainText(deleted);
+    assert(!report.ok, "Deleted middle entry not caught.");
+
+    const reordered = [lines[0], lines[2], lines[1], ...lines.slice(3)].join("\n");
+    report = verifyAuditChainText(reordered);
+    assert(!report.ok, "Reordered entries not caught.");
+
+    const unchainedInsert = [...lines.slice(0, 3), JSON.stringify({ ts: "x", runId, type: "handoff" }), ...lines.slice(3)].join("\n");
+    report = verifyAuditChainText(unchainedInsert);
+    assert(!report.ok && report.reason === "unchained entry after chain start", "Inserted unchained entry not caught.");
+
+    // HMAC mode: a writer without the key cannot produce a chain that verifies.
+    (config as Record<string, unknown>).auditHmacKey = "audit-hmac-test-key";
+    const keyedRun = "chain-run-keyed";
+    const keyed = new AuditLogger(keyedRun, dir);
+    keyed.record("handoff", { clientId: "t1" });
+    keyed.record("handoff", { clientId: "t1" });
+    const keyedText = readFileSync(path.join(dir, `${keyedRun}.jsonl`), "utf8");
+    assert(verifyAuditChainText(keyedText, "audit-hmac-test-key").ok, "HMAC chain must verify with its key.");
+    assert(!verifyAuditChainText(keyedText, "wrong-key").ok, "HMAC chain must fail with the wrong key.");
+    assert(!verifyAuditChainText(keyedText, "").ok, "HMAC chain must not verify as plain SHA-256.");
+  } finally {
+    (config as Record<string, unknown>).auditHmacKey = originalKey;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+export async function verifyAuditVerifyRoute(): Promise<void> {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "jantra-"));
+  const app = createServer({
+    mode: "remote",
+    loopbackToken: "",
+    store: new JsonProjectStore(tmp),
+    checkCatalogModels: false,
+    apiKeys: [
+      { key: "pub-key", clientId: "t1", subject: "web" },
+      { key: "full-key", clientId: "t1", subject: "ops" },
+      { key: "other-key", clientId: "t2", subject: "ops" },
+    ],
+  });
+  try {
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/runs",
+      headers: { authorization: "Bearer full-key" },
+      payload: { agentId: "intake-public", title: "audit verify" },
+    });
+    assert(created.statusCode === 200, `Run create failed: ${created.statusCode} ${created.body}`);
+    const runId = (created.json() as { run: { id: string } }).run.id;
+    const url = `/v1/runs/${runId}/audit/verify`;
+
+    const full = await app.inject({ method: "GET", url, headers: { authorization: "Bearer full-key" } });
+    assert(full.statusCode === 200, `Full key verify: expected 200, got ${full.statusCode}`);
+    const chain = (full.json() as { chain: { ok: boolean; headSeq: number } }).chain;
+    assert(chain.ok && chain.headSeq >= 1, `New run's audit chain must verify: ${full.body}`);
+
+    const pub = await app.inject({ method: "GET", url, headers: { authorization: "Bearer pub-key" } });
+    assert(pub.statusCode === 403, `Public key verify: expected 403, got ${pub.statusCode}`);
+
+    const other = await app.inject({ method: "GET", url, headers: { authorization: "Bearer other-key" } });
+    assert(other.statusCode === 404 || other.statusCode === 403, `Cross-tenant verify: got ${other.statusCode}`);
+  } finally {
+    await app.close();
     rmSync(tmp, { recursive: true, force: true });
   }
 }
