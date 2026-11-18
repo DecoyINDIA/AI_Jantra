@@ -2,16 +2,46 @@ appId: ai.jantra.desktop
 productName: Jantra
 directories:
   output: release
+# Only files under this directory are packed. The runtime (repo dist/) and the
+# web UI (web/dist) are copied in by `npm run stage` (scripts/stage.mjs);
+# ../ globs are silently ignored by electron-builder.
 files:
   - dist/**
-  # Tests are not shipped.
-  - "!dist/**/*.test.*"
+  - runtime/**
+  - web/dist/**
   - package.json
   - assets/**
-  - ../dist/**
-  - ../web/dist/**
+  # Tests and source maps are not shipped.
+  - "!**/*.test.*"
+  - "!**/*.map"
+# better-sqlite3 13.x is a Node-API module with bundled prebuilds for every
+# platform, ABI-stable across Node and Electron, so no per-Electron rebuild is
+# needed. (Rebuilding would also try the workspace root's 12.x copy, which does
+# not compile against Electron 42.)
+npmRebuild: false
+# Native modules cannot load from inside the asar archive.
+asarUnpack:
+  - "**/node_modules/better-sqlite3/**"
+# Electron fuses are flipped in the shipped binary (they cannot be changed at
+# runtime). With these on defaults, anyone able to set an environment
+# variable or command-line flag for the app could turn it into a general
+# Node runtime (ELECTRON_RUN_AS_NODE, NODE_OPTIONS, --inspect) or load code
+# from outside the signed archive.
+# enableEmbeddedAsarIntegrityValidation stays off until it can be verified on
+# signed Windows/macOS builds; a misconfigured integrity hash stops the app
+# from starting.
+electronFuses:
+  runAsNode: false
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  onlyLoadAppFromAsar: true
+  grantFileProtocolExtraPrivileges: false
+  loadBrowserProcessSpecificV8Snapshot: false
 extraMetadata:
   main: dist/main.js
+# Without this the Linux binary is named after the npm scope (@jantradesktop).
+executableName: jantra
 win:
   icon: assets/icon.png
   target:

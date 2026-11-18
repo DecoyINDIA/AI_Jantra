@@ -130,3 +130,31 @@ jobs:
         run: |
           npm run build -w @jantra/desktop
           xvfb-run -a npm run test:e2e -w @jantra/desktop
+
+  desktop-package:
+    name: Desktop package (build + acceptance)
+    runs-on: ubuntu-latest
+    needs: typecheck
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build runtime, web UI and desktop shell
+        run: npm run build && npm run web:build && npm run build -w @jantra/desktop
+
+      # Unpacked Linux build: stages runtime + UI, applies Electron fuses.
+      - name: Package desktop app
+        run: npm run dist -w @jantra/desktop -- --linux dir
+
+      # Launches the packaged binary: UI over app://, API + CORS, licensed run
+      # in SQLite, persistence across restart, CSP and window policy.
+      - name: Packaged app acceptance
+        run: xvfb-run -a npm run test:packaged -w @jantra/desktop
+

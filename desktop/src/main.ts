@@ -1,5 +1,8 @@
 import { app, BrowserWindow, session } from "electron";
-import { autoUpdater } from "electron-updater";
+// electron-updater is CommonJS with lazily defined exports, which Node's ESM
+// loader cannot see as named exports; importing { autoUpdater } crashes the
+// app at startup. Use the default export.
+import electronUpdater from "electron-updater";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { existsSync } from "node:fs";
@@ -10,7 +13,14 @@ import { activateLicense, licenseStatus } from "./licensing.js";
 import { desktopAuditDir, desktopDatabasePath, desktopLicensePath, desktopProjectDir } from "./paths.js";
 import { readProviderConfig, writeProviderConfig, type DesktopProviderConfig } from "./providerConfig.js";
 import { readCredentials, readGeminiKey, writeCredentials, writeGeminiKey, writeOpenAiKey } from "./secrets.js";
-import { denyAllPermissions, installDesktopSecurity, trustedIpcHandler } from "./electronSecurity.js";
+import {
+  denyAllPermissions,
+  installDesktopSecurity,
+  registerAppSchemePrivileges,
+  serveAppProtocol,
+  trustedIpcHandler,
+} from "./electronSecurity.js";
+import { APP_ENTRY, APP_ORIGIN } from "./windowSecurity.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -20,8 +30,28 @@ interface ApiHandle {
   loopbackToken: string;
 }
 
+const { autoUpdater } = electronUpdater;
+
 let mainWindow: BrowserWindow | null = null;
 let apiHandle: ApiHandle | null = null;
+
+// Scheme privileges must be registered before the app is ready.
+registerAppSchemePrivileges();
+
+/**
+ * Compiled runtime (API server + stores), staged into the app as runtime/ by
+ * scripts/stage.mjs. Dev and packaged builds use the same layout, so the
+ * runtime's imports resolve against the desktop package's node_modules in
+ * both (that is where the Electron-compatible better-sqlite3 lives).
+ */
+function runtimeModule(relative: string): string {
+  return `../runtime/${relative}`;
+}
+
+/** Built web UI, staged into the app as web/dist. */
+function webRoot(): string {
+  return join(app.getAppPath(), "web", "dist");
+}
 
 function configureAutoUpdater(): void {
   if (app.isPackaged) {
@@ -61,8 +91,8 @@ async function startApi(): Promise<ApiHandle> {
     }
   }
 
-  const serverModulePath = "../../dist/server/app.js";
-  const sqliteModulePath = "../../dist/pipeline/store/sqlite.js";
+  const serverModulePath = runtimeModule("server/app.js");
+  const sqliteModulePath = runtimeModule("pipeline/store/sqlite.js");
   const [{ startLocalApi }, { SqliteProjectStore }] = (await Promise.all([
     import(serverModulePath),
     import(sqliteModulePath),
@@ -81,6 +111,9 @@ async function startApi(): Promise<ApiHandle> {
     clientId: "xolver",
     store: new SqliteProjectStore(desktopDatabasePath()),
     adminToken: process.env.JANTRA_ADMIN_TOKEN,
+    // The UI calls the API from app://jantra (or the dev server); allow
+    // exactly that origin for CORS. The loopback token is still required.
+    allowedOrigins: [APP_ORIGIN, ...devOrigin()],
     licenseEnforcement: true,
     checkCatalogModels: false,
   });
@@ -89,7 +122,17 @@ async function startApi(): Promise<ApiHandle> {
 function webEntry(): string {
   const devUrl = process.env.JANTRA_DESKTOP_WEB_URL;
   if (devUrl) return devUrl;
-  return join(app.getAppPath(), "web", "dist", "index.html");
+  return APP_ENTRY;
+}
+
+function devOrigin(): string[] {
+  const devUrl = process.env.JANTRA_DESKTOP_WEB_URL;
+  if (!devUrl) return [];
+  try {
+    return [new URL(devUrl).origin];
+  } catch {
+    return [];
+  }
 }
 
 async function createMainWindow(api: ApiHandle): Promise<void> {
@@ -116,10 +159,8 @@ async function createMainWindow(api: ApiHandle): Promise<void> {
   });
 
   const entry = webEntry();
-  if (/^https?:\/\//.test(entry)) {
+  if (entry !== APP_ENTRY || existsSync(join(webRoot(), "index.html"))) {
     await mainWindow.loadURL(entry);
-  } else if (existsSync(entry)) {
-    await mainWindow.loadFile(entry);
   } else {
     await mainWindow.loadURL("data:text/plain,Jantra web build was not found.");
   }
@@ -179,9 +220,21 @@ if (!gotLock) {
     await apiHandle?.app.close();
   });
 
-  await app.whenReady();
-  denyAllPermissions(session.defaultSession);
-  apiHandle = await startApi();
-  await createMainWindow(apiHandle);
-  configureAutoUpdater();
+  // Not a top-level await: with an ES-module entry, Electron finishes
+  // evaluating the main module before it emits "ready", so awaiting
+  // whenReady() at top level deadlocks and the app never starts.
+  void app
+    .whenReady()
+    .then(async () => {
+      denyAllPermissions(session.defaultSession);
+      serveAppProtocol(session.defaultSession, webRoot());
+      apiHandle = await startApi();
+      await createMainWindow(apiHandle);
+      configureAutoUpdater();
+    })
+    .catch((error: unknown) => {
+      // Fail visibly rather than leaving a windowless process running.
+      console.error("Jantra failed to start:", error);
+      app.exit(1);
+    });
 }
