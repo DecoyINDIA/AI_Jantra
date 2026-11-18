@@ -1,6 +1,49 @@
-import { app, ipcMain, shell, type BrowserWindow, type IpcMainInvokeEvent, type Session } from "electron";
+import { readFile } from "node:fs/promises";
+import { sep } from "node:path";
 
-import { decideNavigation, decideWindowOpen, isAppUrl } from "./windowSecurity.js";
+import { app, ipcMain, protocol, shell, type BrowserWindow, type IpcMainInvokeEvent, type Session } from "electron";
+
+import {
+  APP_CSP,
+  APP_SCHEME,
+  contentTypeFor,
+  decideNavigation,
+  decideWindowOpen,
+  isAppUrl,
+  resolveAppAsset,
+} from "./windowSecurity.js";
+
+/** Must run before app "ready". Standard + secure gives app:// a real origin. */
+export function registerAppSchemePrivileges(): void {
+  protocol.registerSchemesAsPrivileged([
+    { scheme: APP_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } },
+  ]);
+}
+
+/**
+ * Serve the bundled web UI over app://jantra/ from webRoot (inside the asar
+ * in packaged builds). Only files under webRoot are reachable; HTML responses
+ * carry the console CSP.
+ */
+export function serveAppProtocol(target: Session, webRoot: string): void {
+  target.protocol.handle(APP_SCHEME, async (request) => {
+    const file = request.method === "GET" ? resolveAppAsset(request.url, webRoot, sep) : null;
+    if (!file) return new Response("Not found", { status: 404 });
+    try {
+      const body = await readFile(file);
+      const type = contentTypeFor(file);
+      const headers: Record<string, string> = {
+        "content-type": type,
+        "x-content-type-options": "nosniff",
+        "cache-control": "no-store",
+      };
+      if (type.startsWith("text/html")) headers["content-security-policy"] = APP_CSP;
+      return new Response(body, { status: 200, headers });
+    } catch {
+      return new Response("Not found", { status: 404 });
+    }
+  });
+}
 
 export interface DesktopSecurityOptions {
   getMainWindow: () => BrowserWindow | null;

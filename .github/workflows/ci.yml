@@ -12,6 +12,11 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same PR or branch cancels the superseded run.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 # Third-party actions are pinned to full commit SHAs (version in the trailing
 # comment) so a moved or compromised tag cannot change what CI executes.
 
@@ -134,3 +139,55 @@ jobs:
         run: |
           npm run build -w @jantra/desktop
           xvfb-run -a npm run test:e2e -w @jantra/desktop
+
+  desktop-package:
+    name: Desktop package (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: typecheck
+    # A stuck GUI app must not hold a runner for GitHub's 6-hour default.
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: --linux dir
+            run: xvfb-run -a npm run test:packaged -w @jantra/desktop
+          - os: windows-latest
+            target: --win dir
+            run: npm run test:packaged -w @jantra/desktop
+          - os: macos-latest
+            target: --mac dir
+            run: npm run test:packaged -w @jantra/desktop
+    env:
+      # Unsigned CI builds; signing needs the owner's certificates.
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          # The packaged app ships its own Node (Electron); the host Node only
+          # runs the build tools and the CDP harness, which uses the global
+          # WebSocket (Node >= 22).
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build runtime, web UI and desktop shell
+        run: npm run build && npm run web:build && npm run build -w @jantra/desktop
+
+      # Unpacked build: stages runtime + UI, applies Electron fuses (including
+      # asar integrity validation on Windows and macOS).
+      - name: Package desktop app
+        run: npm run dist -w @jantra/desktop -- ${{ matrix.target }}
+
+      # Launches the packaged binary: UI over app://, API + CORS, licensed run
+      # in SQLite, persistence across restart, CSP and window policy.
+      - name: Packaged app acceptance
+        run: ${{ matrix.run }}
