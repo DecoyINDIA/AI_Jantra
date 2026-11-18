@@ -3,22 +3,26 @@ name: CI
 on:
   push:
     branches: [main]
+  # Every pull request, including ones stacked on other branches; a base-branch
+  # filter left stacked PRs with no CI at all.
   pull_request:
-    branches: [main]
 
 # Least privilege: CI only needs to read the repo. A compromised dependency or
 # action then cannot push code or tamper with releases through GITHUB_TOKEN.
 permissions:
   contents: read
 
+# Third-party actions are pinned to full commit SHAs (version in the trailing
+# comment) so a moved or compromised tag cannot change what CI executes.
+
 jobs:
   typecheck:
     name: Typecheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 20
           cache: npm
@@ -34,9 +38,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: typecheck
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 20
           cache: npm
@@ -57,7 +61,7 @@ jobs:
         run: npm run build --workspace=@jantra/embed-widget
 
       - name: Upload runtime dist
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: runtime-dist
           path: dist/
@@ -68,9 +72,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: typecheck
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 20
           cache: npm
@@ -95,9 +99,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: typecheck
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 20
           cache: npm
