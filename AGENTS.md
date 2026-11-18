@@ -6,7 +6,7 @@ Jantra AI is a TypeScript agent runtime with a Fastify API. Runs ("projects") mo
 Read `docs/ARCHITECTURE.md` if present, else this file; then the repository map:
 ```
 src/config.ts                 all env parsing (some files still read process.env; do not add more)
-src/audit.ts                  AuditLogger.record(type, data) -> <auditDir>/<runId>.jsonl; AuditType union lists valid types
+src/audit.ts                  AuditLogger.record(type, data) -> <auditDir>/<runId>.jsonl (hash-chained, per-file lock); AuditType union; verifyAuditFile
 src/types.ts                  ToolDef, Policy, AgentSpec
 src/policy.ts                 RuleBasedPolicy; sanitizeUntrustedWebContent; runArtifactOutputChecks
 src/agent.ts                  tool-loop Agent class
@@ -20,9 +20,10 @@ src/pipeline/stages/          intake.ts · research.ts · planning.ts · opsOnbo
 src/pipeline/research/        citationVerifier.ts · webFetch.ts · sourceRegistry.ts · sourceSelection.ts · schemas.ts
 src/pipeline/ops/             formulaEngine.ts · anomalyEngine.ts · connectors/{csv,stripe,shopify,registry,base}.ts · fixtures.ts
 src/runtime/                  errors.ts · telemetry.ts (cost) · intakeBudget.ts · gatewayBudget.ts · interactions.ts · evaluator.ts
-src/runtime/evals/            index.ts (entry) · regressions.ts (20 checks) · judge.ts · opsEvals.ts · smoke.ts
+src/runtime/evals/            index.ts (entry) · regressions/ (one file per area; index.ts lists every check) · judge.ts · opsEvals.ts · smoke.ts
 src/server/app.ts             createServer({mode: "local"|"remote", ...}); hook order: rate limit -> auth -> admin -> routes
-src/server/auth/apiKeys.ts    parseApiKeyRecords, resolveApiKeyIdentity, installApiKeyAuth, hashApiKey
+src/server/auth/apiKeys.ts    parseApiKeyRecords, resolveApiKeyIdentity, installApiKeyAuth (edge-secret lock for public keys), hashApiKey
+src/server/runAccess.ts       per-run visitor token for public-scope runs (issueRunAccessToken, assertRunTokenAccess)
 src/server/tenancy.ts         Identity, requestClientId, assertProjectAccess
 src/server/errors.ts          HttpError, notFound, forbidden, unauthorized, conflict, sendHttpError
 src/server/schemas.ts         every request schema; parseWith(schema, value) throws HttpError 400
@@ -30,9 +31,14 @@ src/server/routes/            runs · interactions · artifacts · audit · even
 src/server/webhooks/          store.ts · urlGuard.ts · delivery.ts · dispatcher.ts
 src/server/leads/store.ts     JsonLeadStore
 src/util/fetchWithTimeout.ts  fetchWithTimeout(input, init, timeoutMs)
+src/util/safeFetch.ts         the shared guarded fetch (SSRF guard via netGuard.ts); webhookSignature.ts signs/verifies webhooks
+src/security/encryption.ts    AES-256-GCM credential encryption, record-bound (v2)
 src/server/smoke.ts           HTTP smoke test (mock provider)
-deploy/cloudflare-worker/     worker.js (edge) · wrangler.toml · verify-edge.mjs
+deploy/cloudflare-worker/     worker.js (edge: origin allowlist, Turnstile, edge secret) · wrangler.toml · verify-edge.mjs
 web/ · desktop/ · packages/client · packages/embed-widget     npm workspaces
+desktop/                      src/main.ts · electronSecurity.ts + windowSecurity.ts (app:// scheme, window/IPC policy) · scripts/stage.mjs · test/ (Electron e2e, packaged acceptance)
+scripts/                      run-tests.mjs · audit-gate.mjs · secret-scan.mjs
+docs/THREAT_MODEL.md          threats, controls, residual risk, open recommendations
 Dockerfile · render.yaml · railway.toml · .github/workflows/ci.yml
 ```
 
@@ -52,7 +58,7 @@ Dockerfile · render.yaml · railway.toml · .github/workflows/ci.yml
 - **Never produce an artifact that states an action happened unless it did.**
 
 ## Conventions
-- TypeScript strict, Node ≥ 20, ESM (`"type": "module"`).
+- TypeScript strict, Node ≥ 22, ESM (`"type": "module"`).
 - Imports use the `.js` extension for local TypeScript files: `import { x } from "./file.js";`.
 - Validate every request with a Zod schema in `src/server/schemas.ts` and `parseWith`.
 - Throw `HttpError` (or helpers) for client errors; never `reply.status(500)` by hand.
@@ -64,7 +70,7 @@ Dockerfile · render.yaml · railway.toml · .github/workflows/ci.yml
 - Do not add dependencies unless explicitly instructed.
 
 ## How regressions are written
-In `src/runtime/evals/regressions.ts`: write `async function verifySomething(): Promise<void>` that throws on failure (use the local `assert(condition, message)` helper), then add one line to the array in `runRegressionEvals()`:
+In the matching file under `src/runtime/evals/regressions/` (for example `security.ts`): write `async function verifySomething(): Promise<void>` that throws on failure (use `assert(condition, message)` from `common.ts`), then add one line to the array in `runRegressionEvals()` in `regressions/index.ts`:
 ```ts
 await runRegression("kebab-case-id", verifySomething),
 ```
@@ -73,14 +79,17 @@ For HTTP behaviour build an app in-process with `createServer({ mode: "remote", 
 ## Commands
 - `npm ci`
 - `npm run typecheck`
+- `npm test`
 - `npm run eval`
 - `npm run smoke`
 - `npm run server:smoke`
+- `npm run edge:verify:local`
+- `npm test -w @jantra/desktop` · `npm run test:e2e -w @jantra/desktop` (xvfb on Linux) · `npm run test:packaged -w @jantra/desktop` (after `npm run dist -w @jantra/desktop -- --linux dir`)
 - `npm run server`
 - `npm run pipeline`
 
 ## Definition of done
 - `npm run typecheck` clean.
-- Eval, smoke, and server smoke green (`npm run eval`, `npm run smoke`, `npm run server:smoke`).
+- Unit tests, eval, smoke, and server smoke green (`npm test`, `npm run eval`, `npm run smoke`, `npm run server:smoke`); CI also runs the security, edge and desktop jobs.
 - A regression added for every behaviour change.
 - Docs updated if behaviour changed.

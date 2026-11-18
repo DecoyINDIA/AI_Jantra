@@ -14,10 +14,8 @@ files:
   # Tests and source maps are not shipped.
   - "!**/*.test.*"
   - "!**/*.map"
-# better-sqlite3 13.x is a Node-API module with bundled prebuilds for every
-# platform, ABI-stable across Node and Electron, so no per-Electron rebuild is
-# needed. (Rebuilding would also try the workspace root's 12.x copy, which does
-# not compile against Electron 42.)
+# better-sqlite3 13.x is a Node-API module: the binary npm builds at install
+# is ABI-stable across Node and Electron, so no per-Electron rebuild is needed.
 npmRebuild: false
 # Native modules cannot load from inside the asar archive.
 asarUnpack:

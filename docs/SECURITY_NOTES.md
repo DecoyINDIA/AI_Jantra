@@ -23,4 +23,5 @@
 - API responses carry `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and `Referrer-Policy: no-referrer`. The HTML report export also carries a strict CSP, embedded in the document too so `blob:` copies stay protected.
 - Desktop: renderers are sandboxed, external links open in the system browser, report windows get no preload, the main window cannot navigate away from the app, and IPC only answers the main window's app URL (`desktop/src/electronSecurity.ts`).
 - Connector credentials are AES-256-GCM encrypted and bound to `(clientId, connector)` as associated data (`v2:` format); legacy `v1:` blobs are re-encrypted at startup and on read.
+- Runtime: Node 22 LTS everywhere (Docker image, CI, `engines`, `.nvmrc`). The production image is multi-stage; the C++ toolchain used to build better-sqlite3 exists only in the build stage.
 - Threat model, residual risks, and open recommendations: `docs/THREAT_MODEL.md`.
