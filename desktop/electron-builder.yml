@@ -4,6 +4,8 @@ directories:
   output: release
 files:
   - dist/**
+  # Tests are not shipped.
+  - "!dist/**/*.test.*"
   - package.json
   - assets/**
   - ../dist/**
