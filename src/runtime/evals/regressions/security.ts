@@ -998,3 +998,27 @@ export async function verifyAuditChainAcrossProcesses(): Promise<void> {
     rmSync(dir, { recursive: true, force: true });
   }
 }
+
+export async function verifyLocalApiCustomSchemeOrigin(): Promise<void> {
+  const token = "local-origin-token";
+  const app = createServer({ loopbackToken: token, allowedOrigins: ["app://jantra"], checkCatalogModels: false });
+  try {
+    const call = (origin: string, auth = true) =>
+      app.inject({
+        method: "GET",
+        url: "/v1/agents",
+        headers: { host: "127.0.0.1:4317", origin, ...(auth ? { authorization: `Bearer ${token}` } : {}) },
+      });
+    const desktop = await call("app://jantra");
+    assert(desktop.statusCode === 200, `Desktop UI origin must be served: ${desktop.statusCode}`);
+    assert(desktop.headers["access-control-allow-origin"] === "app://jantra", "CORS must echo the exact desktop origin");
+    for (const other of ["app://evil", "app://jantra.evil", "jantra://jantra", "https://jantra"]) {
+      const res = await call(other);
+      assert(res.statusCode === 403, `Origin ${other} must be refused, got ${res.statusCode}`);
+    }
+    const noToken = await call("app://jantra", false);
+    assert(noToken.statusCode === 401, `An allowed origin still needs the loopback token: ${noToken.statusCode}`);
+  } finally {
+    await app.close();
+  }
+}
