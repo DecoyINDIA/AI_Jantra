@@ -17,4 +17,5 @@
 - With `JANTRA_EDGE_SECRET` set, the origin refuses public-scope keys unless the request carries the edge's shared secret, so a leaked public key cannot bypass the edge or spoof `X-Jantra-Client-IP` (`src/server/auth/apiKeys.ts`).
 - With `TURNSTILE_SECRET_KEY` set on the Worker, creating a run or a lead requires a Cloudflare Turnstile token; verification fails closed and checks the token's hostname (`deploy/cloudflare-worker/worker.js`).
 - Audit JSONL lines are hash-chained (`seq`, `prevHash`, `hash`; HMAC-SHA256 with `JANTRA_AUDIT_HMAC_KEY`). Check a run with `GET /v1/runs/:runId/audit/verify` (full scope) or `verifyAuditFile` in `src/audit.ts`.
+- Public runs are bound to their creator: `POST /v1/runs` with a public key returns a one-time `runToken` (only its hash is stored), required as `X-Jantra-Run-Token` for every later public call on that run, including linking a lead (`src/server/runAccess.ts`).
 - Threat model, residual risks, and open recommendations: `docs/THREAT_MODEL.md`.

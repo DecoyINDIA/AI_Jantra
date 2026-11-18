@@ -116,6 +116,7 @@ type StageStep =
 
 interface RunEnvelope {
   run: { id: string };
+  runToken?: string;
   step?: StageStep;
 }
 
@@ -203,6 +204,9 @@ export function mountJantraIntakeWidget(options: JantraIntakeOptions): JantraInt
 
   let destroyed = false;
   let runId: string | null = null;
+  // Proves to the server that this browser created the run; sent on every
+  // later call for it. Held in memory only.
+  let runToken: string | null = null;
   let busy = false;
 
   const container = options.container;
@@ -372,6 +376,7 @@ export function mountJantraIntakeWidget(options: JantraIntakeOptions): JantraInt
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       const headers = new Headers(init.headers);
       if (options.apiKey) headers.set("Authorization", `Bearer ${options.apiKey}`);
+      if (runToken) headers.set("X-Jantra-Run-Token", runToken);
       if (opts.challenge && options.turnstileSiteKey) {
         headers.set(TURNSTILE_HEADER, await challengeToken());
       }
@@ -552,6 +557,7 @@ export function mountJantraIntakeWidget(options: JantraIntakeOptions): JantraInt
         body: JSON.stringify({ agentId, title: options.title ?? "Website intake" }),
       }, { challenge: true });
       runId = created.run.id;
+      runToken = created.runToken ?? null;
       const advanced = await request<RunEnvelope>(`/v1/runs/${runId}/advance`, { method: "POST" });
       handleStep(advanced.step, typing);
     } catch (error) {

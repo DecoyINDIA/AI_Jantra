@@ -586,3 +586,97 @@ export async function verifyAuditVerifyRoute(): Promise<void> {
     rmSync(tmp, { recursive: true, force: true });
   }
 }
+
+export async function verifyPublicRunTokenBinding(): Promise<void> {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "jantra-"));
+  const store = new JsonProjectStore(tmp);
+  const leadStore = new JsonLeadStore({ projectStore: store });
+  const app = createServer({
+    mode: "remote",
+    loopbackToken: "",
+    store,
+    leadStore,
+    checkCatalogModels: false,
+    apiKeys: [
+      { key: "pub-key", clientId: "t1", subject: "web" },
+      { key: "full-key", clientId: "t1", subject: "ops" },
+    ],
+  });
+  const pub = { authorization: "Bearer pub-key" };
+  try {
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/runs",
+      headers: pub,
+      payload: { agentId: "intake-public", title: "token binding" },
+    });
+    assert(created.statusCode === 200, `Public run create failed: ${created.body}`);
+    const body = created.json() as { run: { id: string; visitorTokenHash?: string }; runToken?: string };
+    const runId = body.run.id;
+    const token = body.runToken;
+    assert(typeof token === "string" && token.length >= 43, "Public run must return a 256-bit runToken.");
+    assert(!JSON.stringify(body.run).includes(token), "The run record must not contain the raw token.");
+    const stored = store.loadProject("t1", runId);
+    assert(stored?.visitorTokenHash && stored.visitorTokenHash !== token, "Only the token hash may be persisted.");
+
+    const withToken = { ...pub, "x-jantra-run-token": token };
+    const wrongToken = { ...pub, "x-jantra-run-token": "A".repeat(43) };
+    const checks: Array<[string, string, string, Record<string, string>, unknown, number]> = [
+      ["read without token", "GET", `/v1/runs/${runId}`, pub, undefined, 404],
+      ["read with wrong token", "GET", `/v1/runs/${runId}`, wrongToken, undefined, 404],
+      ["interactions without token", "GET", `/v1/runs/${runId}/interactions`, pub, undefined, 404],
+      ["advance without token", "POST", `/v1/runs/${runId}/advance`, pub, undefined, 404],
+      ["answer without token", "POST", `/v1/runs/${runId}/interactions/x`, pub, { text: "hi" }, 404],
+      ["read with token", "GET", `/v1/runs/${runId}`, withToken, undefined, 200],
+      ["interactions with token", "GET", `/v1/runs/${runId}/interactions`, withToken, undefined, 200],
+    ];
+    for (const [label, method, url, headers, payload, expected] of checks) {
+      const res = await app.inject({
+        method: method as "GET" | "POST",
+        url,
+        headers,
+        ...(payload ? { payload: payload as Record<string, unknown> } : {}),
+      });
+      assert(res.statusCode === expected, `${label}: expected ${expected}, got ${res.statusCode} ${res.body}`);
+    }
+
+    // A wrong token looks exactly like a missing run (no existence oracle).
+    const missing = await app.inject({ method: "GET", url: "/v1/runs/no-such-run", headers: withToken });
+    const wrong = await app.inject({ method: "GET", url: `/v1/runs/${runId}`, headers: wrongToken });
+    assert(
+      missing.statusCode === wrong.statusCode &&
+        (missing.json() as any).error?.code === (wrong.json() as any).error?.code,
+      "Wrong-token and missing-run responses must match.",
+    );
+
+    // Leads: a public caller cannot attach a lead to a run it does not hold.
+    const leadPayload = { name: "V", email: "v@example.com", idea: "x", source: "eval", runId };
+    const hijack = await app.inject({ method: "POST", url: "/v1/leads", headers: pub, payload: leadPayload });
+    assert(hijack.statusCode === 404, `Lead on foreign run: expected 404, got ${hijack.statusCode}`);
+    const own = await app.inject({ method: "POST", url: "/v1/leads", headers: withToken, payload: leadPayload });
+    assert(own.statusCode === 201, `Lead on own run: expected 201, got ${own.statusCode} ${own.body}`);
+
+    // Operators are not bound by visitor tokens.
+    const operator = await app.inject({
+      method: "GET",
+      url: `/v1/runs/${runId}`,
+      headers: { authorization: "Bearer full-key" },
+    });
+    assert(operator.statusCode === 200, `Full key read: expected 200, got ${operator.statusCode}`);
+
+    // A run created by an operator has no visitor token, so public keys cannot open it.
+    const opRun = await app.inject({
+      method: "POST",
+      url: "/v1/runs",
+      headers: { authorization: "Bearer full-key" },
+      payload: { agentId: "intake-public", title: "operator run" },
+    });
+    const opBody = opRun.json() as { run: { id: string }; runToken?: string };
+    assert(opBody.runToken === undefined, "Full-scope run creation must not issue a visitor token.");
+    const pubOnOpRun = await app.inject({ method: "GET", url: `/v1/runs/${opBody.run.id}`, headers: pub });
+    assert(pubOnOpRun.statusCode === 404, `Public read of operator run: expected 404, got ${pubOnOpRun.statusCode}`);
+  } finally {
+    await app.close();
+    rmSync(tmp, { recursive: true, force: true });
+  }
+}

@@ -109,6 +109,8 @@ export interface Project {
   cost: CostRollup;
   /** Truncated SHA-256 hash of the visitor's IP address for public traffic throttling. */
   visitorKey?: string;
+  /** SHA-256 of the run access token issued to the public visitor who created the run. */
+  visitorTokenHash?: string;
   createdAt: string;
   updatedAt: string;
 }

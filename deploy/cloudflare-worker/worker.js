@@ -25,6 +25,11 @@ const UPSTREAM_TIMEOUT_MS = 25_000;
 const TURNSTILE_HEADER = "CF-Turnstile-Response";
 const TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 const TURNSTILE_TIMEOUT_MS = 5_000;
+// Per-run secret returned by POST /v1/runs; the origin requires it on every
+// later call for that run. It is the only X-Jantra-* header a browser may send
+// besides X-Jantra-User.
+const RUN_TOKEN_HEADER = "x-jantra-run-token";
+const BROWSER_JANTRA_HEADERS = new Set(["x-jantra-user", RUN_TOKEN_HEADER]);
 
 // Exact request shapes the public intake widget is allowed to make. Anything
 // else (notably GET /v1/runs which lists the whole tenant) is rejected.
@@ -50,7 +55,7 @@ function corsHeaders(origin) {
   return {
     "Access-Control-Allow-Origin": origin,
     "Vary": "Origin",
-    "Access-Control-Allow-Headers": `content-type, ${TURNSTILE_HEADER.toLowerCase()}`,
+    "Access-Control-Allow-Headers": `content-type, ${TURNSTILE_HEADER.toLowerCase()}, ${RUN_TOKEN_HEADER}`,
     "Access-Control-Allow-Methods": ALLOWED_METHODS,
     "Access-Control-Max-Age": "600",
   };
@@ -175,7 +180,7 @@ export default {
     const target = `${env.JANTRA_ORIGIN.replace(/\/$/, "")}${url.pathname}${url.search}`;
     const headers = new Headers(request.headers);
     for (const name of [...headers.keys()]) {
-      if (name.toLowerCase().startsWith("x-jantra-") && name.toLowerCase() !== "x-jantra-user") {
+      if (name.toLowerCase().startsWith("x-jantra-") && !BROWSER_JANTRA_HEADERS.has(name.toLowerCase())) {
         headers.delete(name);
       }
     }

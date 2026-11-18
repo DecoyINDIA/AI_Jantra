@@ -36,7 +36,7 @@ targeted review, not a full penetration test.
 | T1 | SSRF via webhook URL, Research source, redirect, or DNS rebinding | `safeFetch` resolves and re-checks every hop at connect time; `netGuard` blocklist; manual redirects; size and time caps | Low. IPv6 transition ranges (IPv4-compatible, 6to4, Teredo, local NAT64, site-local) added 2026-11-18 |
 | T2 | Indirect prompt injection from fetched pages | NFKC normalization, invisible-character stripping, pattern redaction, random-id untrusted fence, deterministic quote verification against the sanitized text, human gate | Medium. Pattern matching cannot catch paraphrase or obfuscation such as leetspeak. The fence and the citation verifier are the real boundary |
 | T3 | Cross-tenant access (IDOR) | `requestClientId` from identity; `assertProjectAccess` after each load; store keyed by `clientId` | Low. Covered by existing tenancy regressions |
-| T4 | Visitor reads another visitor's run | Run IDs are random UUIDv4 (bearer capability); public keys limited to an allowlist of routes and agents | Low-medium. Anyone holding a run ID can read and drive it. Bind runs to a visitor session token if run IDs ever appear in URLs, logs or referrers |
+| T4 | Visitor reads or hijacks another visitor's run | Public run creation issues a 256-bit `runToken` (only its SHA-256 is stored); public-scope reads, advances, interactions and lead linking require it, and a wrong token returns the same 404 as a missing run; public keys limited to an allowlist of routes and agents | Low. The token lives in page memory, so XSS on the embedding site could still read it |
 | T5 | Budget exhaustion through the public widget | Edge per-IP limiter; Turnstile token required to create runs or leads when `TURNSTILE_SECRET_KEY` is set (fails closed, checks hostname); origin pre-auth and identity limiters; per-visitor and per-client daily spend ceilings | Low-medium with Turnstile on. A solved token still buys one run; budgets cap the rest |
 | T6 | Webhook spoofing or replay at receivers | HMAC-SHA256 signature; V2 signature binds a timestamp (5 minute tolerance); `X-Jantra-Delivery` ID for deduplication | Low once receivers verify V2. V1 remains for compatibility and is replayable |
 | T7 | Credential brute force or timing attacks | 256-bit keys, SHA-256 lookup, constant-time comparison, pre-auth rate limit | Low |
@@ -65,15 +65,14 @@ reference implementation is `verifyWebhookSignature` in
 
 1. Set `JANTRA_EDGE_SECRET` and `TURNSTILE_SECRET_KEY` in production; both controls are off until configured (T5, T10).
 2. Periodically export each run's `headSeq`/`headHash` to storage outside the audit volume, so tail truncation is detectable (T9).
-3. Visitor-bound run access tokens for public runs (T4).
-4. Move the remaining `process.env` reads in `src/server/index.ts` and `src/server/auth/logtoUser.ts` into `src/config.ts`.
+3. Move the remaining `process.env` reads in `src/server/index.ts` and `src/server/auth/logtoUser.ts` into `src/config.ts`.
 5. Add `npm audit --omit=dev` and secret scanning to CI.
-6. Commission an external penetration test before production traffic.
+5. Commission an external penetration test before production traffic.
 
 ## Regressions guarding this model
 
 `webhook-url-guard`, `ssrf-ipv6-transition-ranges`, `safe-fetch-redirect`,
 `webhook-signature-replay`, `injection-content-neutralized`,
-`injection-bypass-corpus`, `public-key-scope`, `edge-secret-origin-lock`, `rate-limiter-proxy-trust`,
+`injection-bypass-corpus`, `public-key-scope`, `public-run-token-binding`, `edge-secret-origin-lock`, `rate-limiter-proxy-trust`,
 `audit-redaction-truncation`, `audit-hash-chain`, `audit-verify-route`, `error-envelope-no-leak`, `csv-directory-resolve`.
-Edge checks (`npm run edge:verify:local`): Turnstile missing, forged, wrong-hostname and verifier-down cases; direct origin calls without or with a wrong edge secret; browser header smuggling.
+Edge checks (`npm run edge:verify:local`): Turnstile missing, forged, wrong-hostname and verifier-down cases; direct origin calls without or with a wrong edge secret; run access without or with a wrong run token; browser header smuggling.

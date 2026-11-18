@@ -692,14 +692,17 @@ export async function verifySqliteMigrationsAndStores(): Promise<void> {
     });
     assert(allowedRun.statusCode === 200, `Expected 200, got ${allowedRun.statusCode}`);
     const runId = allowedRun.json().run.id as string;
+    const runToken = allowedRun.json().runToken as string;
+    assert(typeof runToken === "string", "Public run creation must return a runToken.");
 
-    // 4. Capture a lead via POST /v1/leads
+    // 4. Capture a lead via POST /v1/leads (public callers prove run ownership)
     const leadRes = await app.inject({
       method: "POST",
       url: "/v1/leads",
       headers: {
         authorization: `Bearer ${rawKey}`,
         "content-type": "application/json",
+        "x-jantra-run-token": runToken,
       },
       payload: {
         name: "Test User",
