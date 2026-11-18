@@ -1,5 +1,16 @@
 import { createHash, createHmac } from "node:crypto";
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync } from "node:fs";
+import {
+  appendFileSync,
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  readSync,
+  statSync,
+  unlinkSync,
+  writeSync,
+} from "node:fs";
 import { join } from "node:path";
 
 import { config } from "./config.js";
@@ -186,6 +197,54 @@ function currentHead(file: string): ChainHead {
   return head;
 }
 
+const LOCK_WAIT_MS = 2_000;
+const LOCK_STALE_MS = 10_000;
+const sleepCell = new Int32Array(new SharedArrayBuffer(4));
+
+/**
+ * Cross-process mutual exclusion for one audit file. Appends are synchronous
+ * and tiny, so a lock file created with O_EXCL plus a short synchronous wait
+ * is enough. A lock older than LOCK_STALE_MS belongs to a crashed process and
+ * is broken. If the lock cannot be taken in time we throw: an audit line that
+ * might fork the chain is worse than a failed (and retried) step.
+ */
+function withAuditFileLock<T>(file: string, fn: () => T): T {
+  const lockPath = `${file}.lock`;
+  const deadline = Date.now() + LOCK_WAIT_MS;
+  let fd: number | null = null;
+  while (fd === null) {
+    try {
+      fd = openSync(lockPath, "wx");
+      writeSync(fd, `${process.pid}`);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+      try {
+        if (Date.now() - statSync(lockPath).mtimeMs > LOCK_STALE_MS) {
+          unlinkSync(lockPath);
+          continue;
+        }
+      } catch {
+        // Lock vanished between checks; retry immediately.
+        continue;
+      }
+      if (Date.now() > deadline) {
+        throw new Error(`Timed out waiting for audit lock ${lockPath}.`);
+      }
+      Atomics.wait(sleepCell, 0, 0, 2);
+    }
+  }
+  try {
+    return fn();
+  } finally {
+    closeSync(fd);
+    try {
+      unlinkSync(lockPath);
+    } catch {
+      // Already broken as stale by another process; nothing to release.
+    }
+  }
+}
+
 export interface AuditChainReport {
   ok: boolean;
   alg: AuditHashAlg;
@@ -199,7 +258,26 @@ export interface AuditChainReport {
   reason?: string;
 }
 
-export function verifyAuditChainText(text: string, key = config.auditHmacKey): AuditChainReport {
+export interface AuditAnchor {
+  seq: number;
+  hash: string;
+}
+
+/**
+ * Current chain head for a run, or null if it has no chained entries. Sent
+ * out with webhooks so receivers hold anchors the audit disk cannot rewrite:
+ * a chain that was later truncated or rebuilt will not contain them.
+ */
+export function getAuditHead(runId: string, dir = config.auditDir): AuditAnchor | null {
+  const head = currentHead(join(dir, `${runId}.jsonl`));
+  return head.seq > 0 ? { seq: head.seq, hash: head.hash } : null;
+}
+
+export function verifyAuditChainText(
+  text: string,
+  key = config.auditHmacKey,
+  anchor?: AuditAnchor,
+): AuditChainReport {
   const alg: AuditHashAlg = key ? "hmac-sha256" : "sha256";
   const lines = text.split("\n").filter((line) => line.trim().length > 0);
   let legacy = 0;
@@ -237,6 +315,14 @@ export function verifyAuditChainText(text: string, key = config.auditHmacKey): A
     }
     prevHash = hash;
     prevSeq = rest.seq as number;
+    if (anchor && prevSeq === anchor.seq && hash !== anchor.hash) {
+      return fail(i + 1, "anchor hash mismatch (chain rewritten after the anchor was issued)");
+    }
+  }
+  // Tail truncation leaves a valid but shorter chain; only an anchor recorded
+  // elsewhere reveals it.
+  if (anchor && anchor.seq > prevSeq) {
+    return fail(lines.length, `chain ends at seq ${prevSeq} but anchor seq ${anchor.seq} was issued (truncated)`);
   }
   return {
     ok: true,
@@ -248,9 +334,9 @@ export function verifyAuditChainText(text: string, key = config.auditHmacKey): A
   };
 }
 
-export function verifyAuditFile(runId: string, dir = config.auditDir): AuditChainReport {
+export function verifyAuditFile(runId: string, dir = config.auditDir, anchor?: AuditAnchor): AuditChainReport {
   const file = join(dir, `${runId}.jsonl`);
-  return verifyAuditChainText(existsSync(file) ? readFileSync(file, "utf8") : "");
+  return verifyAuditChainText(existsSync(file) ? readFileSync(file, "utf8") : "", config.auditHmacKey, anchor);
 }
 
 export class AuditLogger {
@@ -269,24 +355,29 @@ export class AuditLogger {
     const safeData = sanitizeAuditData(data);
     // Chain fields are written last so caller data cannot overwrite them.
     const { seq: _seq, prevHash: _prev, hash: _hash, hashAlg: _alg, ...callerData } = safeData;
-    const head = currentHead(this.file);
-    const unsigned: AuditEntry = {
-      ts: new Date().toISOString(),
-      runId: this.runId,
-      type,
-      ...callerData,
-      seq: head.seq + 1,
-      prevHash: head.hash,
-      hashAlg: chainAlg(),
-    };
-    const hash = auditChainHash(head.hash, JSON.stringify(unsigned));
-    const entry: AuditEntry = { ...unsigned, hash };
-    const line = JSON.stringify(entry) + "\n";
-    appendFileSync(this.file, line, "utf8");
-    chainHeads.set(this.file, {
-      seq: head.seq + 1,
-      hash,
-      size: head.size + Buffer.byteLength(line, "utf8"),
+    // Read-head, sign and append as one step across processes; otherwise two
+    // writers can link to the same head and fork the chain.
+    const entry = withAuditFileLock(this.file, () => {
+      const head = currentHead(this.file);
+      const unsigned: AuditEntry = {
+        ts: new Date().toISOString(),
+        runId: this.runId,
+        type,
+        ...callerData,
+        seq: head.seq + 1,
+        prevHash: head.hash,
+        hashAlg: chainAlg(),
+      };
+      const hash = auditChainHash(head.hash, JSON.stringify(unsigned));
+      const signed: AuditEntry = { ...unsigned, hash };
+      const line = JSON.stringify(signed) + "\n";
+      appendFileSync(this.file, line, "utf8");
+      chainHeads.set(this.file, {
+        seq: head.seq + 1,
+        hash,
+        size: head.size + Buffer.byteLength(line, "utf8"),
+      });
+      return signed;
     });
     this.entries.push(entry);
     auditPublisher?.(entry);

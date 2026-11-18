@@ -1,10 +1,12 @@
+import { spawn } from "node:child_process";
 import { createHmac } from "node:crypto";
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import * as http from "node:http";
 import * as os from "node:os";
+import { pathToFileURL } from "node:url";
 import * as path from "node:path";
 import { Agent } from "../../../agent.js";
-import { AuditLogger, auditChainHash, verifyAuditChainText } from "../../../audit.js";
+import { AuditLogger, auditChainHash, getAuditHead, verifyAuditChainText } from "../../../audit.js";
 import { decryptSecret, DecryptionError, encryptSecret } from "../../../security/encryption.js";
 import { config, resolveDataDirs } from "../../../config.js";
 import { createProject } from "../../../pipeline/orchestrator.js";
@@ -15,6 +17,7 @@ import { CLIENT_REPORT_CSP, markdownToHtml } from "../../../server/export/client
 import { openEventStreamCount } from "../../../server/routes/events.js";
 import { JsonLeadStore } from "../../../server/leads/store.js";
 import { createAdminApiKeyBodySchema, parseWith } from "../../../server/schemas.js";
+import { buildWebhookEnvelope } from "../../../server/webhooks/dispatcher.js";
 import { assertPublicWebhookUrl } from "../../../server/webhooks/urlGuard.js";
 import { JsonWebhookSubscriptionStore } from "../../../server/webhooks/store.js";
 import type { AnyTool } from "../../../types.js";
@@ -524,6 +527,18 @@ export async function verifyAuditHashChain(): Promise<void> {
     const good = read();
     const lines = good.trimEnd().split("\n");
 
+    // Anchors held elsewhere (webhook auditHead) expose truncation and rewrites.
+    const head = getAuditHead(runId, dir);
+    assert(head?.seq === report.headSeq && head.hash === report.headHash, "getAuditHead must match the verified head.");
+    assert(verifyAuditChainText(good, undefined, head!).ok, "Chain must verify against its own head anchor.");
+    const truncated = lines.slice(0, -2).join("\n");
+    assert(verifyAuditChainText(truncated).ok, "Precondition: a truncated chain is still internally valid.");
+    const truncReport = verifyAuditChainText(truncated, undefined, head!);
+    assert(!truncReport.ok && /truncated/.test(truncReport.reason ?? ""), `Truncation not caught by anchor: ${JSON.stringify(truncReport)}`);
+    const midAnchor = { seq: 2, hash: "f".repeat(64) };
+    const mismatch = verifyAuditChainText(good, undefined, midAnchor);
+    assert(!mismatch.ok && /anchor hash mismatch/.test(mismatch.reason ?? ""), "Rewritten chain not caught by anchor.");
+
     const edited = good.replace('"note":"two"', '"note":"TWO"');
     report = verifyAuditChainText(edited);
     assert(!report.ok && report.brokenAtLine === 3, `Edited entry not caught: ${JSON.stringify(report)}`);
@@ -584,6 +599,33 @@ export async function verifyAuditVerifyRoute(): Promise<void> {
     assert(full.statusCode === 200, `Full key verify: expected 200, got ${full.statusCode}`);
     const chain = (full.json() as { chain: { ok: boolean; headSeq: number } }).chain;
     assert(chain.ok && chain.headSeq >= 1, `New run's audit chain must verify: ${full.body}`);
+
+    const head = getAuditHead(runId)!;
+    const anchored = await app.inject({
+      method: "GET",
+      url: `${url}?anchorSeq=${head.seq}&anchorHash=${head.hash}`,
+      headers: { authorization: "Bearer full-key" },
+    });
+    const anchoredBody = anchored.json() as { anchorChecked: boolean; chain: { ok: boolean } };
+    assert(anchored.statusCode === 200 && anchoredBody.anchorChecked && anchoredBody.chain.ok, `Anchored verify failed: ${anchored.body}`);
+    const future = await app.inject({
+      method: "GET",
+      url: `${url}?anchorSeq=${head.seq + 5}&anchorHash=${head.hash}`,
+      headers: { authorization: "Bearer full-key" },
+    });
+    assert((future.json() as { chain: { ok: boolean } }).chain.ok === false, "An anchor beyond the head must report truncation.");
+    const halfAnchor = await app.inject({ method: "GET", url: `${url}?anchorSeq=1`, headers: { authorization: "Bearer full-key" } });
+    assert(halfAnchor.statusCode === 400, `Half an anchor must be rejected: ${halfAnchor.statusCode}`);
+
+    const envelope = buildWebhookEnvelope({ clientId: "t1", type: "run.awaiting_input", runId, payload: {} });
+    assert(
+      envelope.auditHead?.seq === head.seq && envelope.auditHead.hash === head.hash,
+      `Run webhooks must carry the audit head: ${JSON.stringify(envelope.auditHead)}`,
+    );
+    assert(
+      buildWebhookEnvelope({ clientId: "t1", type: "lead.created", payload: {} }).auditHead === undefined,
+      "Events without a run carry no audit head.",
+    );
 
     const pub = await app.inject({ method: "GET", url, headers: { authorization: "Bearer pub-key", ...edgeHeaders() } });
     assert(pub.statusCode === 403, `Public key verify: expected 403, got ${pub.statusCode}`);
@@ -925,5 +967,34 @@ export function verifyCredentialRecordBinding(): void {
   } finally {
     (config as Record<string, unknown>).secretsKey = originalKey;
     rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+export async function verifyAuditChainAcrossProcesses(): Promise<void> {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "jantra-"));
+  const writer = path.join(dir, "writer.mts");
+  const auditModule = pathToFileURL(path.resolve("src/audit.ts")).href;
+  writeFileSync(
+    writer,
+    `import { AuditLogger } from ${JSON.stringify(auditModule)};\n` +
+      `const logger = new AuditLogger("shared", process.argv[2]);\n` +
+      `for (let i = 0; i < 40; i++) logger.record("handoff", { clientId: "t1", writer: process.pid, i });\n`,
+  );
+  try {
+    const runWriter = () =>
+      new Promise<void>((resolve, reject) => {
+        const child = spawn(process.execPath, ["--import", "tsx", writer, dir], { stdio: ["ignore", "ignore", "pipe"] });
+        let stderr = "";
+        child.stderr.on("data", (chunk) => (stderr += chunk));
+        child.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`writer exited ${code}: ${stderr.slice(0, 300)}`))));
+      });
+    await Promise.all([runWriter(), runWriter(), runWriter(), runWriter()]);
+    const text = readFileSync(path.join(dir, "shared.jsonl"), "utf8");
+    const report = verifyAuditChainText(text);
+    assert(report.entries === 160, `Expected 160 entries from 4 processes, got ${report.entries}`);
+    assert(report.ok && report.headSeq === 160, `Concurrent writers forked the chain: ${JSON.stringify(report)}`);
+    assert(!readdirSync(dir).some((f) => f.endsWith(".lock")), "Lock files must be released.");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 }

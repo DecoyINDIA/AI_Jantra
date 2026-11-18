@@ -107,6 +107,16 @@ export const cursorQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(200).optional(),
 });
 
+// Optional anchor (from a webhook's auditHead) to detect tail truncation.
+export const auditVerifyQuerySchema = z
+  .object({
+    anchorSeq: z.coerce.number().int().positive().optional(),
+    anchorHash: z.string().regex(/^[0-9a-f]{64}$/).optional(),
+  })
+  .refine((q) => (q.anchorSeq === undefined) === (q.anchorHash === undefined), {
+    message: "anchorSeq and anchorHash must be provided together.",
+  });
+
 export const adminApiKeyParamsSchema = z.object({
   id: z.string().min(1).max(96),
 });
