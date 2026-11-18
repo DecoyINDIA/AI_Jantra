@@ -8,7 +8,9 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "dev": "electron dist/main.js",
-    "dist": "electron-builder --config electron-builder.yml"
+    "dist": "electron-builder --config electron-builder.yml",
+    "test": "node --import tsx --test src/windowSecurity.test.ts",
+    "test:e2e": "electron --no-sandbox test/electron-security.e2e.cjs"
   },
   "dependencies": {
     "electron-updater": "6.8.11"

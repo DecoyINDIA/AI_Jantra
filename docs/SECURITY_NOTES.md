@@ -20,4 +20,6 @@
 - Public runs are bound to their creator: `POST /v1/runs` with a public key returns a one-time `runToken` (only its hash is stored), required as `X-Jantra-Run-Token` for every later public call on that run, including linking a lead (`src/server/runAccess.ts`).
 - In remote mode `X-Forwarded-For` is trusted only when the connecting peer is an internal proxy address (`JANTRA_TRUSTED_PROXIES`, default private ranges and CGNAT). Fastify 5.12 ignores numeric hop counts, so the old `trustProxy: 1` would have put every visitor in one rate-limit bucket.
 - CI runs `scripts/audit-gate.mjs` (dependency advisories) and `scripts/secret-scan.mjs` (tracked files) on every pull request.
+- API responses carry `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and `Referrer-Policy: no-referrer`. The HTML report export also carries a strict CSP, embedded in the document too so `blob:` copies stay protected.
+- Desktop: renderers are sandboxed, external links open in the system browser, report windows get no preload, the main window cannot navigate away from the app, and IPC only answers the main window's app URL (`desktop/src/electronSecurity.ts`).
 - Threat model, residual risks, and open recommendations: `docs/THREAT_MODEL.md`.

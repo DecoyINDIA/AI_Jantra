@@ -117,3 +117,13 @@ jobs:
       # secret lock, run tokens, header smuggling, rate limit.
       - name: Edge verification (local harness)
         run: npm run edge:verify:local
+
+      - name: Desktop window/navigation policy (unit)
+        run: npm test -w @jantra/desktop
+
+      # Real Electron: window.open, navigation, report isolation, IPC sender
+      # checks, permission denial. xvfb provides the display.
+      - name: Desktop Electron security (e2e)
+        run: |
+          npm run build -w @jantra/desktop
+          xvfb-run -a npm run test:e2e -w @jantra/desktop
