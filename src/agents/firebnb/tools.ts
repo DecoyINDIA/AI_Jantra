@@ -1,3 +1,4 @@
+import { config } from "../../config.js";
 import type { ToolDef } from "../../types.js";
 
 interface SearchRatesInput {
@@ -83,8 +84,8 @@ export const searchRatesTool: ToolDef<SearchRatesInput> = {
     additionalProperties: false
   },
   run: async (input) => {
-    const functionsUrl = process.env.FIREBNB_FUNCTIONS_URL || "http://127.0.0.1:54321/functions/v1";
-    const serviceToken = process.env.JANTRA_FIREBNB_SERVICE_TOKEN || "";
+    const functionsUrl = config.firebnbFunctionsUrl;
+    const serviceToken = config.firebnbServiceToken;
 
     const headers: Record<string, string> = {
       "Content-Type": "application/json"

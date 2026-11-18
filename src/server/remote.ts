@@ -1,5 +1,5 @@
 // Trigger Railway rebuild: force registration of firebnb-concierge agent definition
-import { requireApiKey } from "../config.js";
+import { config, requireApiKey } from "../config.js";
 import { SqliteProjectStore } from "../pipeline/store/sqlite.js";
 import { startRemoteApi } from "./app.js";
 import { parseApiKeyRecords } from "./auth/apiKeys.js";
@@ -25,8 +25,8 @@ import { parseApiKeyRecords } from "./auth/apiKeys.js";
 requireApiKey();
 
 const apiKeys = parseApiKeyRecords();
-const host = process.env.JANTRA_SERVER_HOST ?? "0.0.0.0";
-const port = process.env.JANTRA_SERVER_PORT ? Number(process.env.JANTRA_SERVER_PORT) : 4317;
+const host = config.serverHost;
+const port = config.serverPort;
 const store = new SqliteProjectStore();
 
 const started = await startRemoteApi({
@@ -35,7 +35,7 @@ const started = await startRemoteApi({
   apiKeys,
   store,
   apiKeyStore: store,
-  adminToken: process.env.JANTRA_ADMIN_TOKEN,
+  adminToken: config.adminToken || undefined,
 });
 
 console.log(`Jantra remote API listening at ${started.baseUrl}`);

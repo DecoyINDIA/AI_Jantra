@@ -65,14 +65,13 @@ reference implementation is `verifyWebhookSignature` in
 
 1. Set `JANTRA_EDGE_SECRET` and `TURNSTILE_SECRET_KEY` in production; both controls are off until configured (T5, T10).
 2. Periodically export each run's `headSeq`/`headHash` to storage outside the audit volume, so tail truncation is detectable (T9).
-3. Move the remaining `process.env` reads in `src/server/index.ts` and `src/server/auth/logtoUser.ts` into `src/config.ts`.
-5. Add `npm audit --omit=dev` and secret scanning to CI.
-5. Commission an external penetration test before production traffic.
+4. Add `npm audit --omit=dev` and secret scanning to CI.
+4. Commission an external penetration test before production traffic.
 
 ## Regressions guarding this model
 
 `webhook-url-guard`, `ssrf-ipv6-transition-ranges`, `safe-fetch-redirect`,
 `webhook-signature-replay`, `injection-content-neutralized`,
 `injection-bypass-corpus`, `public-key-scope`, `public-run-token-binding`, `edge-secret-origin-lock`, `rate-limiter-proxy-trust`,
-`audit-redaction-truncation`, `audit-hash-chain`, `audit-verify-route`, `error-envelope-no-leak`, `csv-directory-resolve`.
+`audit-redaction-truncation`, `audit-hash-chain`, `audit-verify-route`, `error-envelope-no-leak`, `csv-directory-resolve`, `env-reads-only-in-config`.
 Edge checks (`npm run edge:verify:local`): Turnstile missing, forged, wrong-hostname and verifier-down cases; direct origin calls without or with a wrong edge secret; run access without or with a wrong run token; browser header smuggling.

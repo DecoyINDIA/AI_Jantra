@@ -1,6 +1,8 @@
 import type { FastifyRequest } from "fastify";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 
+import { config } from "../../config.js";
+
 // End-user identity verification.
 //
 // The marketing site authenticates visitors with Logto (OIDC). When a logged-in
@@ -12,10 +14,9 @@ import { createRemoteJWKSet, jwtVerify } from "jose";
 // leads. Identity is NEVER trusted from the request body.
 //
 // All three values are overridable for non-prod Logto tenants.
-const ISSUER = process.env.JANTRA_LOGTO_ISSUER ?? "https://auth.xolver.in/oidc";
-const AUDIENCE = process.env.JANTRA_LOGTO_AUDIENCE ?? "https://api.jantra.in";
-const JWKS_URL =
-  process.env.JANTRA_LOGTO_JWKS_URL ?? "https://auth.xolver.in/oidc/jwks";
+const ISSUER = config.logtoIssuer;
+const AUDIENCE = config.logtoAudience;
+const JWKS_URL = config.logtoJwksUrl;
 
 // createRemoteJWKSet caches keys and only refetches on unknown `kid`, so this is
 // safe to hold as a module singleton.
