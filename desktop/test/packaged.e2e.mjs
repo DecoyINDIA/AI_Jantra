@@ -10,7 +10,7 @@
 //   xvfb-run -a node desktop/test/packaged.e2e.mjs node_modules/electron/dist/electron desktop
 import { spawn } from "node:child_process";
 import { generateKeyPairSync, sign } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -24,7 +24,17 @@ if (typeof WebSocket !== "function") {
 const here = dirname(fileURLToPath(import.meta.url));
 // argv[2]: executable (packaged binary, or the electron binary for dev mode)
 // argv[3]: optional app directory, for dev mode (`electron <desktop dir>`)
-const exe = resolve(process.argv[2] ?? join(here, "..", "release", "linux-unpacked", "jantra"));
+function defaultExecutable() {
+  const release = join(here, "..", "release");
+  if (process.platform === "win32") return join(release, "win-unpacked", "jantra.exe");
+  if (process.platform === "darwin") {
+    // mac/ on Intel, mac-arm64/ on Apple silicon.
+    const dir = existsSync(release) ? readdirSync(release).find((d) => d.startsWith("mac")) : undefined;
+    return join(release, dir ?? "mac", "Jantra.app", "Contents", "MacOS", "Jantra");
+  }
+  return join(release, "linux-unpacked", "jantra");
+}
+const exe = resolve(process.argv[2] ?? defaultExecutable());
 const appDirArg = process.argv[3] ? [resolve(process.argv[3])] : [];
 if (!existsSync(exe)) {
   console.error(`packaged-e2e: executable not found: ${exe}`);
@@ -51,8 +61,9 @@ const signature = sign(null, Buffer.from(JSON.stringify(payload)), privateKey).t
 const token = Buffer.from(JSON.stringify({ payload, signature }), "utf8").toString("base64");
 
 const home = mkdtempSync(join(tmpdir(), "jantra-packaged-"));
-// Electron derives userData from productName ("Jantra").
-const userData = join(home, "config", "Jantra");
+// --user-data-dir pins app.getPath("userData") identically on every platform
+// (macOS ignores HOME for its Application Support lookup).
+const userData = join(home, "userData");
 mkdirSync(userData, { recursive: true });
 writeFileSync(join(userData, "license.json"), JSON.stringify({ token }));
 
@@ -67,11 +78,10 @@ const freePort = () =>
 
 async function launch() {
   const port = await freePort();
-  const child = spawn(exe, [...appDirArg, "--no-sandbox", `--remote-debugging-port=${port}`], {
+  const child = spawn(exe, [...appDirArg, "--no-sandbox", `--user-data-dir=${userData}`, `--remote-debugging-port=${port}`], {
     env: {
       ...process.env,
       HOME: home,
-      XDG_CONFIG_HOME: join(home, "config"),
       JANTRA_LICENSE_PUBLIC_KEY: publicKey.export({ type: "spki", format: "pem" }).toString(),
     },
     stdio: ["ignore", "pipe", "pipe"],
