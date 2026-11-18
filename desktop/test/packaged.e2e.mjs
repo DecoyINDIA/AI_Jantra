@@ -93,7 +93,13 @@ const freePort = () =>
 
 async function launch() {
   const port = await freePort();
-  const child = spawn(exe, [...appDirArg, "--no-sandbox", `--user-data-dir=${userData}`, `--remote-debugging-port=${port}`], {
+  // macOS: the enableCookieEncryption fuse makes Chromium create a "Jantra
+  // Safe Storage" Keychain item at startup, which on a headless runner blocks
+  // on a dialog nobody can answer (observed: app stalls before any window).
+  // Chromium's mock keychain is its standard switch for automated runs; real
+  // users get the normal one-time Keychain prompt.
+  const platformArgs = process.platform === "darwin" ? ["--use-mock-keychain"] : [];
+  const child = spawn(exe, [...appDirArg, "--no-sandbox", ...platformArgs, `--user-data-dir=${userData}`, `--remote-debugging-port=${port}`], {
     env: {
       ...process.env,
       HOME: home,
