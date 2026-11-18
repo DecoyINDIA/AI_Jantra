@@ -114,6 +114,8 @@ export function resolveDataDirs(env: Record<string, string | undefined>): {
 const dataDirs = resolveDataDirs(process.env);
 
 export const config = {
+  // Raw key:clientId[:subject] records; parsed in src/server/auth/apiKeys.ts.
+  remoteApiKeysRaw: process.env.JANTRA_REMOTE_API_KEYS ?? "",
   provider: providerFromEnv(),
   geminiApiKey: process.env.GEMINI_API_KEY ?? "",
   // OpenAI-compatible provider (OpenRouter by default). Used when
