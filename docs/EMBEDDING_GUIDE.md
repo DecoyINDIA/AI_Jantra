@@ -10,6 +10,12 @@ For a public site, do not ship an API key in the browser. Put the Cloudflare
 Worker edge in front (see `deploy/cloudflare-worker/`), which holds the key and
 allowlists your origin. The widget then needs only the edge base URL.
 
+If the edge has Turnstile enabled, pass the matching `turnstileSiteKey`. The
+widget loads Cloudflare's Turnstile script and fetches a fresh token before it
+starts a run or saves a lead; most visitors see no challenge. If your site uses
+a Content Security Policy, allow `https://challenges.cloudflare.com` in
+`script-src` and `frame-src`.
+
 ```ts
 import { mountJantraIntakeWidget } from "@jantra/embed-widget";
 
@@ -20,6 +26,7 @@ mountJantraIntakeWidget({
   theme: { accent: "#1C2E1E", muted: "#738273", fontFamily: "'Inter', sans-serif" },
   requestTimeoutMs: 20000,
   maxMessageChars: 2000,
+  turnstileSiteKey: "0x4AAAA...",    // when the edge sets TURNSTILE_SECRET_KEY
   onComplete: (summary) => {
     // The lead also persists server-side on Jantra. Optionally react here.
     console.log(summary.title, summary.content);

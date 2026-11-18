@@ -37,12 +37,12 @@ targeted review, not a full penetration test.
 | T2 | Indirect prompt injection from fetched pages | NFKC normalization, invisible-character stripping, pattern redaction, random-id untrusted fence, deterministic quote verification against the sanitized text, human gate | Medium. Pattern matching cannot catch paraphrase or obfuscation such as leetspeak. The fence and the citation verifier are the real boundary |
 | T3 | Cross-tenant access (IDOR) | `requestClientId` from identity; `assertProjectAccess` after each load; store keyed by `clientId` | Low. Covered by existing tenancy regressions |
 | T4 | Visitor reads another visitor's run | Run IDs are random UUIDv4 (bearer capability); public keys limited to an allowlist of routes and agents | Low-medium. Anyone holding a run ID can read and drive it. Bind runs to a visitor session token if run IDs ever appear in URLs, logs or referrers |
-| T5 | Budget exhaustion through the public widget | Edge per-IP limiter, origin pre-auth limiter, identity limiter, per-visitor and per-client daily spend ceilings | Medium. IP-based visitor identity is weak against botnets; add a proof-of-work or Turnstile challenge before launch |
+| T5 | Budget exhaustion through the public widget | Edge per-IP limiter; Turnstile token required to create runs or leads when `TURNSTILE_SECRET_KEY` is set (fails closed, checks hostname); origin pre-auth and identity limiters; per-visitor and per-client daily spend ceilings | Low-medium with Turnstile on. A solved token still buys one run; budgets cap the rest |
 | T6 | Webhook spoofing or replay at receivers | HMAC-SHA256 signature; V2 signature binds a timestamp (5 minute tolerance); `X-Jantra-Delivery` ID for deduplication | Low once receivers verify V2. V1 remains for compatibility and is replayable |
 | T7 | Credential brute force or timing attacks | 256-bit keys, SHA-256 lookup, constant-time comparison, pre-auth rate limit | Low |
 | T8 | Secrets in logs or artifacts | Audit redaction, metadata-only diagnostics, secrets never echoed by webhook routes | Low. Covered by the audit redaction regression |
 | T9 | Audit log tampering | Append-only JSONL | Medium. No tamper evidence. Recommended: hash-chain records |
-| T10 | Origin reached directly, bypassing the edge | Public key held only at the edge; full keys required otherwise | Medium if the public key leaks. Recommended: restrict the origin to Cloudflare egress or add an edge-to-origin shared secret |
+| T10 | Origin reached directly, bypassing the edge | Public key held only at the edge; with `JANTRA_EDGE_SECRET` set, public-scope requests also need the edge's shared secret (constant-time check); the edge strips browser-supplied `X-Jantra-*` headers | Low with the secret set. Both secrets would have to leak. Network-level restriction to Cloudflare is still worthwhile |
 | T11 | Path traversal in data and connector paths | `assertSafePathSegment`; `resolveClientDataDir` containment plus rejection of absolute paths on any platform | Low |
 
 ## Webhook verification for receivers
@@ -63,17 +63,17 @@ reference implementation is `verifyWebhookSignature` in
 
 ## Open recommendations (priority order)
 
-1. Bot challenge (Turnstile) on the public widget before the first paid model call (T5).
-2. Lock the origin to the edge: Cloudflare-only ingress or a shared secret header (T10).
-3. Hash-chain audit JSONL records so tampering is detectable (T9).
-4. Visitor-bound run access tokens for public runs (T4).
-5. Move the remaining `process.env` reads in `src/server/index.ts` and `src/server/auth/logtoUser.ts` into `src/config.ts`.
+1. Set `JANTRA_EDGE_SECRET` and `TURNSTILE_SECRET_KEY` in production; both controls are off until configured (T5, T10).
+2. Hash-chain audit JSONL records so tampering is detectable (T9).
+3. Visitor-bound run access tokens for public runs (T4).
+4. Move the remaining `process.env` reads in `src/server/index.ts` and `src/server/auth/logtoUser.ts` into `src/config.ts`.
 6. Add `npm audit --omit=dev` and secret scanning to CI.
-7. Commission an external penetration test before production traffic.
+6. Commission an external penetration test before production traffic.
 
 ## Regressions guarding this model
 
 `webhook-url-guard`, `ssrf-ipv6-transition-ranges`, `safe-fetch-redirect`,
 `webhook-signature-replay`, `injection-content-neutralized`,
-`injection-bypass-corpus`, `public-key-scope`, `rate-limiter-proxy-trust`,
+`injection-bypass-corpus`, `public-key-scope`, `edge-secret-origin-lock`, `rate-limiter-proxy-trust`,
 `audit-redaction-truncation`, `error-envelope-no-leak`, `csv-directory-resolve`.
+Edge checks (`npm run edge:verify:local`): Turnstile missing, forged, wrong-hostname and verifier-down cases; direct origin calls without or with a wrong edge secret; browser header smuggling.

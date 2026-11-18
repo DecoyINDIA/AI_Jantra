@@ -43,9 +43,17 @@ Worker resolves). It performs no CORS and no Origin checks by design.
 cd deploy/cloudflare-worker
 # edit wrangler.toml: set JANTRA_ORIGIN (private origin URL) and ALLOWED_ORIGINS
 wrangler secret put JANTRA_API_KEY      # the <key> from JANTRA_REMOTE_API_KEYS
+wrangler secret put JANTRA_EDGE_SECRET  # same value as the origin's JANTRA_EDGE_SECRET
+wrangler secret put TURNSTILE_SECRET_KEY  # optional but recommended: bot challenge
 wrangler deploy
 # bind api.jantra.in to the Worker (custom domain route)
 ```
+
+With `JANTRA_EDGE_SECRET` set on both sides, the origin refuses public-key
+requests that did not pass through this Worker. With `TURNSTILE_SECRET_KEY`
+set, starting a run or saving a lead needs a Cloudflare Turnstile token
+(header `CF-Turnstile-Response`); verification fails closed if Cloudflare is
+unreachable or the token was issued for a hostname outside `ALLOWED_ORIGINS`.
 
 The Worker holds the key, answers CORS for the allowed embedding origins,
 whitelists only the intake request shapes (create / advance / read-own /

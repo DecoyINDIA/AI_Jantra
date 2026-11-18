@@ -15,6 +15,12 @@ const isLocal =
   !process.env.JANTRA_EDGE_URL;
 
 const results = [];
+// Local harness values. Remote runs can supply a real token for a Worker with
+// Turnstile enabled via JANTRA_EDGE_TURNSTILE_TOKEN.
+const EDGE_SECRET = "edge-test-shared-secret";
+const VALID_TURNSTILE_TOKEN = "valid-turnstile-token";
+let turnstileToken = process.env.JANTRA_EDGE_TURNSTILE_TOKEN ?? null;
+let localHarness = null;
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -24,6 +30,9 @@ async function edgeFetch(path, init = {}) {
   const headers = new Headers(init.headers);
   if (init.origin !== null) headers.set("Origin", init.origin ?? allowedOrigin);
   headers.set("CF-Connecting-IP", init.ip ?? testIp);
+  if (turnstileToken && init.turnstile !== null && !headers.has("CF-Turnstile-Response")) {
+    headers.set("CF-Turnstile-Response", init.turnstile ?? turnstileToken);
+  }
   return fetch(`${baseUrl}${path}`, {
     ...init,
     headers,
@@ -78,13 +87,41 @@ async function startLocalHarness() {
     apiKeys: parseApiKeyRecords(`${originApiKey}:xolver:web`),
     store,
     checkCatalogModels: false,
+    edgeSecret: EDGE_SECRET,
   });
   await originServer.listen({ host: "127.0.0.1", port: 0 });
   const originPort = originServer.server.address().port;
   const originUrl = `http://127.0.0.1:${originPort}`;
 
+  // Stand-in for Cloudflare siteverify: one good token, one minted for a
+  // hostname we do not serve, everything else rejected.
+  const allowedHost = new URL(allowedOrigin).hostname;
+  const turnstileServer = http.createServer(async (req, res) => {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const form = await new Response(Buffer.concat(chunks), {
+      headers: { "content-type": req.headers["content-type"] ?? "" },
+    }).formData();
+    const token = form.get("response");
+    const okSecret = form.get("secret") === "turnstile-test-secret";
+    const outcome =
+      okSecret && token === VALID_TURNSTILE_TOKEN
+        ? { success: true, hostname: allowedHost }
+        : okSecret && token === "wrong-host-token"
+          ? { success: true, hostname: "attacker.example" }
+          : { success: false, "error-codes": ["invalid-input-response"] };
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(outcome));
+  });
+  await new Promise((resolve) => turnstileServer.listen(0, "127.0.0.1", resolve));
+  const turnstileUrl = `http://127.0.0.1:${turnstileServer.address().port}/siteverify`;
+  turnstileToken = VALID_TURNSTILE_TOKEN;
+
   const counts = new Map();
   const workerEnv = {
+    JANTRA_EDGE_SECRET: EDGE_SECRET,
+    TURNSTILE_SECRET_KEY: "turnstile-test-secret",
+    TURNSTILE_VERIFY_URL: turnstileUrl,
     JANTRA_ORIGIN: originUrl,
     ALLOWED_ORIGINS: allowedOrigin,
     JANTRA_API_KEY: originApiKey,
@@ -139,7 +176,10 @@ async function startLocalHarness() {
   const workerPort = workerServer.address().port;
   baseUrl = `http://127.0.0.1:${workerPort}`;
 
+  localHarness = { workerEnv, originUrl, originApiKey, turnstileUrl };
+
   return async function cleanup() {
+    await new Promise((resolve) => turnstileServer.close(resolve));
     await new Promise((resolve) => workerServer.close(resolve));
     await originServer.close();
     fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -252,6 +292,71 @@ async function main() {
     await edgeFetch(`/v1/runs/${runId}`, { method: "GET", origin: badOrigin }),
     403,
   );
+
+  if (turnstileToken) {
+    const createBody = JSON.stringify({ agentId: "intake-public", title: "Challenge check" });
+    const createInit = (turnstile) => ({
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: createBody,
+      turnstile,
+    });
+    await expectStatus("turnstile_missing", await edgeFetch("/v1/runs", createInit(null)), 403);
+    await expectStatus("turnstile_invalid", await edgeFetch("/v1/runs", createInit("forged")), 403);
+    await expectStatus(
+      "lead_turnstile_missing",
+      await edgeFetch("/v1/leads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Bot", email: "bot@example.com" }),
+        turnstile: null,
+      }),
+      403,
+    );
+    if (localHarness) {
+      await expectStatus(
+        "turnstile_wrong_hostname",
+        await edgeFetch("/v1/runs", createInit("wrong-host-token")),
+        403,
+      );
+      // Fail closed when siteverify is unreachable.
+      localHarness.workerEnv.TURNSTILE_VERIFY_URL = "http://127.0.0.1:1/siteverify";
+      await expectStatus(
+        "turnstile_verifier_down",
+        await edgeFetch("/v1/runs", createInit(undefined)),
+        403,
+      );
+      localHarness.workerEnv.TURNSTILE_VERIFY_URL = localHarness.turnstileUrl;
+    }
+  }
+
+  if (localHarness) {
+    // Origin lock: the public key alone must not work against the origin.
+    const direct = (headers) =>
+      fetch(`${localHarness.originUrl}/v1/runs/${runId}`, {
+        headers: { Authorization: `Bearer ${localHarness.originApiKey}`, ...headers },
+      });
+    await expectStatus("origin_direct_without_edge_secret", await direct({}), 403);
+    await expectStatus(
+      "origin_direct_wrong_edge_secret",
+      await direct({ "X-Jantra-Edge-Secret": "guess" }),
+      403,
+    );
+    await expectStatus(
+      "origin_direct_with_edge_secret",
+      await direct({ "X-Jantra-Edge-Secret": EDGE_SECRET }),
+      200,
+    );
+    // A browser cannot smuggle its own edge secret or client IP through the Worker.
+    await expectStatus(
+      "browser_header_smuggling_stripped",
+      await edgeFetch(`/v1/runs/${runId}`, {
+        method: "GET",
+        headers: { "X-Jantra-Edge-Secret": "attacker", "X-Jantra-Client-IP": "1.2.3.4" },
+      }),
+      200,
+    );
+  }
 
   if (expectRateLimit) {
     let rateLimitedStatus = null;
