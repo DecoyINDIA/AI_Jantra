@@ -42,6 +42,21 @@ if (!existsSync(exe)) {
 }
 
 const failures = [];
+let currentStep = "start";
+const step = (name) => {
+  currentStep = name;
+  console.log(`STEP ${name}`);
+};
+// Every app's output, so a hang or crash can be diagnosed from CI logs.
+const appOutputs = [];
+// Hard ceiling: a stuck app (for example a blocking OS dialog) must fail the
+// run with a diagnosis rather than hold a CI runner until its own timeout.
+const WATCHDOG_MS = Number(process.env.PACKAGED_E2E_TIMEOUT_MS ?? 180_000);
+const watchdog = setTimeout(() => {
+  console.error(`packaged-e2e: timed out after ${WATCHDOG_MS} ms at step "${currentStep}".`);
+  for (const read of appOutputs) console.error(`--- app output (tail) ---\n${read().slice(-4000)}`);
+  process.exit(1);
+}, WATCHDOG_MS);
 const check = (label, ok, detail) => {
   console.log(`${ok ? "PASS" : "FAIL"} ${label}${ok ? "" : ` :: ${JSON.stringify(detail)}`}`);
   if (!ok) failures.push(label);
@@ -78,7 +93,13 @@ const freePort = () =>
 
 async function launch() {
   const port = await freePort();
-  const child = spawn(exe, [...appDirArg, "--no-sandbox", `--user-data-dir=${userData}`, `--remote-debugging-port=${port}`], {
+  // macOS: the enableCookieEncryption fuse makes Chromium create a "Jantra
+  // Safe Storage" Keychain item at startup, which on a headless runner blocks
+  // on a dialog nobody can answer (observed: app stalls before any window).
+  // Chromium's mock keychain is its standard switch for automated runs; real
+  // users get the normal one-time Keychain prompt.
+  const platformArgs = process.platform === "darwin" ? ["--use-mock-keychain"] : [];
+  const child = spawn(exe, [...appDirArg, "--no-sandbox", ...platformArgs, `--user-data-dir=${userData}`, `--remote-debugging-port=${port}`], {
     env: {
       ...process.env,
       HOME: home,
@@ -89,7 +110,9 @@ async function launch() {
   let output = "";
   child.stdout.on("data", (d) => (output += d));
   child.stderr.on("data", (d) => (output += d));
-  const listTargets = async () => (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
+  appOutputs.push(() => output);
+  const listTargets = async () =>
+    (await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(5000) })).json();
   let page;
   for (let i = 0; i < 150 && !page; i++) {
     await sleep(200);
@@ -165,8 +188,10 @@ const api = (path, init = {}) => `(async () => {
 
 let runId;
 try {
+  step("launch app");
   const first = await launch();
   try {
+    step("UI render");
     await sleep(1500);
     const page = await first.evaluate(`({ url: location.href, rendered: (document.getElementById("root")?.childElementCount ?? 0) > 0, text: document.body.innerText.slice(0, 80) })`);
     // The UI only renders if its scripts and styles loaded under the CSP.
@@ -181,6 +206,7 @@ try {
     })`);
     check("CSP blocks injected inline script in the console", inline === false, inline);
 
+    step("bridge and API");
     const bridge = await first.evaluate(`({ base: window.JANTRA_DESKTOP?.baseUrl, hasToken: Boolean(window.JANTRA_DESKTOP?.token) })`);
     check("desktop bridge provides API URL and token", /^http:\/\/127\.0\.0\.1:\d+$/.test(bridge.base ?? "") && bridge.hasToken, bridge);
 
@@ -192,10 +218,12 @@ try {
     const agents = await first.evaluate(api("/v1/agents"));
     check("UI origin can call the API (CORS + loopback token)", agents.status === 200, agents.status);
 
+    step("licensed run in SQLite");
     const created = await first.evaluate(api("/v1/runs", { method: "POST", body: JSON.stringify({ agentId: "intake-public", title: "packaged e2e" }) }));
     runId = created.body?.run?.id;
     check("licensed run creation writes to SQLite", created.status === 200 && typeof runId === "string", created);
 
+    step("CSP and app:// policy");
     const csp = await first.evaluate(`fetch("app://jantra/index.html").then((r) => r.headers.get("content-security-policy"))`);
     check("console is served with its CSP", /default-src 'self'/.test(csp ?? "") && /frame-ancestors 'none'/.test(csp ?? ""), csp);
 
@@ -211,6 +239,7 @@ try {
     await first.close();
   }
 
+  step("relaunch for persistence");
   const second = await launch();
   try {
     await sleep(1000);
@@ -227,5 +256,7 @@ try {
   rmSync(home, { recursive: true, force: true });
 }
 
+clearTimeout(watchdog);
+if (failures.length) for (const read of appOutputs) console.error(`--- app output (tail) ---\n${read().slice(-4000)}`);
 console.log(failures.length ? `packaged-e2e: ${failures.length} FAILED` : "packaged-e2e: all checks passed");
 process.exit(failures.length ? 1 : 0);
