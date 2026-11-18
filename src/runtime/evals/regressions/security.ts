@@ -8,6 +8,7 @@ import { config, resolveDataDirs } from "../../../config.js";
 import { createProject } from "../../../pipeline/orchestrator.js";
 import { JsonProjectStore } from "../../../pipeline/store.js";
 import { createServer } from "../../../server/app.js";
+import { CLIENT_REPORT_CSP, markdownToHtml } from "../../../server/export/clientReport.js";
 import { JsonLeadStore } from "../../../server/leads/store.js";
 import { createAdminApiKeyBodySchema, parseWith } from "../../../server/schemas.js";
 import { assertPublicWebhookUrl } from "../../../server/webhooks/urlGuard.js";
@@ -704,4 +705,53 @@ export function verifyEnvReadsOnlyInConfig(): void {
   };
   walk(root);
   assert(offenders.length === 0, `process.env read outside src/config.ts: ${offenders.join(", ")}`);
+}
+
+export async function verifySecurityHeadersAndReportCsp(): Promise<void> {
+  // Code-fence language tags land in a class attribute; only a safe charset survives.
+  const fenced = markdownToHtml('```" onmouseover=alert(1) x="\ncode\n```');
+  const codeClass = /<code class="([^"]*)">/.exec(fenced)?.[1] ?? "";
+  assert(/^lang-[a-zA-Z0-9+#-]*$/.test(codeClass), `Unsafe code language tag survived: ${fenced}`);
+  assert(!/\son\w+=/.test(fenced), `Event handler attribute in output: ${fenced}`);
+
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "jantra-"));
+  const app = createServer({
+    mode: "remote",
+    loopbackToken: "",
+    store: new JsonProjectStore(tmp),
+    checkCatalogModels: false,
+    apiKeys: [{ key: "full-key", clientId: "t1", subject: "ops" }],
+  });
+  const auth = { authorization: "Bearer full-key" };
+  try {
+    const created = await app.inject({
+      method: "POST",
+      url: "/v1/runs",
+      headers: auth,
+      payload: { agentId: "intake-public", title: "<script>alert(1)</script>" },
+    });
+    assert(created.statusCode === 200, `Run create failed: ${created.body}`);
+    for (const header of ["x-content-type-options", "x-frame-options", "referrer-policy"]) {
+      assert(Boolean(created.headers[header]), `JSON response missing ${header}`);
+    }
+    assert(created.headers["x-content-type-options"] === "nosniff", "nosniff must be set");
+
+    const runId = (created.json() as { run: { id: string } }).run.id;
+    const exported = await app.inject({ method: "GET", url: `/v1/runs/${runId}/export`, headers: auth });
+    assert(exported.statusCode === 200, `Export failed: ${exported.statusCode}`);
+    const csp = String(exported.headers["content-security-policy"] ?? "");
+    assert(csp === CLIENT_REPORT_CSP, `Export must carry the report CSP, got: ${csp}`);
+    assert(/default-src 'none'/.test(csp) && /frame-ancestors 'none'/.test(csp), "CSP must deny by default and framing");
+    assert(!/script-src[^;]*'unsafe-inline'/.test(csp), "CSP must not allow arbitrary inline script");
+    assert(exported.headers["referrer-policy"] === "no-referrer", "Export must not leak its URL via Referer");
+    assert(!exported.body.includes("<script>alert(1)</script>"), "Run title must be escaped in the export");
+    // Blob: copies of the report (web console) carry no headers, so the
+    // policy must also be the first thing in <head>.
+    const head = exported.body.slice(0, exported.body.indexOf("<title>"));
+    const meta = /<meta http-equiv="Content-Security-Policy" content="([^"]+)">/.exec(head)?.[1] ?? "";
+    assert(/default-src 'none'/.test(meta) && /script-src 'unsafe-hashes' 'sha256-/.test(meta), `Report must embed its CSP before any content, got: ${meta}`);
+  } finally {
+    await app.close();
+    rmSync(tmp, { recursive: true, force: true });
+  }
 }

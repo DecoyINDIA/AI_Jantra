@@ -33,7 +33,7 @@ import {
   runParamsSchema,
 } from "../schemas.js";
 import { assertProjectAccess, requestClientId } from "../tenancy.js";
-import { renderClientReadyReport } from "../export/clientReport.js";
+import { CLIENT_REPORT_CSP, renderClientReadyReport } from "../export/clientReport.js";
 import type { JobRecord, JobStore } from "../jobs/types.js";
 import type { JobWorker } from "../jobs/worker.js";
 
@@ -200,7 +200,11 @@ export function registerRunRoutes(app: FastifyInstance, deps: RunRouteDeps): voi
     const params = parseWith(runParamsSchema, request.params);
     const project = loadScopedProject(request, deps.store, clientId, params.runId);
     const html = renderClientReadyReport(project);
-    reply.type("text/html; charset=utf-8").send(html);
+    reply
+      .header("content-security-policy", CLIENT_REPORT_CSP)
+      .header("referrer-policy", "no-referrer")
+      .type("text/html; charset=utf-8")
+      .send(html);
   });
 
   app.post("/v1/runs/:runId/advance", async (request, reply) => {

@@ -103,7 +103,8 @@ export function markdownToHtml(md: string): string {
         flushList();
         flushTable();
         inCodeBlock = true;
-        codeBlockLang = line.trim().slice(3).trim();
+        // Language tags become a class name; keep them to a safe charset.
+        codeBlockLang = line.trim().slice(3).trim().replace(/[^a-zA-Z0-9+#-]/g, "").slice(0, 32);
         codeBlockLines = [];
       } else {
         inCodeBlock = false;
@@ -281,6 +282,33 @@ function renderSourceRow(source: Source): string {
   `;
 }
 
+/**
+ * The report is HTML built from model, visitor and fetched-page text, served
+ * from the API origin. Escaping is the first defense; this policy is the
+ * second: no scripts except the print button's inline handler (pinned by
+ * hash), no network loads, no framing, and no Referer that would leak the run
+ * URL to linked sites.
+ */
+export const CLIENT_REPORT_CSP = [
+  "default-src 'none'",
+  "style-src 'unsafe-inline'",
+  "img-src data:",
+  // sha256 of the literal handler `window.print()`.
+  "script-src 'unsafe-hashes' 'sha256-MguIPR6qNR8D3B+eAlK+bIRTZe8t3wkOY4B/56Me9FU='",
+  "base-uri 'none'",
+  "form-action 'none'",
+  "frame-ancestors 'none'",
+].join("; ");
+
+// The web console opens the report as a blob: URL, which runs in the
+// console's origin (where the operator API key lives) and carries no HTTP
+// headers. The same policy is therefore embedded as the first element of
+// <head>; later markup can only tighten a meta CSP, never loosen it.
+// frame-ancestors is not honoured in a meta tag, so it is left out here.
+const CLIENT_REPORT_META_CSP = CLIENT_REPORT_CSP.split("; ")
+  .filter((directive) => !directive.startsWith("frame-ancestors"))
+  .join("; ");
+
 export function renderClientReadyReport(project: Project): string {
   const sourceMap = new Map<string, Source>();
   for (const src of project.sources ?? []) {
@@ -399,6 +427,7 @@ export function renderClientReadyReport(project: Project): string {
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="${CLIENT_REPORT_META_CSP}">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${escapeHtml(project.title)} — Client-Ready Deliverable | Jantra</title>
   <style>
