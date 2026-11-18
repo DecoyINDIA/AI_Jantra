@@ -14,4 +14,6 @@ export interface WebhookEvent {
   runId?: string;
   createdAt: string;
   payload: Record<string, unknown>;
+  /** Run's audit chain head at send time; store it to detect later truncation. */
+  auditHead?: { seq: number; hash: string };
 }

@@ -99,11 +99,56 @@ export function normalizeUntrustedText(content: string): string {
     .replace(/[ \t]+/g, " ");
 }
 
+// Leetspeak folding ("1gn0re prev10us") is one character to one character,
+// so a match in the folded text has the same offsets in the original and can
+// be redacted precisely.
+const LEET_MAP: Record<string, string> = {
+  "0": "o",
+  "1": "i",
+  "3": "e",
+  "4": "a",
+  "5": "s",
+  "7": "t",
+  "@": "a",
+  $: "s",
+  "!": "i",
+  "|": "l",
+};
+
+function foldLeet(text: string): string {
+  return text.replace(/[013457@$!|]/g, (ch) => LEET_MAP[ch] ?? ch);
+}
+
 export function detectPromptInjectionSignals(content: string): string[] {
   const normalized = normalizeUntrustedText(content);
-  return INJECTION_PATTERNS.filter((pattern) => pattern.test(normalized)).map((pattern) =>
-    pattern.source,
+  const folded = foldLeet(normalized);
+  return INJECTION_PATTERNS.filter((pattern) => pattern.test(normalized) || pattern.test(folded)).map(
+    (pattern) => pattern.source,
   );
+}
+
+/** Replace every span any pattern matches in either the text or its leet-folded twin. */
+function redactInjectionSpans(text: string): string {
+  const folded = foldLeet(text);
+  const spans: Array<[number, number]> = [];
+  for (const pattern of INJECTION_PATTERNS) {
+    const global = new RegExp(pattern.source, pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`);
+    for (const source of [text, folded]) {
+      for (const match of source.matchAll(global)) {
+        if (match[0].length) spans.push([match.index ?? 0, (match.index ?? 0) + match[0].length]);
+      }
+    }
+  }
+  if (!spans.length) return text;
+  spans.sort((a, b) => a[0] - b[0]);
+  let out = "";
+  let cursor = 0;
+  for (const [start, end] of spans) {
+    if (end <= cursor) continue;
+    out += text.slice(cursor, Math.max(cursor, start)) + (start >= cursor ? "[redacted-injection-directive]" : "");
+    cursor = end;
+  }
+  return out + text.slice(cursor);
 }
 
 export function sanitizeUntrustedWebContent(content: string): {
@@ -118,13 +163,7 @@ export function sanitizeUntrustedWebContent(content: string): {
   // reference text; this makes the detector act on its flags rather than only
   // annotating them.
   if (flags.length) {
-    for (const pattern of INJECTION_PATTERNS) {
-      const global = new RegExp(
-        pattern.source,
-        pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`,
-      );
-      normalized = normalized.replace(global, "[redacted-injection-directive]");
-    }
+    normalized = redactInjectionSpans(normalized);
   }
   // A per-call random fence id means page content cannot forge the closing
   // marker to "escape" the untrusted block, because it cannot predict the id.

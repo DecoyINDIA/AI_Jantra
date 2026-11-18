@@ -36,6 +36,7 @@ import {
   verifyReportProvenanceUnit,
 } from "./policy.js";
 import {
+  verifyAuditChainAcrossProcesses,
   verifyAuditHashChain,
   verifyAuditRedactionAndTruncation,
   verifyAuditVerifyRoute,
@@ -88,6 +89,7 @@ export async function runRegressionEvals(): Promise<StageEvalResult[]> {
     await runRegression("agent-system-cache", verifyAgentSystemPromptCache),
     await runRegression("audit-redaction-truncation", verifyAuditRedactionAndTruncation),
     await runRegression("audit-hash-chain", verifyAuditHashChain),
+    await runRegression("audit-chain-multi-process", verifyAuditChainAcrossProcesses),
     await runRegression("audit-verify-route", verifyAuditVerifyRoute),
     await runRegression("credential-encryption-strict", verifyCredentialEncryptionStrictness),
     await runRegression("credential-record-binding", verifyCredentialRecordBinding),
