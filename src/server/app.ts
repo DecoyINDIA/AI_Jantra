@@ -157,6 +157,16 @@ export function createServer(options: CreateServerOptions): FastifyInstance {
     jobWorker.start();
   }
 
+  // Baseline response headers. The API serves JSON plus one HTML export; none
+  // of it should be MIME-sniffed, framed, or leak its URL (which carries run
+  // IDs) via Referer. Routes may tighten these (the export adds a CSP).
+  app.addHook("onSend", async (_request, reply, payload) => {
+    reply.header("x-content-type-options", "nosniff");
+    reply.header("x-frame-options", "DENY");
+    if (!reply.hasHeader("referrer-policy")) reply.header("referrer-policy", "no-referrer");
+    return payload;
+  });
+
   app.get("/health", async () => ({ status: "healthy" }));
 
   if (mode === "remote") {
