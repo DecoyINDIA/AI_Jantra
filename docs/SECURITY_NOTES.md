@@ -16,4 +16,5 @@
 - Webhooks carry `X-Jantra-Timestamp`, a timestamp-bound `X-Jantra-Signature-V2`, and `X-Jantra-Delivery` for deduplication. Receivers should verify V2 (see `docs/THREAT_MODEL.md`); the legacy `X-Jantra-Signature` is replayable.
 - With `JANTRA_EDGE_SECRET` set, the origin refuses public-scope keys unless the request carries the edge's shared secret, so a leaked public key cannot bypass the edge or spoof `X-Jantra-Client-IP` (`src/server/auth/apiKeys.ts`).
 - With `TURNSTILE_SECRET_KEY` set on the Worker, creating a run or a lead requires a Cloudflare Turnstile token; verification fails closed and checks the token's hostname (`deploy/cloudflare-worker/worker.js`).
+- Audit JSONL lines are hash-chained (`seq`, `prevHash`, `hash`; HMAC-SHA256 with `JANTRA_AUDIT_HMAC_KEY`). Check a run with `GET /v1/runs/:runId/audit/verify` (full scope) or `verifyAuditFile` in `src/audit.ts`.
 - Threat model, residual risks, and open recommendations: `docs/THREAT_MODEL.md`.

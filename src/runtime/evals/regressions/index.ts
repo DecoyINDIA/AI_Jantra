@@ -36,7 +36,9 @@ import {
   verifyReportProvenanceUnit,
 } from "./policy.js";
 import {
+  verifyAuditHashChain,
   verifyAuditRedactionAndTruncation,
+  verifyAuditVerifyRoute,
   verifyDataRootDerivation,
   verifyEdgeSecretOriginLock,
   verifyJsonStoreIgnoresNonProjectFiles,
@@ -79,6 +81,8 @@ export async function runRegressionEvals(): Promise<StageEvalResult[]> {
     await runRegression("agent-output-cap", verifyAgentOutputCap),
     await runRegression("agent-system-cache", verifyAgentSystemPromptCache),
     await runRegression("audit-redaction-truncation", verifyAuditRedactionAndTruncation),
+    await runRegression("audit-hash-chain", verifyAuditHashChain),
+    await runRegression("audit-verify-route", verifyAuditVerifyRoute),
     await runRegression("user-message-length", verifyUserMessageLengthGuard),
     await runRegression("gemini-cache-dispose", verifyGeminiCacheDispose),
     await runRegression("handoff-skipped-tools", verifyHandoffSkippedToolAudit),

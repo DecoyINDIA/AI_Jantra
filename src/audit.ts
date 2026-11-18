@@ -1,4 +1,5 @@
-import { appendFileSync, mkdirSync } from "node:fs";
+import { createHash, createHmac } from "node:crypto";
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import { config } from "./config.js";
@@ -107,6 +108,151 @@ export function redactToolInput(input: unknown): unknown {
   );
 }
 
+/**
+ * Tamper evidence. Each line carries `seq`, `prevHash` and `hash`, where
+ * hash = H(prevHash + "\n" + JSON of the entry without `hash`). Editing,
+ * reordering or deleting a line breaks every later link. With
+ * JANTRA_AUDIT_HMAC_KEY set, H is HMAC-SHA256 under a key that does not live
+ * on the audit disk, so someone who can write the files still cannot forge a
+ * consistent chain. Without it (SHA-256) the chain catches accidental damage
+ * and naive edits but a writer could recompute it; deleting lines from the end
+ * is only detectable against a head hash recorded elsewhere.
+ */
+export const AUDIT_CHAIN_GENESIS = "0".repeat(64);
+
+export type AuditHashAlg = "sha256" | "hmac-sha256";
+
+function chainAlg(): AuditHashAlg {
+  return config.auditHmacKey ? "hmac-sha256" : "sha256";
+}
+
+export function auditChainHash(prevHash: string, body: string, key = config.auditHmacKey): string {
+  const payload = `${prevHash}\n${body}`;
+  return key
+    ? createHmac("sha256", key).update(payload, "utf8").digest("hex")
+    : createHash("sha256").update(payload, "utf8").digest("hex");
+}
+
+interface ChainHead {
+  seq: number;
+  hash: string;
+  size: number;
+}
+
+// Shared by every logger in this process: several loggers append to the same
+// file (the "system" and admin logs, per-request run loggers), and a
+// per-instance head would fork the chain.
+const chainHeads = new Map<string, ChainHead>();
+
+function readLastLine(file: string, size: number): string | null {
+  if (size === 0) return null;
+  const fd = openSync(file, "r");
+  try {
+    let chunk = 4096;
+    while (true) {
+      const length = Math.min(chunk, size);
+      const buffer = Buffer.alloc(length);
+      readSync(fd, buffer, 0, length, size - length);
+      const text = buffer.toString("utf8").replace(/\n+$/, "");
+      const newline = text.lastIndexOf("\n");
+      if (newline >= 0) return text.slice(newline + 1);
+      if (length === size) return text || null;
+      chunk *= 4;
+    }
+  } finally {
+    closeSync(fd);
+  }
+}
+
+function currentHead(file: string): ChainHead {
+  const size = existsSync(file) ? statSync(file).size : 0;
+  const cached = chainHeads.get(file);
+  // Size matches our last write, so nobody else appended since.
+  if (cached && cached.size === size) return cached;
+  let head: ChainHead = { seq: 0, hash: AUDIT_CHAIN_GENESIS, size };
+  const last = readLastLine(file, size);
+  if (last) {
+    try {
+      const parsed = JSON.parse(last) as { seq?: unknown; hash?: unknown };
+      if (typeof parsed.seq === "number" && typeof parsed.hash === "string") {
+        head = { seq: parsed.seq, hash: parsed.hash, size };
+      }
+    } catch {
+      // A torn or legacy last line: start a fresh link from genesis; the
+      // verifier reports the break rather than us guessing.
+    }
+  }
+  chainHeads.set(file, head);
+  return head;
+}
+
+export interface AuditChainReport {
+  ok: boolean;
+  alg: AuditHashAlg;
+  entries: number;
+  /** Entries written before chaining existed; allowed only as a prefix. */
+  legacyEntries: number;
+  headSeq: number;
+  headHash: string;
+  /** 1-based line number of the first broken link, if any. */
+  brokenAtLine?: number;
+  reason?: string;
+}
+
+export function verifyAuditChainText(text: string, key = config.auditHmacKey): AuditChainReport {
+  const alg: AuditHashAlg = key ? "hmac-sha256" : "sha256";
+  const lines = text.split("\n").filter((line) => line.trim().length > 0);
+  let legacy = 0;
+  let prevHash = AUDIT_CHAIN_GENESIS;
+  let prevSeq = 0;
+  let chained = false;
+  const fail = (line: number, reason: string): AuditChainReport => ({
+    ok: false,
+    alg,
+    entries: lines.length,
+    legacyEntries: legacy,
+    headSeq: prevSeq,
+    headHash: prevHash,
+    brokenAtLine: line,
+    reason,
+  });
+  for (let i = 0; i < lines.length; i++) {
+    let entry: Record<string, unknown>;
+    try {
+      entry = JSON.parse(lines[i]!) as Record<string, unknown>;
+    } catch {
+      return fail(i + 1, "unparseable line");
+    }
+    const { hash, ...rest } = entry;
+    if (typeof hash !== "string") {
+      if (chained) return fail(i + 1, "unchained entry after chain start");
+      legacy++;
+      continue;
+    }
+    chained = true;
+    if (rest.prevHash !== prevHash) return fail(i + 1, "prevHash does not match previous entry");
+    if (rest.seq !== prevSeq + 1) return fail(i + 1, "sequence gap");
+    if (auditChainHash(prevHash, JSON.stringify(rest), key) !== hash) {
+      return fail(i + 1, "hash mismatch (entry modified or wrong key)");
+    }
+    prevHash = hash;
+    prevSeq = rest.seq as number;
+  }
+  return {
+    ok: true,
+    alg,
+    entries: lines.length,
+    legacyEntries: legacy,
+    headSeq: prevSeq,
+    headHash: prevHash,
+  };
+}
+
+export function verifyAuditFile(runId: string, dir = config.auditDir): AuditChainReport {
+  const file = join(dir, `${runId}.jsonl`);
+  return verifyAuditChainText(existsSync(file) ? readFileSync(file, "utf8") : "");
+}
+
 export class AuditLogger {
   private readonly file: string;
   readonly entries: AuditEntry[] = [];
@@ -121,14 +267,28 @@ export class AuditLogger {
 
   record(type: AuditType, data: Record<string, unknown> = {}): void {
     const safeData = sanitizeAuditData(data);
-    const entry: AuditEntry = {
+    // Chain fields are written last so caller data cannot overwrite them.
+    const { seq: _seq, prevHash: _prev, hash: _hash, hashAlg: _alg, ...callerData } = safeData;
+    const head = currentHead(this.file);
+    const unsigned: AuditEntry = {
       ts: new Date().toISOString(),
       runId: this.runId,
       type,
-      ...safeData,
+      ...callerData,
+      seq: head.seq + 1,
+      prevHash: head.hash,
+      hashAlg: chainAlg(),
     };
+    const hash = auditChainHash(head.hash, JSON.stringify(unsigned));
+    const entry: AuditEntry = { ...unsigned, hash };
+    const line = JSON.stringify(entry) + "\n";
+    appendFileSync(this.file, line, "utf8");
+    chainHeads.set(this.file, {
+      seq: head.seq + 1,
+      hash,
+      size: head.size + Buffer.byteLength(line, "utf8"),
+    });
     this.entries.push(entry);
-    appendFileSync(this.file, JSON.stringify(entry) + "\n", "utf8");
     auditPublisher?.(entry);
   }
 

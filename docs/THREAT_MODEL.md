@@ -41,7 +41,7 @@ targeted review, not a full penetration test.
 | T6 | Webhook spoofing or replay at receivers | HMAC-SHA256 signature; V2 signature binds a timestamp (5 minute tolerance); `X-Jantra-Delivery` ID for deduplication | Low once receivers verify V2. V1 remains for compatibility and is replayable |
 | T7 | Credential brute force or timing attacks | 256-bit keys, SHA-256 lookup, constant-time comparison, pre-auth rate limit | Low |
 | T8 | Secrets in logs or artifacts | Audit redaction, metadata-only diagnostics, secrets never echoed by webhook routes | Low. Covered by the audit redaction regression |
-| T9 | Audit log tampering | Append-only JSONL | Medium. No tamper evidence. Recommended: hash-chain records |
+| T9 | Audit log tampering | Append-only JSONL; every line hash-chained (`seq`, `prevHash`, `hash`), HMAC-SHA256 when `JANTRA_AUDIT_HMAC_KEY` is set; `GET /v1/runs/:id/audit/verify` (full scope) | Low-medium with the HMAC key set: edits, deletions, reorders and inserts are detected. Truncating the tail is only detectable against a head hash recorded elsewhere. Concurrent writers in separate processes can fork a chain, which the verifier reports |
 | T10 | Origin reached directly, bypassing the edge | Public key held only at the edge; with `JANTRA_EDGE_SECRET` set, public-scope requests also need the edge's shared secret (constant-time check); the edge strips browser-supplied `X-Jantra-*` headers | Low with the secret set. Both secrets would have to leak. Network-level restriction to Cloudflare is still worthwhile |
 | T11 | Path traversal in data and connector paths | `assertSafePathSegment`; `resolveClientDataDir` containment plus rejection of absolute paths on any platform | Low |
 
@@ -64,10 +64,10 @@ reference implementation is `verifyWebhookSignature` in
 ## Open recommendations (priority order)
 
 1. Set `JANTRA_EDGE_SECRET` and `TURNSTILE_SECRET_KEY` in production; both controls are off until configured (T5, T10).
-2. Hash-chain audit JSONL records so tampering is detectable (T9).
+2. Periodically export each run's `headSeq`/`headHash` to storage outside the audit volume, so tail truncation is detectable (T9).
 3. Visitor-bound run access tokens for public runs (T4).
 4. Move the remaining `process.env` reads in `src/server/index.ts` and `src/server/auth/logtoUser.ts` into `src/config.ts`.
-6. Add `npm audit --omit=dev` and secret scanning to CI.
+5. Add `npm audit --omit=dev` and secret scanning to CI.
 6. Commission an external penetration test before production traffic.
 
 ## Regressions guarding this model
@@ -75,5 +75,5 @@ reference implementation is `verifyWebhookSignature` in
 `webhook-url-guard`, `ssrf-ipv6-transition-ranges`, `safe-fetch-redirect`,
 `webhook-signature-replay`, `injection-content-neutralized`,
 `injection-bypass-corpus`, `public-key-scope`, `edge-secret-origin-lock`, `rate-limiter-proxy-trust`,
-`audit-redaction-truncation`, `error-envelope-no-leak`, `csv-directory-resolve`.
+`audit-redaction-truncation`, `audit-hash-chain`, `audit-verify-route`, `error-envelope-no-leak`, `csv-directory-resolve`.
 Edge checks (`npm run edge:verify:local`): Turnstile missing, forged, wrong-hostname and verifier-down cases; direct origin calls without or with a wrong edge secret; browser header smuggling.
