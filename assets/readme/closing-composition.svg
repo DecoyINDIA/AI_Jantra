@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 340" width="100%" height="auto">
+  <defs>
+    <radialGradient id="close-nebula" cx="50%" cy="40%" r="65%">
+      <stop offset="0%" stop-color="#7c3aed" stop-opacity="0.28" />
+      <stop offset="45%" stop-color="#1e1b4b" stop-opacity="0.18" />
+      <stop offset="100%" stop-color="#07090e" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="beacon-light" cx="50%" cy="40%" r="25%">
+      <stop offset="0%" stop-color="#00f2fe" stop-opacity="0.35" />
+      <stop offset="100%" stop-color="#00f2fe" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="cta-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#7c3aed" />
+      <stop offset="50%" stop-color="#9333ea" />
+      <stop offset="100%" stop-color="#06b6d4" />
+    </linearGradient>
+    
+    <!-- Mini Gear Tooth definition -->
+    <path id="close-tooth" d="M 0 -10 L -7 -18 L -7 -36 A 7 7 0 0 1 7 -36 L 7 -18 Z" />
+  </defs>
+
+  <style>
+    .close-shell { fill: #07090e; stroke: #1e263d; stroke-width: 1.5; rx: 16px; }
+    .mono { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; }
+    .sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+
+    @keyframes rotate-slow {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    @keyframes beacon-pulse {
+      0%, 100% { opacity: 0.4; transform: scale(0.95); }
+      50% { opacity: 0.8; transform: scale(1.1); }
+    }
+    @keyframes star-twinkle {
+      0%, 100% { opacity: 0.2; }
+      50% { opacity: 0.9; }
+    }
+    @keyframes glow-button {
+      0%, 100% { filter: drop-shadow(0 0 12px rgba(124, 58, 237, 0.4)); }
+      50% { filter: drop-shadow(0 0 20px rgba(6, 182, 212, 0.6)); }
+    }
+
+    .core-halo { transform-origin: 470px 105px; animation: rotate-slow 24s linear infinite; }
+    .beacon { transform-origin: 470px 105px; animation: beacon-pulse 4s ease-in-out infinite; }
+    .star-1 { animation: star-twinkle 3s ease-in-out infinite; }
+    .star-2 { animation: star-twinkle 4s ease-in-out infinite 1.5s; }
+    .star-3 { animation: star-twinkle 2.5s ease-in-out infinite 0.7s; }
+    .btn-glow { animation: glow-button 4s ease-in-out infinite; }
+  </style>
+
+  <!-- Container Box -->
+  <rect width="940" height="340" class="close-shell" />
+  <rect width="940" height="340" fill="url(#close-nebula)" rx="16" />
+  <rect width="940" height="340" fill="url(#beacon-light)" rx="16" />
+
+  <!-- Background Stars / Spark Particles -->
+  <circle cx="120" cy="80" r="1.5" fill="#c084fc" class="star-1" />
+  <circle cx="240" cy="190" r="1" fill="#38bdf8" class="star-2" />
+  <circle cx="780" cy="70" r="1.5" fill="#38bdf8" class="star-3" />
+  <circle cx="850" cy="180" r="1" fill="#c084fc" class="star-1" />
+  <circle cx="340" cy="50" r="1.2" fill="#ffffff" class="star-2" />
+  <circle cx="620" cy="50" r="1.2" fill="#ffffff" class="star-3" />
+
+  <!-- ================= EMBLEM & HALO (Center) ================= -->
+  <g class="beacon">
+    <circle cx="470" cy="105" r="50" fill="#7c3aed" filter="blur(16px)" />
+  </g>
+
+  <!-- Concentric Calibrated Rings -->
+  <circle cx="470" cy="105" r="58" fill="none" stroke="#334155" stroke-width="1" stroke-dasharray="2 4" />
+  <circle cx="470" cy="105" r="46" fill="none" stroke="#7c3aed" stroke-width="1" stroke-opacity="0.5" />
+
+  <!-- Rotating Gear Core -->
+  <g class="core-halo">
+    <g transform="translate(470, 105)" fill="#c084fc">
+      <g transform="rotate(0)"><use href="#close-tooth" /></g>
+      <g transform="rotate(60)"><use href="#close-tooth" /></g>
+      <g transform="rotate(120)"><use href="#close-tooth" /></g>
+      <g transform="rotate(180)"><use href="#close-tooth" /></g>
+      <g transform="rotate(240)"><use href="#close-tooth" /></g>
+      <g transform="rotate(300)"><use href="#close-tooth" /></g>
+      <circle cx="0" cy="0" r="22" fill="#0d111c" stroke="#00f2fe" stroke-width="2" />
+      <circle cx="0" cy="0" r="10" fill="#7c3aed" />
+      <circle cx="0" cy="0" r="4" fill="#ffffff" />
+    </g>
+  </g>
+
+  <!-- ================= CLOSING HEADLINES ================= -->
+  <text x="470" y="195" text-anchor="middle" font-size="24" font-weight="800" fill="#ffffff" letter-spacing="1" class="sans">
+    RUN AUTONOMOUS AGENTS YOU CAN FULLY AUDIT AND TRUST
+  </text>
+  <text x="470" y="222" text-anchor="middle" font-size="13" font-weight="500" fill="#94a3b8" letter-spacing="0.5" class="sans">
+    Deterministic Citation Verification • Generator ≠ Critic • Human Gates • Sub-Cent Telemetry
+  </text>
+
+  <!-- ================= ACTION BUTTONS / CTAS ================= -->
+  <g transform="translate(470, 275)" text-anchor="middle" class="sans">
+    <!-- CTA Button 1: Quickstart Pipeline (Glowing gradient) -->
+    <g transform="translate(-140, 0)" class="btn-glow">
+      <rect x="-120" y="-18" width="240" height="36" rx="8" fill="url(#cta-grad)" />
+      <text x="0" y="5" fill="#ffffff" font-size="12.5" font-weight="700">✦ Run Planning Pipeline</text>
+    </g>
+
+    <!-- CTA Button 2: Launch Console (Obsidian glassmorphic) -->
+    <g transform="translate(140, 0)">
+      <rect x="-120" y="-18" width="240" height="36" rx="8" fill="#0e1322" stroke="#253252" stroke-width="1.2" />
+      <text x="0" y="5" fill="#e2e8f0" font-size="12.5" font-weight="600">⬡ Launch Operator Console</text>
+    </g>
+  </g>
+
+  <!-- Bottom Micro Subtext -->
+  <text x="470" y="322" text-anchor="middle" fill="#64748b" font-size="10" class="mono">
+    NODE ≥20 • STRICT TYPESCRIPT • GEMINI 2.5 • FASTIFY v5.8 • ZERO DEPENDENCY BLOAT
+  </text>
+</svg>

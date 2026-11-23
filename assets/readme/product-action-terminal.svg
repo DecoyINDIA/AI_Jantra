@@ -1,0 +1,157 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 520" width="100%" height="auto">
+  <defs>
+    <radialGradient id="term-glow" cx="50%" cy="0%" r="80%">
+      <stop offset="0%" stop-color="#640ec1" stop-opacity="0.22" />
+      <stop offset="50%" stop-color="#0e1322" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="header-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#141928" />
+      <stop offset="100%" stop-color="#1b2238" />
+    </linearGradient>
+  </defs>
+
+  <style>
+    .bg-term { fill: #07090f; stroke: #1e263d; stroke-width: 1.5; }
+    .mono { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace; }
+    
+    @keyframes cursor-blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0; }
+    }
+    @keyframes step-pulse {
+      0%, 100% { opacity: 0.6; }
+      50% { opacity: 1; }
+    }
+    @keyframes progress-fill {
+      0% { width: 0px; }
+      30% { width: 140px; }
+      65% { width: 340px; }
+      100% { width: 520px; }
+    }
+    @keyframes sse-pulse {
+      0%, 100% { fill: #10b981; }
+      50% { fill: #34d399; }
+    }
+    
+    .cursor { animation: cursor-blink 0.9s infinite; }
+    .pulse-amber { animation: step-pulse 1.8s ease-in-out infinite; }
+    .pulse-sse { animation: sse-pulse 2s ease-in-out infinite; }
+  </style>
+
+  <!-- Terminal Window Shell -->
+  <rect x="1" y="1" width="918" height="518" rx="14" class="bg-term" />
+  <rect x="1" y="1" width="918" height="518" rx="14" fill="url(#term-glow)" />
+
+  <!-- Terminal Title Bar -->
+  <path d="M 1 14 Q 1 1 14 1 L 906 1 Q 919 1 919 14 L 919 42 L 1 42 Z" fill="url(#header-grad)" stroke="#1e263d" stroke-width="1" />
+  
+  <!-- macOS Window Controls -->
+  <circle cx="24" cy="21" r="5.5" fill="#ef4444" />
+  <circle cx="44" cy="21" r="5.5" fill="#f59e0b" />
+  <circle cx="64" cy="21" r="5.5" fill="#10b981" />
+
+  <!-- Terminal Title & Badge -->
+  <text x="460" y="26" text-anchor="middle" fill="#94a3b8" font-size="12" font-weight="600" class="mono">
+    jantra-pipeline-session — node src/pipeline/cli.ts (client: xolver)
+  </text>
+  <g transform="translate(820, 13)">
+    <rect x="0" y="0" width="80" height="18" rx="4" fill="#0d1424" stroke="#10b981" stroke-width="0.8" />
+    <circle cx="10" cy="9" r="3" class="pulse-sse" />
+    <text x="20" y="13" fill="#a7f3d0" font-size="9.5" font-weight="700" class="mono">LIVE SSE</text>
+  </g>
+
+  <!-- ================= TERMINAL BUFFER CONTENT ================= -->
+  <g transform="translate(32, 72)" class="mono" font-size="12.5" line-height="24">
+    <!-- Prompt Command -->
+    <g transform="translate(0, 0)">
+      <text x="0" y="0" fill="#a855f7" font-weight="700">$</text>
+      <text x="18" y="0" fill="#f8fafc" font-weight="600">npm run pipeline -- --client="xolver" --title="Automated Logistics Reconciliation"</text>
+    </g>
+
+    <!-- Run Initialized -->
+    <g transform="translate(0, 26)">
+      <text x="0" y="0" fill="#64748b">[INIT]</text>
+      <text x="56" y="0" fill="#cbd5e1">Project</text>
+      <text x="116" y="0" fill="#38bdf8" font-weight="600">prj_94f281e0</text>
+      <text x="224" y="0" fill="#64748b">created under</text>
+      <text x="328" y="0" fill="#94a3b8">.jantra/projects/xolver/prj_94f281e0/</text>
+    </g>
+
+    <!-- Stage 1: Intake -->
+    <g transform="translate(0, 56)">
+      <rect x="-4" y="-14" width="856" height="48" rx="6" fill="#0d1322" stroke="#1e2942" stroke-width="0.8" />
+      <text x="8" y="2" fill="#38bdf8" font-weight="700">STAGE 1: INTAKE</text>
+      <text x="144" y="2" fill="#64748b">• Model:</text>
+      <text x="204" y="2" fill="#e2e8f0">gemini-2.5-flash</text>
+      <text x="340" y="2" fill="#64748b">• Thinking:</text>
+      <text x="416" y="2" fill="#e2e8f0">dynamic (4096)</text>
+      <text x="540" y="2" fill="#10b981">✓ Artifact produced</text>
+      
+      <text x="8" y="24" fill="#10b981">✓</text>
+      <text x="26" y="24" fill="#94a3b8">Artifact: <tspan fill="#e2e8f0">idea_summary.md</tspan> (4 sections, 8 constraints, 3 risk vectors identified)</text>
+    </g>
+
+    <!-- Human Gate 1: Awaiting Confirmation -->
+    <g transform="translate(0, 126)">
+      <rect x="-4" y="-14" width="856" height="30" rx="6" fill="#1f1806" stroke="#f59e0b" stroke-width="1" class="pulse-amber" />
+      <circle cx="10" cy="2" r="3.5" fill="#f59e0b" />
+      <text x="22" y="5" fill="#fef08a" font-weight="700">HUMAN GATE #1 : AWAITING CONFIRMATION</text>
+      <text x="360" y="5" fill="#fde68a">— Operator approved idea summary via CLI.</text>
+      <text x="730" y="5" fill="#10b981" font-weight="700">[ CONFIRMED ]</text>
+    </g>
+
+    <!-- Stage 2: Grounded Research with Deterministic Verifier -->
+    <g transform="translate(0, 178)">
+      <rect x="-4" y="-14" width="856" height="88" rx="6" fill="#0d1322" stroke="#1e2942" stroke-width="0.8" />
+      <text x="8" y="2" fill="#a855f7" font-weight="700">STAGE 2: RESEARCH</text>
+      <text x="160" y="2" fill="#64748b">• Concurrency: 4 • NetGuard: SSRF blocked • Sources: 19</text>
+
+      <text x="8" y="24" fill="#38bdf8">→ citationVerifier.ts:</text>
+      <text x="180" y="24" fill="#94a3b8">Normalized source window: 400 chars • Skeptic judge active</text>
+      
+      <text x="8" y="44" fill="#10b981">✓ VERIFIED CLAIM [01]:</text>
+      <text x="180" y="44" fill="#cbd5e1">"EDI 810 / 856 mismatch occurs in 14.2% of carrier invoices" (Source: LogisticsIndex)</text>
+
+      <text x="8" y="64" fill="#ef4444">✕ ABSTAIN CLAIM [02]:</text>
+      <text x="180" y="64" fill="#f87171">"Carrier claim dispute latency drops by 80%" (Ungrounded claim purged from report)</text>
+    </g>
+
+    <!-- Human Gate 2: Awaiting Confirmation -->
+    <g transform="translate(0, 286)">
+      <rect x="-4" y="-14" width="856" height="30" rx="6" fill="#1f1806" stroke="#f59e0b" stroke-width="1" class="pulse-amber" />
+      <circle cx="10" cy="2" r="3.5" fill="#f59e0b" />
+      <text x="22" y="5" fill="#fef08a" font-weight="700">HUMAN GATE #2 : AWAITING CONFIRMATION</text>
+      <text x="360" y="5" fill="#fde68a">— Operator confirmed cited research report.</text>
+      <text x="730" y="5" fill="#10b981" font-weight="700">[ CONFIRMED ]</text>
+    </g>
+
+    <!-- Stage 3: Planning (Generator != Critic) -->
+    <g transform="translate(0, 338)">
+      <rect x="-4" y="-14" width="856" height="48" rx="6" fill="#0d1322" stroke="#1e2942" stroke-width="0.8" />
+      <text x="8" y="2" fill="#c084fc" font-weight="700">STAGE 3: PLANNING</text>
+      <text x="160" y="2" fill="#64748b">• Generator ≠ Critic loop: Rubric evaluation passed (9.7 / 10)</text>
+      
+      <text x="8" y="24" fill="#10b981">✓ Artifacts:</text>
+      <text x="110" y="24" fill="#e2e8f0">prd.md (14p) • trd.md (Architecture &amp; Schema) • build_plan.md (3-sprint WBS)</text>
+    </g>
+
+    <!-- Final Telemetry & Audit Summary Bar -->
+    <g transform="translate(0, 404)">
+      <rect x="-4" y="-10" width="856" height="32" rx="6" fill="#081826" stroke="#0284c7" stroke-width="1" />
+      <circle cx="10" cy="6" r="3" fill="#38bdf8" />
+      <text x="22" y="10" fill="#e0f2fe" font-weight="700">RUN SEALED :</text>
+      <text x="130" y="10" fill="#38bdf8">14 model turns</text>
+      <text x="250" y="10" fill="#64748b">|</text>
+      <text x="265" y="10" fill="#f59e0b">Spend: $0.184</text>
+      <text x="375" y="10" fill="#64748b">(Ceiling: $10.00)</text>
+      <text x="495" y="10" fill="#64748b">|</text>
+      <text x="510" y="10" fill="#10b981">Audit: .jantra/audit/prj_94f281e0.jsonl (100% auditable)</text>
+    </g>
+
+    <!-- Blinking Cursor -->
+    <g transform="translate(0, 434)">
+      <text x="0" y="0" fill="#a855f7" font-weight="700">$</text>
+      <rect x="16" y="-12" width="8" height="15" fill="#38bdf8" class="cursor" />
+    </g>
+  </g>
+</svg>

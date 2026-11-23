@@ -1,0 +1,167 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 260" width="100%" height="auto">
+  <defs>
+    <radialGradient id="sym-glow" cx="22%" cy="50%" r="45%">
+      <stop offset="0%" stop-color="#7c3aed" stop-opacity="0.25" />
+      <stop offset="100%" stop-color="#0b0e17" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="sym-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#c084fc" />
+      <stop offset="50%" stop-color="#7c3aed" />
+      <stop offset="100%" stop-color="#4f46e5" />
+    </linearGradient>
+    <linearGradient id="wire-beam" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00f2fe" />
+      <stop offset="50%" stop-color="#a855f7" />
+      <stop offset="100%" stop-color="#ec4899" />
+    </linearGradient>
+
+    <!-- Gear Tooth Path definition -->
+    <path id="tooth-path" d="M 0 -16 L -12 -28 L -12 -64 A 12 12 0 0 1 12 -64 L 12 -28 Z" />
+  </defs>
+
+  <style>
+    .bg-card { fill: #090c15; stroke: #1e263d; stroke-width: 1.5; }
+    
+    @keyframes draw-strokes {
+      0% { stroke-dashoffset: 400; opacity: 0.2; }
+      40% { stroke-dashoffset: 0; opacity: 1; fill-opacity: 0; }
+      60% { fill-opacity: 0.9; stroke-width: 1.5; }
+      100% { stroke-dashoffset: 0; opacity: 1; fill-opacity: 1; stroke-width: 0.5; }
+    }
+    @keyframes hub-lock {
+      0%, 25% { transform: scale(0); opacity: 0; }
+      50% { transform: scale(1.2); opacity: 0.8; }
+      65% { transform: scale(1); opacity: 1; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    @keyframes clock-cycle {
+      0%, 40% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    @keyframes text-reveal {
+      0%, 20% { opacity: 0; transform: translateX(10px); }
+      50%, 100% { opacity: 1; transform: translateX(0px); }
+    }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 0.4; }
+      50% { opacity: 1; }
+    }
+
+    .teeth-assemble {
+      stroke-dasharray: 400;
+      animation: draw-strokes 8s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
+    }
+    .hub-snap {
+      transform-origin: 190px 130px;
+      animation: hub-lock 8s cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
+    }
+    .gear-system-spin {
+      transform-origin: 190px 130px;
+      animation: clock-cycle 8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    }
+    .doc-text { animation: text-reveal 8s ease-out infinite; }
+    .pulse-amber { animation: pulse-dot 2s ease-in-out infinite; }
+
+    .mono { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; }
+    .sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+  </style>
+
+  <!-- Container Box -->
+  <rect x="1" y="1" width="878" height="258" rx="14" class="bg-card" />
+  <rect x="1" y="1" width="878" height="258" rx="14" fill="url(#sym-glow)" />
+
+  <!-- LEFT COLUMN: ANIMATED BRAND EMBLEM -->
+  <g transform="translate(0, 0)">
+    <!-- Outer concentric calibrated reference lines -->
+    <circle cx="190" cy="130" r="92" fill="none" stroke="#252f4a" stroke-width="1" stroke-dasharray="3 5" />
+    <circle cx="190" cy="130" r="82" fill="none" stroke="#3b4870" stroke-width="0.8" />
+    
+    <!-- Coordinate Crosshairs -->
+    <line x1="190" y1="28" x2="190" y2="44" stroke="#7c3aed" stroke-width="1.5" />
+    <line x1="190" y1="216" x2="190" y2="232" stroke="#7c3aed" stroke-width="1.5" />
+    <line x1="88" y1="130" x2="104" y2="130" stroke="#00f2fe" stroke-width="1.5" />
+    <line x1="276" y1="130" x2="292" y2="130" stroke="#00f2fe" stroke-width="1.5" />
+
+    <!-- Synchronized Gear Assembly -->
+    <g class="gear-system-spin">
+      <g transform="translate(190, 130)">
+        <!-- 6 Assembling Teeth -->
+        <g transform="rotate(0)" class="teeth-assemble" fill="url(#sym-grad)" stroke="#c084fc">
+          <use href="#tooth-path" />
+        </g>
+        <g transform="rotate(60)" class="teeth-assemble" fill="url(#sym-grad)" stroke="#c084fc">
+          <use href="#tooth-path" />
+        </g>
+        <g transform="rotate(120)" class="teeth-assemble" fill="url(#sym-grad)" stroke="#c084fc">
+          <use href="#tooth-path" />
+        </g>
+        <g transform="rotate(180)" class="teeth-assemble" fill="url(#sym-grad)" stroke="#c084fc">
+          <use href="#tooth-path" />
+        </g>
+        <g transform="rotate(240)" class="teeth-assemble" fill="url(#sym-grad)" stroke="#c084fc">
+          <use href="#tooth-path" />
+        </g>
+        <g transform="rotate(300)" class="teeth-assemble" fill="url(#sym-grad)" stroke="#c084fc">
+          <use href="#tooth-path" />
+        </g>
+      </g>
+    </g>
+
+    <!-- Interlocking Center Hub with Snap Lock Animation -->
+    <g class="hub-snap">
+      <circle cx="190" cy="130" r="34" fill="#0d111c" stroke="#a855f7" stroke-width="2.5" />
+      <polygon points="190,108 209,119 209,141 190,152 171,141 171,119" fill="#1e1838" stroke="#00f2fe" stroke-width="1.5" />
+      <circle cx="190" cy="130" r="8" fill="#c084fc" />
+      <circle cx="190" cy="130" r="3" fill="#ffffff" />
+    </g>
+  </g>
+
+  <!-- VERTICAL DIVIDER -->
+  <line x1="370" y1="24" x2="370" y2="236" stroke="#1f2942" stroke-width="1.5" />
+  <circle cx="370" cy="130" r="3" fill="#7c3aed" />
+
+  <!-- RIGHT COLUMN: THE ARCHITECTURE MANIFESTO & IDENTITY CODES -->
+  <g transform="translate(405, 42)" class="sans">
+    <!-- Etymology Badge -->
+    <rect x="0" y="0" width="138" height="22" rx="5" fill="#141a2e" stroke="#253254" stroke-width="1" />
+    <text x="8" y="15" fill="#93c5fd" font-size="10.5" font-weight="700" letter-spacing="1" class="mono">
+      ET YMOLOGY : यन्त्र
+    </text>
+
+    <!-- Headline Definition -->
+    <text x="0" y="52" fill="#ffffff" font-size="20" font-weight="700" letter-spacing="0.5">
+      JANTRA = The Precision Instrument
+    </text>
+
+    <!-- Doctrine Paragraph -->
+    <text x="0" y="80" fill="#94a3b8" font-size="13.5" line-height="1.5" font-weight="400">
+      <tspan x="0" dy="0">In Sanskrit, a </tspan>
+      <tspan fill="#e9d5ff" font-weight="600">yantra</tspan>
+      <tspan> is an apparatus: an interlocking mechanism designed for</tspan>
+      <tspan x="0" dy="20">mathematical exactness. In AI operations, trust is not an emergent trait—</tspan>
+      <tspan x="0" dy="20">it is an engineered boundary.</tspan>
+    </text>
+
+    <!-- Architectural Guarantees Grid -->
+    <g transform="translate(0, 142)" class="mono" font-size="11">
+      <!-- Item 1 -->
+      <g transform="translate(0, 0)">
+        <circle cx="4" cy="4" r="3" fill="#10b981" />
+        <text x="14" y="8" fill="#f1f5f9" font-weight="600">DETERMINISTIC</text>
+        <text x="110" y="8" fill="#64748b">citations verified by code</text>
+      </g>
+      <!-- Item 2 -->
+      <g transform="translate(0, 24)">
+        <circle cx="4" cy="4" r="3" fill="#f59e0b" class="pulse-amber" />
+        <text x="14" y="8" fill="#f1f5f9" font-weight="600">STAGE-GATED</text>
+        <text x="110" y="8" fill="#64748b">human signs off each artifact</text>
+      </g>
+      <!-- Item 3 -->
+      <g transform="translate(0, 48)">
+        <circle cx="4" cy="4" r="3" fill="#a855f7" />
+        <text x="14" y="8" fill="#f1f5f9" font-weight="600">AUDITABLE</text>
+        <text x="110" y="8" fill="#64748b">every thought, cost, and decision logged</text>
+      </g>
+    </g>
+  </g>
+</svg>

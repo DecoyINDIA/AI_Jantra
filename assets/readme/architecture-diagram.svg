@@ -1,0 +1,241 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 560" width="100%" height="auto">
+  <defs>
+    <radialGradient id="arch-glow" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#640ec1" stop-opacity="0.14" />
+      <stop offset="60%" stop-color="#0b0e1a" stop-opacity="0.05" />
+      <stop offset="100%" stop-color="#06080e" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="flow-pulse-blue" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0" />
+      <stop offset="50%" stop-color="#38bdf8" stop-opacity="1" />
+      <stop offset="100%" stop-color="#38bdf8" stop-opacity="0" />
+    </linearGradient>
+    <linearGradient id="flow-pulse-purple" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#a855f7" stop-opacity="0" />
+      <stop offset="50%" stop-color="#a855f7" stop-opacity="1" />
+      <stop offset="100%" stop-color="#a855f7" stop-opacity="0" />
+    </linearGradient>
+    <linearGradient id="flow-pulse-emerald" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#10b981" stop-opacity="0" />
+      <stop offset="50%" stop-color="#10b981" stop-opacity="1" />
+      <stop offset="100%" stop-color="#10b981" stop-opacity="0" />
+    </linearGradient>
+  </defs>
+
+  <style>
+    .node-box { fill: #0b0f1d; stroke: #1e2942; stroke-width: 1.2; rx: 8px; }
+    .tier-box { fill: #080b14; stroke: #161f33; stroke-width: 1; rx: 12px; }
+    .mono { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; }
+    .sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+
+    @keyframes conduit-flow-h {
+      0% { stroke-dashoffset: 120; }
+      100% { stroke-dashoffset: -120; }
+    }
+    @keyframes conduit-flow-v {
+      0% { stroke-dashoffset: 80; }
+      100% { stroke-dashoffset: -80; }
+    }
+    @keyframes node-blink {
+      0%, 100% { opacity: 0.5; }
+      50% { opacity: 1; }
+    }
+
+    .pulse-conduit-h {
+      stroke-dasharray: 20 40;
+      animation: conduit-flow-h 3s linear infinite;
+    }
+    .pulse-conduit-v {
+      stroke-dasharray: 15 30;
+      animation: conduit-flow-v 2.5s linear infinite;
+    }
+    .pulse-dot { animation: node-blink 2s ease-in-out infinite; }
+  </style>
+
+  <!-- Background Canvas -->
+  <rect width="960" height="560" fill="#06080e" rx="16" />
+  <rect width="960" height="560" fill="url(#arch-glow)" rx="16" />
+  <rect x="1" y="1" width="958" height="558" rx="15" fill="none" stroke="#1a2236" stroke-width="1.5" />
+
+  <!-- Title & Architecture Subtitle -->
+  <g transform="translate(36, 32)">
+    <circle cx="6" cy="6" r="5" fill="#a855f7" class="pulse-dot" />
+    <text x="20" y="10" fill="#f8fafc" font-size="16" font-weight="700" class="sans">Jantra AI Architecture</text>
+    <text x="20" y="26" fill="#64748b" font-size="11" class="mono">RUNTIME TOPOLOGY • ZERO-LEAK TENANCY • HUMAN-GATED ORCHESTRATION</text>
+  </g>
+
+  <!-- ================= TIER 1: CLIENT SURFACES ================= -->
+  <g transform="translate(36, 76)">
+    <rect width="888" height="68" class="tier-box" />
+    <text x="14" y="20" fill="#64748b" font-size="9.5" font-weight="700" class="mono">CLIENT &amp; INGESTION SURFACES</text>
+
+    <!-- Client 1: Operator Web -->
+    <g transform="translate(14, 28)">
+      <rect width="200" height="32" class="node-box" />
+      <circle cx="12" cy="16" r="3.5" fill="#38bdf8" />
+      <text x="24" y="20" fill="#f1f5f9" font-size="11" font-weight="600" class="sans">web/ (React 19 Console)</text>
+    </g>
+
+    <!-- Client 2: Electron Desktop -->
+    <g transform="translate(232, 28)">
+      <rect width="200" height="32" class="node-box" />
+      <circle cx="12" cy="16" r="3.5" fill="#818cf8" />
+      <text x="24" y="20" fill="#f1f5f9" font-size="11" font-weight="600" class="sans">desktop/ (Electron Native)</text>
+    </g>
+
+    <!-- Client 3: Embed Widget -->
+    <g transform="translate(450, 28)">
+      <rect width="210" height="32" class="node-box" />
+      <circle cx="12" cy="16" r="3.5" fill="#a855f7" />
+      <text x="24" y="20" fill="#f1f5f9" font-size="11" font-weight="600" class="sans">packages/embed-widget</text>
+    </g>
+
+    <!-- Client 4: SDK Client -->
+    <g transform="translate(678, 28)">
+      <rect width="196" height="32" class="node-box" />
+      <circle cx="12" cy="16" r="3.5" fill="#34d399" />
+      <text x="24" y="20" fill="#f1f5f9" font-size="11" font-weight="600" class="sans">packages/client (TS SDK)</text>
+    </g>
+  </g>
+
+  <!-- Flow Conduits: Tier 1 to Tier 2 -->
+  <g stroke="#1e2942" stroke-width="1.5" fill="none">
+    <path d="M 150 144 L 150 178" />
+    <path d="M 370 144 L 370 178" />
+    <path d="M 590 144 L 590 178" />
+    <path d="M 810 144 L 810 178" />
+    <!-- Animated pulses -->
+    <path d="M 150 144 L 150 178" stroke="#38bdf8" class="pulse-conduit-v" />
+    <path d="M 590 144 L 590 178" stroke="#a855f7" class="pulse-conduit-v" />
+  </g>
+
+  <!-- ================= TIER 2: EDGE & FASTIFY API SERVER ================= -->
+  <g transform="translate(36, 178)">
+    <rect width="888" height="74" class="tier-box" />
+    <text x="14" y="20" fill="#64748b" font-size="9.5" font-weight="700" class="mono">INGRESS &amp; EDGE RUNTIME (FASTIFY v5.8 • CLOUDFLARE WORKER)</text>
+
+    <!-- Edge Gateway -->
+    <g transform="translate(14, 28)">
+      <rect width="260" height="36" class="node-box" />
+      <text x="12" y="22" fill="#38bdf8" font-size="11" font-weight="700" class="mono">Edge Proxy / NetGuard</text>
+      <text x="160" y="22" fill="#64748b" font-size="10" class="mono">SSRF Defense</text>
+    </g>
+
+    <!-- Multi-Tenant Auth & Rate Limiter -->
+    <g transform="translate(290, 28)">
+      <rect width="290" height="36" class="node-box" />
+      <text x="12" y="22" fill="#e2e8f0" font-size="11" font-weight="600" class="sans">Auth: Scoped Keys &amp; Tenancy</text>
+      <text x="194" y="22" fill="#a7f3d0" font-size="10" class="mono">clientId Scoped</text>
+    </g>
+
+    <!-- Real-Time SSE & Webhooks -->
+    <g transform="translate(596, 28)">
+      <rect width="278" height="36" class="node-box" />
+      <text x="12" y="22" fill="#f59e0b" font-size="11" font-weight="700" class="mono">SSE Events (/v1/events)</text>
+      <text x="180" y="22" fill="#64748b" font-size="10" class="mono">Stream Buffer</text>
+    </g>
+  </g>
+
+  <!-- Flow Conduits: Tier 2 to Tier 3 -->
+  <g stroke="#1e2942" stroke-width="1.5" fill="none">
+    <path d="M 480 252 L 480 286" />
+    <path d="M 480 252 L 480 286" stroke="#c084fc" class="pulse-conduit-v" />
+  </g>
+
+  <!-- ================= TIER 3: ORCHESTRATOR & THE 3 PIPELINE STAGES ================= -->
+  <g transform="translate(36, 286)">
+    <rect width="888" height="136" class="tier-box" />
+    <text x="14" y="20" fill="#64748b" font-size="9.5" font-weight="700" class="mono">STAGE ORCHESTRATOR (StageContext • withRunLock • Human Gates)</text>
+
+    <!-- Stage 1: Intake -->
+    <g transform="translate(14, 32)">
+      <rect width="220" height="88" class="node-box" stroke="#38bdf8" />
+      <text x="12" y="22" fill="#38bdf8" font-size="12" font-weight="700" class="mono">01. INTAKE</text>
+      <text x="12" y="42" fill="#cbd5e1" font-size="11" class="sans">Clarifying Q&amp;A Loop</text>
+      <text x="12" y="60" fill="#94a3b8" font-size="10" class="mono">Tool: submit_summary</text>
+      <rect x="12" y="68" width="105" height="14" rx="3" fill="#0369a1" />
+      <text x="18" y="79" fill="#e0f2fe" font-size="9" font-weight="700" class="mono">idea_summary.md</text>
+    </g>
+
+    <!-- Gate #1 -->
+    <g transform="translate(242, 60)">
+      <circle cx="16" cy="16" r="14" fill="#1e1806" stroke="#f59e0b" stroke-width="1.5" class="pulse-dot" />
+      <text x="16" y="20" text-anchor="middle" fill="#fef08a" font-size="11" font-weight="700" class="mono">G1</text>
+      <text x="16" y="42" text-anchor="middle" fill="#f59e0b" font-size="9" class="mono">GATE</text>
+    </g>
+
+    <!-- Stage 2: Research -->
+    <g transform="translate(282, 32)">
+      <rect width="270" height="88" class="node-box" stroke="#a855f7" />
+      <text x="12" y="22" fill="#c084fc" font-size="12" font-weight="700" class="mono">02. RESEARCH (GROUNDED)</text>
+      <text x="12" y="42" fill="#cbd5e1" font-size="11" class="sans">Concurrent Fetch &amp; Skeptic Critic</text>
+      <text x="12" y="60" fill="#94a3b8" font-size="10" class="mono">citationVerifier.ts • Ground or Abstain</text>
+      <rect x="12" y="68" width="130" height="14" rx="3" fill="#581c87" />
+      <text x="18" y="79" fill="#f3e8ff" font-size="9" font-weight="700" class="mono">research_report.md</text>
+    </g>
+
+    <!-- Gate #2 -->
+    <g transform="translate(560, 60)">
+      <circle cx="16" cy="16" r="14" fill="#1e1806" stroke="#f59e0b" stroke-width="1.5" class="pulse-dot" />
+      <text x="16" y="20" text-anchor="middle" fill="#fef08a" font-size="11" font-weight="700" class="mono">G2</text>
+      <text x="16" y="42" text-anchor="middle" fill="#f59e0b" font-size="9" class="mono">GATE</text>
+    </g>
+
+    <!-- Stage 3: Planning -->
+    <g transform="translate(600, 32)">
+      <rect width="274" height="88" class="node-box" stroke="#10b981" />
+      <text x="12" y="22" fill="#34d399" font-size="12" font-weight="700" class="mono">03. PLANNING</text>
+      <text x="12" y="42" fill="#cbd5e1" font-size="11" class="sans">Generator ≠ Critic Rubric Loop</text>
+      <text x="12" y="60" fill="#94a3b8" font-size="10" class="mono">Produces PRD, TRD, Build Plan</text>
+      <rect x="12" y="68" width="165" height="14" rx="3" fill="#065f46" />
+      <text x="18" y="79" fill="#d1fae5" font-size="9" font-weight="700" class="mono">prd.md • trd.md • plan.md</text>
+    </g>
+  </g>
+
+  <!-- Flow Conduits: Tier 3 to Tier 4 -->
+  <g stroke="#1e2942" stroke-width="1.5" fill="none">
+    <path d="M 240 422 L 240 454" />
+    <path d="M 720 422 L 720 454" />
+    <path d="M 240 422 L 240 454" stroke="#38bdf8" class="pulse-conduit-v" />
+    <path d="M 720 422 L 720 454" stroke="#10b981" class="pulse-conduit-v" />
+  </g>
+
+  <!-- ================= TIER 4: MODELS & PERSISTENCE/AUDIT ================= -->
+  <!-- Left Side: Model Provider Layer -->
+  <g transform="translate(36, 454)">
+    <rect width="430" height="74" class="tier-box" />
+    <text x="14" y="20" fill="#64748b" font-size="9.5" font-weight="700" class="mono">MODEL PROVIDER ABSTRACTION (src/model/)</text>
+
+    <g transform="translate(14, 28)">
+      <rect width="124" height="34" class="node-box" />
+      <text x="8" y="21" fill="#f8fafc" font-size="10" font-weight="600" class="mono">Gemini 2.5 Pro/Flash</text>
+    </g>
+    <g transform="translate(146, 28)">
+      <rect width="134" height="34" class="node-box" />
+      <text x="8" y="21" fill="#cbd5e1" font-size="10" font-weight="600" class="mono">OpenAI-Compatible</text>
+    </g>
+    <g transform="translate(288, 28)">
+      <rect width="128" height="34" class="node-box" />
+      <text x="8" y="21" fill="#a7f3d0" font-size="10" font-weight="600" class="mono">Mock (Offline CI)</text>
+    </g>
+  </g>
+
+  <!-- Right Side: Persistence & Immutable Audit Trail -->
+  <g transform="translate(494, 454)">
+    <rect width="430" height="74" class="tier-box" />
+    <text x="14" y="20" fill="#64748b" font-size="9.5" font-weight="700" class="mono">PERSISTENCE &amp; IMMUTABLE AUDIT TRAIL</text>
+
+    <g transform="translate(14, 28)">
+      <rect width="124" height="34" class="node-box" />
+      <text x="8" y="21" fill="#38bdf8" font-size="10" font-weight="600" class="mono">SqliteProjectStore</text>
+    </g>
+    <g transform="translate(146, 28)">
+      <rect width="134" height="34" class="node-box" />
+      <text x="8" y="21" fill="#c084fc" font-size="10" font-weight="600" class="mono">JSONL Audit Stream</text>
+    </g>
+    <g transform="translate(288, 28)">
+      <rect width="128" height="34" class="node-box" />
+      <text x="8" y="21" fill="#f59e0b" font-size="10" font-weight="600" class="mono">Budget Ceilings</text>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,170 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 280" width="100%" height="auto">
+  <defs>
+    <radialGradient id="hud-glow" cx="50%" cy="50%" r="60%">
+      <stop offset="0%" stop-color="#00f2fe" stop-opacity="0.12" />
+      <stop offset="60%" stop-color="#7c3aed" stop-opacity="0.08" />
+      <stop offset="100%" stop-color="#070911" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="hud-border" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1e2942" />
+      <stop offset="50%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#1e2942" />
+    </linearGradient>
+
+    <!-- Mini Gear Tooth definition -->
+    <path id="mini-tooth" d="M 0 -8 L -6 -14 L -6 -28 A 6 6 0 0 1 6 -28 L 6 -14 Z" />
+  </defs>
+
+  <style>
+    .hud-shell { fill: #070912; stroke: #1e263d; stroke-width: 1.5; rx: 14px; }
+    .mono { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; }
+    .sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+
+    @keyframes spin-cw {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    @keyframes spin-ccw {
+      from { transform: rotate(360deg); }
+      to { transform: rotate(0deg); }
+    }
+    @keyframes needle-sweep {
+      0%, 100% { transform: rotate(-45deg); }
+      30% { transform: rotate(25deg); }
+      60% { transform: rotate(-10deg); }
+      80% { transform: rotate(40deg); }
+    }
+    @keyframes wave-flow {
+      0% { stroke-dashoffset: 0; }
+      100% { stroke-dashoffset: -120; }
+    }
+    @keyframes bar-bounce1 { 0%, 100% { height: 12px; } 50% { height: 38px; } }
+    @keyframes bar-bounce2 { 0%, 100% { height: 28px; } 50% { height: 16px; } }
+    @keyframes bar-bounce3 { 0%, 100% { height: 34px; } 50% { height: 44px; } }
+    @keyframes bar-bounce4 { 0%, 100% { height: 20px; } 50% { height: 32px; } }
+    @keyframes radar-blip {
+      0% { r: 4px; opacity: 1; }
+      100% { r: 36px; opacity: 0; }
+    }
+
+    .gear-mini-cw { transform-origin: 150px 145px; animation: spin-cw 12s linear infinite; }
+    .gear-mini-ccw { transform-origin: 150px 145px; animation: spin-ccw 18s linear infinite; }
+    .tach-needle { transform-origin: 150px 145px; animation: needle-sweep 5s ease-in-out infinite; }
+    .sine-trace { stroke-dasharray: 200; animation: wave-flow 4s linear infinite; }
+    .b1 { animation: bar-bounce1 1.6s ease-in-out infinite; }
+    .b2 { animation: bar-bounce2 1.3s ease-in-out infinite; }
+    .b3 { animation: bar-bounce3 1.9s ease-in-out infinite; }
+    .b4 { animation: bar-bounce4 1.5s ease-in-out infinite; }
+    .blip { animation: radar-blip 2.5s ease-out infinite; transform-origin: 730px 145px; }
+  </style>
+
+  <!-- Container Box -->
+  <rect width="880" height="280" class="hud-shell" />
+  <rect width="880" height="280" fill="url(#hud-glow)" rx="14" />
+  <line x1="160" y1="1" x2="720" y2="1" stroke="url(#hud-border)" stroke-width="2" />
+
+  <!-- Title & Status Header -->
+  <g transform="translate(28, 28)">
+    <text x="0" y="0" fill="#f8fafc" font-size="13.5" font-weight="700" class="sans">YANTRA PRECISION TELEMETRY HUD</text>
+    <text x="320" y="0" fill="#00f2fe" font-size="10.5" font-weight="600" class="mono">DIAGNOSTIC STATUS : FULLY NOMINAL [100% DETERMINISTIC]</text>
+  </g>
+
+  <!-- ================= SECTION 1: ROTATING PRECISION CORE (Left) ================= -->
+  <g transform="translate(0, 0)">
+    <!-- Tachometer Dials & Rings -->
+    <circle cx="150" cy="145" r="76" fill="#0b0f1d" stroke="#1f2a44" stroke-width="1.5" />
+    <circle cx="150" cy="145" r="66" fill="none" stroke="#334155" stroke-width="1" stroke-dasharray="2 4" />
+    
+    <!-- Outer Counter-Clockwise Calibrated Ring -->
+    <g class="gear-mini-ccw">
+      <circle cx="150" cy="145" r="54" fill="none" stroke="#7c3aed" stroke-width="1" stroke-dasharray="4 8" />
+      <line x1="150" y1="88" x2="150" y2="94" stroke="#00f2fe" stroke-width="2" />
+      <line x1="150" y1="196" x2="150" y2="202" stroke="#00f2fe" stroke-width="2" />
+      <line x1="93" y1="145" x2="99" y2="145" stroke="#a855f7" stroke-width="2" />
+      <line x1="201" y1="145" x2="207" y2="145" stroke="#a855f7" stroke-width="2" />
+    </g>
+
+    <!-- Mini Precision Yantra Gear (Clockwise) -->
+    <g class="gear-mini-cw">
+      <g transform="translate(150, 145)" fill="#7c3aed">
+        <g transform="rotate(0)"><use href="#mini-tooth" /></g>
+        <g transform="rotate(60)"><use href="#mini-tooth" /></g>
+        <g transform="rotate(120)"><use href="#mini-tooth" /></g>
+        <g transform="rotate(180)"><use href="#mini-tooth" /></g>
+        <g transform="rotate(240)"><use href="#mini-tooth" /></g>
+        <g transform="rotate(300)"><use href="#mini-tooth" /></g>
+        <circle cx="0" cy="0" r="18" fill="#0f172a" stroke="#00f2fe" stroke-width="1.5" />
+      </g>
+    </g>
+
+    <!-- Oscillating Tach Needle -->
+    <g class="tach-needle">
+      <line x1="150" y1="145" x2="150" y2="100" stroke="#f43f5e" stroke-width="2" stroke-linecap="round" />
+      <circle cx="150" cy="145" r="5" fill="#f43f5e" />
+    </g>
+
+    <!-- Label Below Tachometer -->
+    <text x="150" y="240" text-anchor="middle" fill="#94a3b8" font-size="10" font-weight="600" class="mono">
+      GROUNDING FLUX : 1.000
+    </text>
+  </g>
+
+  <!-- ================= SECTION 2: LIVE TELEMETRY OSCILLOSCOPE (Center) ================= -->
+  <g transform="translate(260, 60)">
+    <rect width="360" height="170" rx="8" fill="#090d18" stroke="#1c253b" stroke-width="1" />
+    <text x="14" y="20" fill="#64748b" font-size="9.5" font-weight="700" class="mono">DETERMINISM VS ENTROPY SCOPE</text>
+
+    <!-- Oscilloscope Grid Lines -->
+    <line x1="14" y1="50" x2="346" y2="50" stroke="#161f33" stroke-width="1" />
+    <line x1="14" y1="85" x2="346" y2="85" stroke="#161f33" stroke-width="1" />
+    <line x1="14" y1="120" x2="346" y2="120" stroke="#161f33" stroke-width="1" />
+
+    <!-- Animated Sine Waves -->
+    <!-- Emerald Grounded Carrier Wave -->
+    <path d="M 14 85 Q 40 45, 66 85 T 118 85 T 170 85 T 222 85 T 274 85 T 326 85 L 346 85" fill="none" stroke="#10b981" stroke-width="2" class="sine-trace" />
+    <!-- Cyan Secondary Harmonic -->
+    <path d="M 14 85 Q 30 105, 46 85 T 78 85 T 110 85 T 142 85 T 174 85 T 206 85 T 238 85 T 270 85 T 302 85 T 334 85" fill="none" stroke="#00f2fe" stroke-width="1" stroke-opacity="0.4" />
+
+    <!-- Real-time Readout Badges -->
+    <g transform="translate(14, 134)" class="mono" font-size="10">
+      <rect x="0" y="0" width="100" height="24" rx="4" fill="#0f172a" stroke="#10b981" stroke-width="0.8" />
+      <text x="8" y="16" fill="#a7f3d0">CITED: 100%</text>
+
+      <rect x="110" y="0" width="105" height="24" rx="4" fill="#0f172a" stroke="#a855f7" stroke-width="0.8" />
+      <text x="118" y="16" fill="#e9d5ff">RUBRIC: 9.7</text>
+
+      <rect x="225" y="0" width="105" height="24" rx="4" fill="#0f172a" stroke="#38bdf8" stroke-width="0.8" />
+      <text x="233" y="16" fill="#bae6fd">BUDGET: OK</text>
+    </g>
+  </g>
+
+  <!-- ================= SECTION 3: RADAR & EQUALIZER GAUGES (Right) ================= -->
+  <g transform="translate(650, 60)">
+    <rect width="202" height="170" rx="8" fill="#090d18" stroke="#1c253b" stroke-width="1" />
+    <text x="14" y="20" fill="#64748b" font-size="9.5" font-weight="700" class="mono">SKEPTIC RADAR</text>
+
+    <!-- Radar Screen -->
+    <g transform="translate(60, 65)">
+      <circle cx="40" cy="40" r="36" fill="#070c17" stroke="#1e2942" stroke-width="1" />
+      <circle cx="40" cy="40" r="24" fill="none" stroke="#1e2942" stroke-width="0.8" />
+      <circle cx="40" cy="40" r="12" fill="none" stroke="#1e2942" stroke-width="0.8" />
+      <line x1="4" y1="40" x2="76" y2="40" stroke="#1e2942" stroke-width="0.8" />
+      <line x1="40" y1="4" x2="40" y2="76" stroke="#1e2942" stroke-width="0.8" />
+      <!-- Expanding Radar Ping Blip -->
+      <circle cx="40" cy="40" r="4" fill="none" stroke="#10b981" stroke-width="2" class="blip" />
+      <circle cx="40" cy="40" r="3" fill="#10b981" />
+    </g>
+
+    <!-- Concurrency Equalizer Bars -->
+    <g transform="translate(20, 115)">
+      <rect x="0" y="0" width="6" height="30" rx="2" fill="#38bdf8" class="b1" />
+      <rect x="10" y="0" width="6" height="30" rx="2" fill="#38bdf8" class="b2" />
+      <rect x="20" y="0" width="6" height="30" rx="2" fill="#38bdf8" class="b3" />
+      <rect x="30" y="0" width="6" height="30" rx="2" fill="#38bdf8" class="b4" />
+    </g>
+
+    <text x="14" y="156" fill="#10b981" font-size="9.5" font-weight="700" class="mono">
+      0 HALLUCINATIONS
+    </text>
+  </g>
+</svg>

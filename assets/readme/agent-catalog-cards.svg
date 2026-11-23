@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 320" width="100%" height="auto">
+  <defs>
+    <radialGradient id="catalog-glow" cx="50%" cy="50%" r="65%">
+      <stop offset="0%" stop-color="#4f46e5" stop-opacity="0.12" />
+      <stop offset="100%" stop-color="#06080e" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+
+  <style>
+    .card { fill: #0b0f1d; stroke: #1e2942; stroke-width: 1.2; rx: 10px; }
+    .mono { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; }
+    .sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+
+    @keyframes card-pulse {
+      0%, 100% { opacity: 0.5; }
+      50% { opacity: 1; }
+    }
+    .pulse-agent { animation: card-pulse 2.4s ease-in-out infinite; }
+  </style>
+
+  <!-- Container -->
+  <rect width="940" height="320" rx="14" fill="#06080e" stroke="#161f33" stroke-width="1.2" />
+  <rect width="940" height="320" rx="14" fill="url(#catalog-glow)" />
+
+  <!-- Header -->
+  <g transform="translate(32, 28)">
+    <text x="0" y="0" fill="#f8fafc" font-size="14" font-weight="700" class="sans">Built-in Agent Registry (src/agents/registry.ts)</text>
+    <text x="360" y="0" fill="#64748b" font-size="11" class="mono">CONFIGURED VIA AgentDefinition • HOT-DISPATCH VIA RUNNER KIND</text>
+  </g>
+
+  <!-- ================= 6 AGENT CARDS (3x2 GRID) ================= -->
+  <!-- ROW 1, COL 1: planning-pipeline -->
+  <g transform="translate(32, 54)">
+    <rect width="276" height="114" class="card" stroke="#38bdf8" />
+    <circle cx="16" cy="18" r="4" fill="#38bdf8" class="pulse-agent" />
+    <text x="28" y="22" fill="#38bdf8" font-size="11.5" font-weight="700" class="mono">planning-pipeline</text>
+    <rect x="210" y="10" width="54" height="16" rx="4" fill="#0c4a6e" />
+    <text x="237" y="22" text-anchor="middle" fill="#7dd3fc" font-size="9" font-weight="700" class="mono">3 STAGES</text>
+
+    <text x="14" y="48" fill="#e2e8f0" font-size="11" font-weight="600" class="sans">Product Planning Pipeline</text>
+    <text x="14" y="66" fill="#94a3b8" font-size="10" class="sans">Intake → Research → Planning with human confirmation gates and cited reports.</text>
+    <text x="14" y="96" fill="#10b981" font-size="9.5" font-weight="600" class="mono">● READY FOR USE</text>
+  </g>
+
+  <!-- ROW 1, COL 2: intake-public -->
+  <g transform="translate(332, 54)">
+    <rect width="276" height="114" class="card" stroke="#a855f7" />
+    <circle cx="16" cy="18" r="4" fill="#a855f7" class="pulse-agent" />
+    <text x="28" y="22" fill="#c084fc" font-size="11.5" font-weight="700" class="mono">intake-public</text>
+    <rect x="210" y="10" width="54" height="16" rx="4" fill="#581c87" />
+    <text x="237" y="22" text-anchor="middle" fill="#f3e8ff" font-size="9" font-weight="700" class="mono">WIDGET</text>
+
+    <text x="14" y="48" fill="#e2e8f0" font-size="11" font-weight="600" class="sans">Visitor Intake &amp; Lead Capture</text>
+    <text x="14" y="66" fill="#94a3b8" font-size="10" class="sans">Public-facing conversational intake with strict IP/visitor rate and spend caps.</text>
+    <text x="14" y="96" fill="#10b981" font-size="9.5" font-weight="600" class="mono">● READY FOR USE</text>
+  </g>
+
+  <!-- ROW 1, COL 3: ops-reporting -->
+  <g transform="translate(632, 54)">
+    <rect width="276" height="114" class="card" />
+    <circle cx="16" cy="18" r="4" fill="#10b981" class="pulse-agent" />
+    <text x="28" y="22" fill="#34d399" font-size="11.5" font-weight="700" class="mono">ops-reporting</text>
+    <rect x="200" y="10" width="64" height="16" rx="4" fill="#064e3b" />
+    <text x="232" y="22" text-anchor="middle" fill="#6ee7b7" font-size="9" font-weight="700" class="mono">REPORTS</text>
+
+    <text x="14" y="48" fill="#e2e8f0" font-size="11" font-weight="600" class="sans">Operations Reporting</text>
+    <text x="14" y="66" fill="#94a3b8" font-size="10" class="sans">Multi-source metric aggregation, formula engine &amp; anomaly detection.</text>
+    <text x="14" y="96" fill="#f59e0b" font-size="9.5" font-weight="600" class="mono">◐ FRAMEWORK LIVE</text>
+  </g>
+
+  <!-- ROW 2, COL 1: ops-onboarding -->
+  <g transform="translate(32, 182)">
+    <rect width="276" height="114" class="card" />
+    <circle cx="16" cy="18" r="4" fill="#6366f1" class="pulse-agent" />
+    <text x="28" y="22" fill="#818cf8" font-size="11.5" font-weight="700" class="mono">ops-onboarding</text>
+    <rect x="200" y="10" width="64" height="16" rx="4" fill="#1e1b4b" />
+    <text x="232" y="22" text-anchor="middle" fill="#a5b4fc" font-size="9" font-weight="700" class="mono">ONBOARD</text>
+
+    <text x="14" y="48" fill="#e2e8f0" font-size="11" font-weight="600" class="sans">Back-Office Connector Setup</text>
+    <text x="14" y="66" fill="#94a3b8" font-size="10" class="sans">Assisted configuration of Stripe, Shopify, CSV schema &amp; sync pipelines.</text>
+    <text x="14" y="96" fill="#f59e0b" font-size="9.5" font-weight="600" class="mono">◐ PROTOTYPE</text>
+  </g>
+
+  <!-- ROW 2, COL 2: support-agent -->
+  <g transform="translate(332, 182)">
+    <rect width="276" height="114" class="card" />
+    <circle cx="16" cy="18" r="4" fill="#ec4899" class="pulse-agent" />
+    <text x="28" y="22" fill="#f472b6" font-size="11.5" font-weight="700" class="mono">support-agent</text>
+    <rect x="210" y="10" width="54" height="16" rx="4" fill="#831843" />
+    <text x="237" y="22" text-anchor="middle" fill="#fbcfe8" font-size="9" font-weight="700" class="mono">DEMO</text>
+
+    <text x="14" y="48" fill="#e2e8f0" font-size="11" font-weight="600" class="sans">Support Tool-Loop Agent</text>
+    <text x="14" y="66" fill="#94a3b8" font-size="10" class="sans">Interactive reference agent with tool dispatch, policy guards, and escalation.</text>
+    <text x="14" y="96" fill="#94a3b8" font-size="9.5" font-weight="600" class="mono">○ REFERENCE DEMO</text>
+  </g>
+
+  <!-- ROW 2, COL 3: firebnb-concierge -->
+  <g transform="translate(632, 182)">
+    <rect width="276" height="114" class="card" />
+    <circle cx="16" cy="18" r="4" fill="#f59e0b" class="pulse-agent" />
+    <text x="28" y="22" fill="#fbbf24" font-size="11.5" font-weight="700" class="mono">firebnb-concierge</text>
+    <rect x="200" y="10" width="64" height="16" rx="4" fill="#78350f" />
+    <text x="232" y="22" text-anchor="middle" fill="#fde68a" font-size="9" font-weight="700" class="mono">VERTICAL</text>
+
+    <text x="14" y="48" fill="#e2e8f0" font-size="11" font-weight="600" class="sans">Hospitality Concierge</text>
+    <text x="14" y="66" fill="#94a3b8" font-size="10" class="sans">Domain-tuned hospitality concierge with reservation lookup and guest tools.</text>
+    <text x="14" y="96" fill="#94a3b8" font-size="9.5" font-weight="600" class="mono">○ CLIENT VERTICAL</text>
+  </g>
+</svg>

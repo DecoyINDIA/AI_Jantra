@@ -1,0 +1,237 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 480" width="100%" height="auto">
+  <defs>
+    <radialGradient id="quad-glow1" cx="50%" cy="50%" r="60%">
+      <stop offset="0%" stop-color="#10b981" stop-opacity="0.15" />
+      <stop offset="100%" stop-color="#0b0e17" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="quad-glow2" cx="50%" cy="50%" r="60%">
+      <stop offset="0%" stop-color="#a855f7" stop-opacity="0.15" />
+      <stop offset="100%" stop-color="#0b0e17" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="quad-glow3" cx="50%" cy="50%" r="60%">
+      <stop offset="0%" stop-color="#00f2fe" stop-opacity="0.15" />
+      <stop offset="100%" stop-color="#0b0e17" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="quad-glow4" cx="50%" cy="50%" r="60%">
+      <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.15" />
+      <stop offset="100%" stop-color="#0b0e17" stop-opacity="0" />
+    </radialGradient>
+    
+    <linearGradient id="scan-laser" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#10b981" stop-opacity="0" />
+      <stop offset="50%" stop-color="#10b981" stop-opacity="0.8" />
+      <stop offset="100%" stop-color="#10b981" stop-opacity="0" />
+    </linearGradient>
+  </defs>
+
+  <style>
+    .panel { fill: #0a0d18; stroke: #1e263d; stroke-width: 1.2; rx: 12px; }
+    .mono { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; }
+    .sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+
+    /* PANEL 1: Scanning Laser */
+    @keyframes laser-sweep {
+      0%, 100% { transform: translateY(0px); opacity: 0.2; }
+      50% { transform: translateY(70px); opacity: 1; }
+    }
+    @keyframes check-reveal {
+      0%, 40% { opacity: 0; transform: scale(0.8); }
+      50%, 90% { opacity: 1; transform: scale(1); }
+      100% { opacity: 0; }
+    }
+    .laser-line { animation: laser-sweep 3s ease-in-out infinite; }
+    .stamp-badge { animation: check-reveal 6s ease-in-out infinite; transform-origin: 340px 145px; }
+
+    /* PANEL 2: Critic Loop */
+    @keyframes orbit-loop {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    @keyframes score-pulse {
+      0%, 30% { fill: #94a3b8; }
+      50%, 80% { fill: #10b981; }
+      100% { fill: #94a3b8; }
+    }
+    .critic-circle { transform-origin: 690px 140px; animation: orbit-loop 8s linear infinite; }
+    .score-glow { animation: score-pulse 6s infinite; }
+
+    /* PANEL 3: Conveyor Scroll */
+    @keyframes log-stream {
+      0% { transform: translateY(0px); }
+      100% { transform: translateY(-38px); }
+    }
+    .stream-items { animation: log-stream 4s linear infinite; }
+
+    /* PANEL 4: Security Shield Pulse */
+    @keyframes shield-breathing {
+      0%, 100% { transform: scale(1); opacity: 0.7; }
+      50% { transform: scale(1.06); opacity: 1; }
+    }
+    @keyframes gate-barrier {
+      0%, 35% { transform: scaleX(1); }
+      50%, 80% { transform: scaleX(0.2); }
+      95%, 100% { transform: scaleX(1); }
+    }
+    .shield-pulse { transform-origin: 690px 375px; animation: shield-breathing 3s ease-in-out infinite; }
+    .barrier-pulse { transform-origin: 690px 395px; animation: gate-barrier 6s ease-in-out infinite; }
+  </style>
+
+  <!-- Background Canvas -->
+  <rect width="940" height="480" fill="#06080e" rx="16" />
+
+  <!-- ================= QUAD 1: GROUND OR ABSTAIN (Top-Left) ================= -->
+  <g transform="translate(16, 16)">
+    <rect width="446" height="216" class="panel" />
+    <rect width="446" height="216" fill="url(#quad-glow1)" rx="12" />
+    
+    <!-- Title & Icon -->
+    <g transform="translate(20, 26)">
+      <circle cx="12" cy="12" r="12" fill="#064e3b" />
+      <path d="M 8 12 L 11 15 L 16 9" stroke="#10b981" stroke-width="2" fill="none" />
+      <text x="32" y="16" fill="#f8fafc" font-size="14" font-weight="700" class="sans">Ground or Abstain</text>
+      <text x="32" y="32" fill="#64748b" font-size="11" class="mono">DETERMINISTIC CITATION VERIFIER</text>
+    </g>
+
+    <!-- Source Window Simulation -->
+    <g transform="translate(20, 72)" class="mono">
+      <rect x="0" y="0" width="406" height="84" rx="6" fill="#080c14" stroke="#1f293d" stroke-width="0.8" />
+      <text x="12" y="20" fill="#64748b" font-size="9.5">SOURCE TEXT BUFFER [SKEPTIC WINDOW = 400 CHARS]</text>
+      <text x="12" y="40" fill="#cbd5e1" font-size="11">"...mismatch rate in carrier EDI 810 is 14.2%..."</text>
+      <text x="12" y="60" fill="#94a3b8" font-size="10.5">Quote normalized • Exact substring matched in source</text>
+
+      <!-- Laser Scanner Line -->
+      <g class="laser-line">
+        <rect x="2" y="15" width="402" height="18" fill="url(#scan-laser)" />
+        <line x1="2" y1="24" x2="404" y2="24" stroke="#10b981" stroke-width="1.5" />
+      </g>
+
+      <!-- Stamp Badge: Verified -->
+      <g class="stamp-badge">
+        <rect x="240" y="44" width="150" height="26" rx="4" fill="#064e3b" stroke="#10b981" stroke-width="1" />
+        <text x="252" y="61" fill="#a7f3d0" font-size="10.5" font-weight="700">✓ VERIFIED CITATION</text>
+      </g>
+    </g>
+
+    <!-- Micro Metric -->
+    <text x="20" y="196" fill="#10b981" font-size="11" font-weight="600" class="mono">
+      ZERO HALLUCINATIONS: Non-resolving claims pruned automatically.
+    </text>
+  </g>
+
+  <!-- ================= QUAD 2: GENERATOR != CRITIC (Top-Right) ================= -->
+  <g transform="translate(478, 16)">
+    <rect width="446" height="216" class="panel" />
+    <rect width="446" height="216" fill="url(#quad-glow2)" rx="12" />
+
+    <!-- Title & Icon -->
+    <g transform="translate(20, 26)">
+      <circle cx="12" cy="12" r="12" fill="#3b0764" />
+      <path d="M 6 12 L 18 12 M 12 6 L 12 18" stroke="#c084fc" stroke-width="2" fill="none" transform="rotate(45 12 12)" />
+      <text x="32" y="16" fill="#f8fafc" font-size="14" font-weight="700" class="sans">Generator ≠ Critic</text>
+      <text x="32" y="32" fill="#64748b" font-size="11" class="mono">DUAL-PASS RUBRIC EVALUATION</text>
+    </g>
+
+    <!-- Rubric Matrix & Feedback Cycle -->
+    <g transform="translate(20, 72)" class="mono">
+      <rect x="0" y="0" width="406" height="84" rx="6" fill="#080c14" stroke="#1f293d" stroke-width="0.8" />
+      
+      <!-- Rubric Criteria Items -->
+      <g transform="translate(14, 18)" font-size="10.5">
+        <text x="0" y="0" fill="#94a3b8">• Technical Feasibility: <tspan fill="#10b981">9.8/10</tspan></text>
+        <text x="0" y="18" fill="#94a3b8">• Evidence Grounding: <tspan fill="#10b981">9.5/10</tspan></text>
+        <text x="0" y="36" fill="#94a3b8">• Risk &amp; Boundary Spec: <tspan fill="#10b981">9.7/10</tspan></text>
+      </g>
+
+      <!-- Animated Dual-Loop Orbit on Right -->
+      <g transform="translate(320, 42)">
+        <circle cx="0" cy="0" r="28" fill="none" stroke="#2e1065" stroke-width="2" />
+        <g class="critic-circle">
+          <circle cx="0" cy="-28" r="5" fill="#c084fc" />
+          <circle cx="0" cy="28" r="5" fill="#38bdf8" />
+        </g>
+        <text x="0" y="4" text-anchor="middle" font-size="11" font-weight="700" class="score-glow mono">9.7</text>
+      </g>
+    </g>
+
+    <!-- Micro Metric -->
+    <text x="20" y="196" fill="#c084fc" font-size="11" font-weight="600" class="mono">
+      FAIL CLOSED: No stage accepts its own first draft.
+    </text>
+  </g>
+
+  <!-- ================= QUAD 3: IMMUTABLE AUDIT & COST (Bottom-Left) ================= -->
+  <g transform="translate(16, 248)">
+    <rect width="446" height="216" class="panel" />
+    <rect width="446" height="216" fill="url(#quad-glow3)" rx="12" />
+
+    <!-- Title & Icon -->
+    <g transform="translate(20, 26)">
+      <circle cx="12" cy="12" r="12" fill="#0c4a6e" />
+      <rect x="7" y="7" width="10" height="10" rx="2" stroke="#38bdf8" stroke-width="2" fill="none" />
+      <text x="32" y="16" fill="#f8fafc" font-size="14" font-weight="700" class="sans">Immutable JSONL Audit</text>
+      <text x="32" y="32" fill="#64748b" font-size="11" class="mono">SUB-CENT TELEMETRY &amp; RESERVE/SETTLE</text>
+    </g>
+
+    <!-- Flowing Audit Stream -->
+    <g transform="translate(20, 72)" class="mono">
+      <rect x="0" y="0" width="406" height="84" rx="6" fill="#080c14" stroke="#1f293d" stroke-width="0.8" clip-path="url(#audit-clip)" />
+      
+      <clipPath id="audit-clip">
+        <rect x="0" y="0" width="406" height="84" rx="6" />
+      </clipPath>
+
+      <g class="stream-items" font-size="9.5" fill="#94a3b8">
+        <text x="12" y="20">{"ts":"23:38:01","type":"model_call","tokens":1420,"cost":0.0018}</text>
+        <text x="12" y="38">{"ts":"23:38:04","type":"citation_verified","sourceId":"src_4f"}</text>
+        <text x="12" y="56">{"ts":"23:38:07","type":"gate_confirmed","actor":"operator"}</text>
+        <text x="12" y="74">{"ts":"23:38:11","type":"artifact_sealed","hash":"e49b80fa"}</text>
+        <text x="12" y="92">{"ts":"23:38:15","type":"cost_rollup","spentUsd":0.184}</text>
+      </g>
+    </g>
+
+    <!-- Live Budget Bar -->
+    <g transform="translate(20, 172)" class="mono">
+      <text x="0" y="0" fill="#64748b" font-size="10">BUDGET CEILING ($10.00 max • Reserve &amp; Settle active)</text>
+      <rect x="0" y="8" width="406" height="6" rx="3" fill="#1e293d" />
+      <rect x="0" y="8" width="84" height="6" rx="3" fill="#38bdf8" />
+      <text x="96" y="14" fill="#38bdf8" font-size="9" font-weight="700">$0.184</text>
+    </g>
+  </g>
+
+  <!-- ================= QUAD 4: HUMAN GATE & SECURITY (Bottom-Right) ================= -->
+  <g transform="translate(478, 248)">
+    <rect width="446" height="216" class="panel" />
+    <rect width="446" height="216" fill="url(#quad-glow4)" rx="12" />
+
+    <!-- Title & Icon -->
+    <g transform="translate(20, 26)">
+      <circle cx="12" cy="12" r="12" fill="#451a03" />
+      <circle cx="12" cy="12" r="5" stroke="#f59e0b" stroke-width="2" fill="none" />
+      <text x="32" y="16" fill="#f8fafc" font-size="14" font-weight="700" class="sans">Human Gate &amp; Fail-Closed</text>
+      <text x="32" y="32" fill="#64748b" font-size="11" class="mono">PROMPT-INJECTION SHIELD &amp; OPERATOR GATES</text>
+    </g>
+
+    <!-- Security Perimeter Simulation -->
+    <g transform="translate(20, 72)" class="mono">
+      <rect x="0" y="0" width="406" height="84" rx="6" fill="#080c14" stroke="#1f293d" stroke-width="0.8" />
+
+      <!-- Sanitizer & Guardrail Indicators -->
+      <g transform="translate(14, 22)" font-size="10">
+        <text x="0" y="0" fill="#10b981">✓ sanitizeUntrustedWebContent() : <tspan fill="#f8fafc">ARMED</tspan></text>
+        <text x="0" y="18" fill="#10b981">✓ SafeFetch / NetGuard : <tspan fill="#f8fafc">SSRF &amp; PRIVATE IP BLOCKED</tspan></text>
+        <text x="0" y="36" fill="#f59e0b">● Stage Gate : <tspan fill="#fef08a">Awaiting Operator Sign-off</tspan></text>
+      </g>
+
+      <!-- Pulsing Shield Emblem on Right -->
+      <g transform="translate(345, 42)">
+        <polygon points="0,-22 18,-12 18,10 0,22 -18,10 -18,-12" fill="#1e1805" stroke="#f59e0b" stroke-width="1.5" class="shield-pulse" />
+        <circle cx="0" cy="0" r="4" fill="#f59e0b" />
+      </g>
+    </g>
+
+    <!-- Micro Metric -->
+    <text x="20" y="196" fill="#f59e0b" font-size="11" font-weight="600" class="mono">
+      HUMAN-IN-THE-LOOP: Nothing ships to staging without approval.
+    </text>
+  </g>
+</svg>
